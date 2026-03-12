@@ -20,7 +20,7 @@ Read these to understand what's implemented:
 
 - **`CLAUDE.md`** — architecture and feature overview
 - **`devguide/design.md`** — roadmap and what's checked off
-- **`devguide/ledger.md`** — what was actually built and when
+- **`devguide/ledger.md`** — read only the **last 80 lines** (recent entries). Do NOT read the entire file — it is very large.
 - **`server/game-engine.js`** — game mechanics, colony systems, resource values
 - **`server/room-manager.js`** — lobby/room flow
 - **`src/public/js/app.js`** — client-side game experience, input, rendering
@@ -117,7 +117,7 @@ After finalizing your recommendations, update `devguide/design.md` to turn them 
 
 ### 8. Output
 
-Write the full analysis to `devguide/game-design-review.md`. This file is a living document — append new reviews with dates, don't overwrite previous ones.
+Write the full analysis to `devguide/game-design-review.md`. **Prepend** the new review (newest first). After writing, **check the file length** — if it exceeds 1000 lines, truncate from the bottom (removing oldest reviews) to bring it back under 1000 lines. The file must never grow past 1000 lines.
 
 Also output a brief summary to the console:
 1. Overall score (average of pillar scores)

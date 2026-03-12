@@ -20,7 +20,9 @@ Read these files to understand what's been done and what's next:
 
 1. **`CLAUDE.md`** — Project architecture, conventions, module map
 2. **`devguide/design.md`** — Full implementation roadmap with checkboxes
-3. **`devguide/ledger.md`** — Log of what each iteration built
+3. **`devguide/ledger.md`** — Read only the **last 80 lines** (recent entries). Do NOT read the entire file — it is very large.
+
+**IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed.**
 
 Scan the codebase to verify the ledger matches reality (files exist, tests pass).
 

@@ -299,6 +299,7 @@ function startServer(options = {}) {
         port: httpServer.address().port,
         close: () => {
           for (const [, engine] of games) engine.stop();
+          for (const client of wss.clients) client.terminate();
           wss.close();
           httpServer.close();
         },

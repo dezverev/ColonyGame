@@ -869,3 +869,43 @@ Each entry records an iteration of automated development.
 - Host-only control in multiplayer but any player can control in practice mode — solo players need full control for playtesting
 
 **Next:** Planet type signature bonuses (R21 priority #2)
+
+---
+
+## Entry 26 — 2026-03-12 — Planet Type Signature Bonuses
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- `PLANET_BONUSES` lookup table in game-engine.js: 6 habitable planet types each get additive production bonuses per working district of matching type
+- Continental: +1 food per Agriculture district
+- Ocean: +1 food per Agriculture, +1 each research per Research district
+- Tropical: +2 food per Agriculture district
+- Arctic: +1 mineral per Mining, +1 each research per Research district
+- Desert: +2 mineral per Mining district
+- Arid: +1 energy per Generator, +1 alloy per Industrial district
+- Bonuses applied in `_calcProduction` after tech modifiers — additive, not multiplicative with tech
+- Client: build menu shows planet-specific bonus per district type (orange text)
+- Client: district info panel shows planet bonus row when applicable
+- Client: system panel planet table includes Bonus column with per-type labels
+- Client: `_planetBonusLabel()` helper formats bonus text for any planet type
+
+**Files changed:**
+- `server/game-engine.js` — PLANET_BONUSES constant, bonus application in _calcProduction, exported in module.exports
+- `src/public/js/app.js` — client PLANET_BONUSES mirror, _planetBonusLabel helper, build menu bonus display, district info panel bonus row, system panel bonus column
+- `src/public/css/style.css` — .build-option-bonus and .planet-bonus-tag styles
+- `src/tests/game-engine.test.js` — 11 new planet bonus tests, updated ~12 existing tests to account for planet bonuses using calcPlanetBonus helper
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 344 total (11 new: PLANET_BONUSES structure, no bonuses for uninhabitable, Continental/Ocean/Tropical/Arctic/Desert/Arid production, tech+bonus stacking, disabled districts no bonus, serialization). All passing.
+
+**Key decisions:**
+- Bonuses are additive (flat +N per district) rather than multiplicative — prevents overpowered stacking with tech modifiers while keeping bonuses meaningful
+- Applied after tech modifier multiplication, not before — tech multiplies base output, planet adds flat bonus on top. This means tech doesn't amplify planet bonuses
+- Updated existing tests to use a `calcPlanetBonus` helper that dynamically computes expected values based on the galaxy-assigned planet type, rather than hardcoding — makes tests resilient to random galaxy seeds
+- New planet bonus tests use `makeEngineWithPlanet()` helper that overrides colony planet type for deterministic testing
+- Non-habitable types (barren, molten, gasGiant) have no bonuses — consistent with them being uncolonizable
+
+**Next:** Colony ships — minimal expansion (R23 priority #2)

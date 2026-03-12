@@ -10,6 +10,9 @@
 #   4. /perf             → performance audit and fix
 #   5. /test             → test coverage audit, write missing tests
 #
+# Output from earlier phases is truncated and passed to later
+# phases as context. Each skill also reads repo state directly.
+#
 # Usage:
 #   ./autopilot.sh                      # run 1 iteration
 #   ./autopilot.sh -n 3                # run 3 iterations
@@ -43,6 +46,20 @@ log() {
   echo ""
 }
 
+# Truncate to last N lines to keep prompts within budget.
+truncate_context() {
+  local text="$1"
+  local max_lines="${2:-60}"
+  local total
+  total=$(echo "$text" | wc -l | tr -d ' ')
+  if [[ "$total" -gt "$max_lines" ]]; then
+    echo "[...truncated ${total} lines to last ${max_lines}...]"
+    echo "$text" | tail -n "$max_lines"
+  else
+    echo "$text"
+  fi
+}
+
 for ((i=1; i<=ITERATIONS; i++)); do
 
   if [[ "$ITERATIONS" -gt 1 ]]; then
@@ -53,14 +70,16 @@ for ((i=1; i<=ITERATIONS; i++)); do
   log "Phase 1: Project status..."
   STATUS=$(claude --dangerously-skip-permissions -p "/status" 2>&1) || true
   echo "$STATUS"
+  STATUS_CTX=$(truncate_context "$STATUS" 60)
 
   # ── Phase 2: /game-designer ─────────────────────────────
   log "Phase 2: Game design analysis..."
   DESIGN=$(claude --dangerously-skip-permissions -p "/game-designer $FOCUS
 
-Current project status for context:
-$STATUS" 2>&1) || true
+Project status context:
+$STATUS_CTX" 2>&1) || true
   echo "$DESIGN"
+  DESIGN_CTX=$(truncate_context "$DESIGN" 60)
 
   if [[ "$DRY_RUN" == true ]]; then
     log "Dry run complete — skipping implementation."
@@ -71,27 +90,29 @@ $STATUS" 2>&1) || true
   log "Phase 3: Implementing next task..."
   RESULT=$(claude --dangerously-skip-permissions -p "/develop $FOCUS
 
-Game designer output (use for context on priorities):
-$DESIGN" 2>&1) || true
+Game designer priorities:
+$DESIGN_CTX" 2>&1) || true
   echo "$RESULT"
+  RESULT_CTX=$(truncate_context "$RESULT" 60)
 
-  # ── Phase 4: /perf ────────────────────────────────────
+  # ── Phase 4: /perf ──────────────────────────────────────
   log "Phase 4: Performance audit..."
   PERF=$(claude --dangerously-skip-permissions -p "/perf
 
-Development output (for context on what changed):
-$RESULT" 2>&1) || true
+What just changed:
+$RESULT_CTX" 2>&1) || true
   echo "$PERF"
+  PERF_CTX=$(truncate_context "$PERF" 40)
 
   # ── Phase 5: /test ──────────────────────────────────────
   log "Phase 5: Test coverage audit..."
   TEST=$(claude --dangerously-skip-permissions -p "/test recent
 
-Development output (for context on what was just built):
-$RESULT
+What was built:
+$RESULT_CTX
 
-Performance output (for context on what changed):
-$PERF" 2>&1) || true
+Perf changes:
+$PERF_CTX" 2>&1) || true
   echo "$TEST"
 
   log "Iteration $i complete."

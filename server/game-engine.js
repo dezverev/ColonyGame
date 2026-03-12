@@ -26,6 +26,16 @@ const PLANET_TYPES = {
   gasGiant:    { habitability: 0,  label: 'Gas Giant' },
 };
 
+// Planet type signature bonuses: additive per working district of matching type
+const PLANET_BONUSES = {
+  continental: { agriculture: { food: 1 } },
+  ocean:       { agriculture: { food: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+  tropical:    { agriculture: { food: 2 } },
+  arctic:      { mining: { minerals: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+  desert:      { mining: { minerals: 2 } },
+  arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
+};
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -339,6 +349,13 @@ class GameEngine {
       const districtMod = techMods.district[d.type] || 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
         production[resource] = (production[resource] || 0) + (amount * districtMod);
+      }
+      // Planet type signature bonuses (additive, after tech modifier)
+      const planetBonus = PLANET_BONUSES[colony.planet.type];
+      if (planetBonus && planetBonus[d.type]) {
+        for (const [resource, amount] of Object.entries(planetBonus[d.type])) {
+          production[resource] = (production[resource] || 0) + amount;
+        }
       }
       for (const [resource, amount] of Object.entries(def.consumes)) {
         consumption[resource] = (consumption[resource] || 0) + amount;
@@ -1182,4 +1199,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, generateGalaxy, assignStartingSystems };

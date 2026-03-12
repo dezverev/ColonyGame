@@ -231,6 +231,28 @@
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
+  // ── Planet type bonuses (client-side mirror for UI) ──
+  const PLANET_BONUSES = {
+    continental: { agriculture: { food: 1 } },
+    ocean:       { agriculture: { food: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+    tropical:    { agriculture: { food: 2 } },
+    arctic:      { mining: { minerals: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+    desert:      { mining: { minerals: 2 } },
+    arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
+  };
+
+  function _planetBonusLabel(planetType) {
+    const b = PLANET_BONUSES[planetType];
+    if (!b) return '';
+    const parts = [];
+    for (const [district, resources] of Object.entries(b)) {
+      for (const [res, amt] of Object.entries(resources)) {
+        parts.push(`+${amt} ${res.charAt(0).toUpperCase() + res.slice(1)}/${DISTRICT_UI[district] ? DISTRICT_UI[district].label : district}`);
+      }
+    }
+    return parts.join(', ');
+  }
+
   // ── Tech tree (client-side mirror for UI) ──
   const TECH_TREE_UI = {
     improved_power_plants: { track: 'physics', tier: 1, name: 'Improved Power Plants', desc: '+25% Generator output', cost: 150, requires: null },
@@ -404,10 +426,21 @@
         btn.classList.add('disabled');
       }
 
+      // Planet bonus for this district type on current colony
+      let bonusHtml = '';
+      if (myColony) {
+        const pb = PLANET_BONUSES[myColony.planet.type];
+        if (pb && pb[type]) {
+          const bonusParts = Object.entries(pb[type]).map(([r, a]) => `+${a} ${r.charAt(0).toUpperCase() + r.slice(1)}`);
+          bonusHtml = `<div class="build-option-bonus">${bonusParts.join(', ')} (planet)</div>`;
+        }
+      }
+
       btn.innerHTML =
         `<div class="build-option-swatch" style="background:${ui.color}"></div>` +
         `<div class="build-option-name">${ui.label}</div>` +
         `<div class="build-option-prod">${ui.produces}</div>` +
+        bonusHtml +
         `<div class="build-option-cost">${costParts.join(', ')}</div>`;
 
       btn.addEventListener('click', () => {
@@ -431,10 +464,22 @@
 
     const disabledTag = d.disabled ? ' <span style="color:#e74c3c;font-weight:bold">[DISABLED]</span>' : '';
     districtInfoTitle.innerHTML = ui.label + ' District' + disabledTag;
+    // Planet bonus for this district
+    let bonusRow = '';
+    const myColony = _getMyColony();
+    if (myColony) {
+      const pb = PLANET_BONUSES[myColony.planet.type];
+      if (pb && pb[d.type]) {
+        const bonusParts = Object.entries(pb[d.type]).map(([r, a]) => `+${a} ${r.charAt(0).toUpperCase() + r.slice(1)}`);
+        bonusRow = `<div class="info-row"><span class="info-label">Planet Bonus</span><span class="info-value" style="color:#f39c12">${bonusParts.join(', ')}</span></div>`;
+      }
+    }
+
     districtInfoBody.innerHTML =
       (d.disabled ? `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#e74c3c">Disabled (energy deficit)</span></div>` : '') +
       `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${ui.label}</span></div>` +
       (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:${d.disabled ? '#666' : '#2ecc71'}">${d.disabled ? '<s>' + ui.produces + '</s>' : ui.produces}</span></div>` : '') +
+      bonusRow +
       (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:${d.disabled ? '#666' : '#e74c3c'}">${d.disabled ? '<s>' + ui.consumes + '</s>' : ui.consumes}</span></div>` : '');
 
     // Show demolish button (hide for capital buildings if needed)
@@ -818,11 +863,13 @@
 
     // Planets table
     if (system.planets && system.planets.length > 0) {
-      html += '<table class="system-planet-table"><tr><th>#</th><th>Type</th><th>Size</th><th>Hab</th></tr>';
+      html += '<table class="system-planet-table"><tr><th>#</th><th>Type</th><th>Size</th><th>Hab</th><th>Bonus</th></tr>';
       for (const p of system.planets) {
         const habClass = p.habitability >= 60 ? 'hab-high' : p.habitability > 0 ? 'hab-med' : 'hab-none';
         const typeLabel = p.type.charAt(0).toUpperCase() + p.type.slice(1);
-        html += `<tr><td>${p.orbit}</td><td>${typeLabel}</td><td>${p.size}</td><td class="${habClass}">${p.habitability}%</td></tr>`;
+        const bonusLabel = _planetBonusLabel(p.type);
+        const bonusHtml = bonusLabel ? `<span class="planet-bonus-tag">${bonusLabel}</span>` : '—';
+        html += `<tr><td>${p.orbit}</td><td>${typeLabel}</td><td>${p.size}</td><td class="${habClass}">${p.habitability}%</td><td>${bonusHtml}</td></tr>`;
       }
       html += '</table>';
     }

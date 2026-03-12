@@ -260,6 +260,8 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .build-option-name { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.2rem; }
 .build-option-cost { font-size: 0.75rem; color: #aaa; font-family: monospace; }
 .build-option-prod { font-size: 0.75rem; color: #2ecc71; font-family: monospace; }
+.build-option-bonus { font-size: 0.7rem; color: #f39c12; font-family: monospace; }
+.planet-bonus-tag { color: #f39c12; font-size: 0.75rem; white-space: nowrap; }
 .build-option-swatch {
   width: 14px; height: 14px; border-radius: 3px; margin-bottom: 0.3rem; border: 1px solid rgba(255,255,255,0.2);
 }
