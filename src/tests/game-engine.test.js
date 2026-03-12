@@ -2321,3 +2321,261 @@ describe('GameEngine — Match Timer Edge Cases', () => {
     assert.strictEqual(engine._gameOver, false);
   });
 });
+
+// ── Galaxy–Colony Integration ──
+
+describe('GameEngine — Galaxy–Colony Integration', () => {
+  it('colony name is derived from starting system name', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const systemId = colony.systemId;
+    const system = engine.galaxy.systems[systemId];
+    assert.ok(colony.name.startsWith(system.name),
+      `Colony name "${colony.name}" should start with system name "${system.name}"`);
+    assert.ok(colony.name.endsWith('Colony'),
+      `Colony name "${colony.name}" should end with "Colony"`);
+  });
+
+  it('starting planet is marked colonized with correct owner in galaxy data', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10, galaxySeed: 42 });
+    for (const [playerId] of engine.playerStates) {
+      const colonyIds = engine._playerColonies.get(playerId);
+      const colony = engine.colonies.get(colonyIds[0]);
+      const system = engine.galaxy.systems[colony.systemId];
+      const colonizedPlanet = system.planets.find(p => p.colonized);
+      assert.ok(colonizedPlanet, `Player ${playerId}'s starting planet should be marked colonized`);
+      assert.strictEqual(colonizedPlanet.colonyOwner, playerId);
+      assert.strictEqual(colony.planet.type, colonizedPlanet.type);
+    }
+  });
+
+  it('getInitState strips surveyed hash from galaxy systems', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    for (const sys of initState.galaxy.systems) {
+      assert.ok(!('surveyed' in sys), `System ${sys.name} should not include surveyed hash in client payload`);
+    }
+  });
+
+  it('getInitState includes planet colonization data', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    const colony = [...engine.colonies.values()][0];
+    const system = initState.galaxy.systems.find(s => s.id === colony.systemId);
+    const colonizedPlanet = system.planets.find(p => p.colonized);
+    assert.ok(colonizedPlanet, 'Colonized planet should be visible in initState');
+    assert.strictEqual(colonizedPlanet.colonyOwner, 1);
+  });
+
+  it('getInitState includes starColor for each system', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    for (const sys of initState.galaxy.systems) {
+      assert.ok(typeof sys.starColor === 'string' && sys.starColor.startsWith('#'),
+        `System ${sys.name} should have a hex starColor, got "${sys.starColor}"`);
+    }
+  });
+
+  it('multiplayer starting colonies are in different systems with valid galaxy links', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10, galaxySeed: 42 });
+    const colonies = [...engine.colonies.values()];
+    const systemIds = colonies.map(c => c.systemId);
+    const uniqueSystems = new Set(systemIds);
+    assert.strictEqual(uniqueSystems.size, 4, 'Each player should start in a unique system');
+    for (const c of colonies) {
+      assert.ok(c.systemId >= 0 && c.systemId < engine.galaxy.systems.length,
+        `Colony systemId ${c.systemId} out of galaxy range`);
+      const sys = engine.galaxy.systems[c.systemId];
+      assert.strictEqual(sys.owner, c.ownerId,
+        `System ${sys.name} owner should match colony owner`);
+    }
+  });
+});
+
+// ── Command Validation Edge Cases ──
+
+describe('GameEngine — Command Validation', () => {
+  it('rejects buildDistrict with missing colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'buildDistrict', districtType: 'housing' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects buildDistrict with missing districtType', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects demolish with missing colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'demolish', districtId: 'e1' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects demolish with missing districtId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects setResearch with missing techId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects setResearch with non-string techId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 42 });
+    assert.ok(result.error);
+    assert.match(result.error, /invalid/i);
+  });
+
+  it('returns error for unknown command type', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'hackServer' });
+    assert.ok(result.error);
+    assert.match(result.error, /unknown/i);
+  });
+
+  it('rejects buildDistrict with non-existent colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: 'bogus', districtType: 'housing' });
+    assert.ok(result.error);
+    assert.match(result.error, /not found/i);
+  });
+
+  it('rejects setResearch for tech already being researched', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    assert.ok(result.error);
+    assert.match(result.error, /already/i);
+  });
+});
+
+// ── gameInit Integration (WebSocket) ──
+
+describe('Server Integration — Galaxy in gameInit', () => {
+  const WebSocket = require('ws');
+  const { startServer } = require('../../server/server');
+
+  function connectWs(port) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://localhost:${port}`);
+      ws._buffer = [];
+      ws._waiters = [];
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw);
+        const idx = ws._waiters.findIndex(w => w.pred(msg));
+        if (idx >= 0) {
+          const waiter = ws._waiters.splice(idx, 1)[0];
+          clearTimeout(waiter.timer);
+          waiter.resolve(msg);
+        } else {
+          ws._buffer.push(msg);
+        }
+      });
+      ws.on('open', () => resolve(ws));
+      ws.on('error', reject);
+    });
+  }
+
+  function waitForMessage(ws, predicate, timeout = 5000) {
+    const idx = ws._buffer.findIndex(predicate);
+    if (idx >= 0) return Promise.resolve(ws._buffer.splice(idx, 1)[0]);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        ws._waiters = ws._waiters.filter(w => w !== waiter);
+        reject(new Error('Timeout waiting for message'));
+      }, timeout);
+      const waiter = { pred: predicate, resolve, timer };
+      ws._waiters.push(waiter);
+    });
+  }
+
+  function send(ws, msg) { ws.send(JSON.stringify(msg)); }
+
+  it('gameInit includes galaxy data with systems and hyperlanes', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Galaxy Test', practiceMode: true });
+    await waitForMessage(ws, m => m.type === 'roomJoined');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+
+    assert.ok(init.galaxy, 'gameInit should include galaxy');
+    assert.ok(Array.isArray(init.galaxy.systems), 'galaxy should have systems array');
+    assert.ok(init.galaxy.systems.length > 0, 'galaxy should have at least 1 system');
+    assert.ok(Array.isArray(init.galaxy.hyperlanes), 'galaxy should have hyperlanes array');
+    assert.ok(init.galaxy.hyperlanes.length > 0, 'galaxy should have at least 1 hyperlane');
+    assert.ok(init.yourId, 'gameInit should include yourId');
+
+    // Verify system structure
+    const sys = init.galaxy.systems[0];
+    assert.ok(typeof sys.id === 'number');
+    assert.ok(typeof sys.name === 'string');
+    assert.ok(typeof sys.starType === 'string');
+    assert.ok(typeof sys.starColor === 'string');
+    assert.ok(Array.isArray(sys.planets));
+  });
+
+  it('gameInit galaxy systems do not include surveyed hash', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Survey Test', practiceMode: true });
+    await waitForMessage(ws, m => m.type === 'roomJoined');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+
+    for (const sys of init.galaxy.systems) {
+      assert.ok(!('surveyed' in sys),
+        `System ${sys.name} should not expose surveyed hash to clients`);
+    }
+  });
+
+  it('galaxySize room setting is passed through to game', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Size Test', practiceMode: true, galaxySize: 'medium' });
+    const joined = await waitForMessage(ws, m => m.type === 'roomJoined');
+    assert.strictEqual(joined.room.galaxySize, 'medium');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+    assert.strictEqual(init.galaxy.size, 'medium');
+    assert.ok(init.galaxy.systems.length >= 50,
+      `Medium galaxy should have >=50 systems, got ${init.galaxy.systems.length}`);
+  });
+});
