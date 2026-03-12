@@ -26,6 +26,58 @@ const PLANET_TYPES = {
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 
+// Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
+const TECH_TREE = {
+  improved_power_plants: {
+    track: 'physics', tier: 1,
+    name: 'Improved Power Plants',
+    description: '+25% Generator output',
+    cost: 150,
+    effect: { type: 'districtBonus', district: 'generator', multiplier: 1.25 },
+    requires: null,
+  },
+  frontier_medicine: {
+    track: 'society', tier: 1,
+    name: 'Frontier Medicine',
+    description: '+25% pop growth speed',
+    cost: 150,
+    effect: { type: 'growthBonus', multiplier: 0.75 },
+    requires: null,
+  },
+  improved_mining: {
+    track: 'engineering', tier: 1,
+    name: 'Improved Mining',
+    description: '+25% Mining output',
+    cost: 150,
+    effect: { type: 'districtBonus', district: 'mining', multiplier: 1.25 },
+    requires: null,
+  },
+  advanced_reactors: {
+    track: 'physics', tier: 2,
+    name: 'Advanced Reactors',
+    description: '+50% Generator output',
+    cost: 500,
+    effect: { type: 'districtBonus', district: 'generator', multiplier: 1.5 },
+    requires: 'improved_power_plants',
+  },
+  gene_crops: {
+    track: 'society', tier: 2,
+    name: 'Gene Crops',
+    description: '+50% Agriculture output',
+    cost: 500,
+    effect: { type: 'districtBonus', district: 'agriculture', multiplier: 1.5 },
+    requires: 'frontier_medicine',
+  },
+  deep_mining: {
+    track: 'engineering', tier: 2,
+    name: 'Deep Mining',
+    description: '+50% Mining output',
+    cost: 500,
+    effect: { type: 'districtBonus', district: 'mining', multiplier: 1.5 },
+    requires: 'improved_mining',
+  },
+};
+
 // Pop growth thresholds: food surplus -> ticks per new pop
 const GROWTH_BASE_TICKS = 400;       // 40 seconds — base growth rate
 const GROWTH_FAST_TICKS = 300;       // 30 seconds — food surplus > 5
@@ -77,6 +129,9 @@ class GameEngine {
           research: { physics: 0, society: 0, engineering: 0 },
           influence: 100,
         },
+        currentResearch: { physics: null, society: null, engineering: null },
+        researchProgress: {},
+        completedTechs: [],
       });
     }
   }
@@ -190,6 +245,10 @@ class GameEngine {
     const jobs = this._calcJobs(colony);
     const workingPops = Math.min(colony.pops, jobs);
 
+    // Get tech modifiers for production bonuses
+    const playerState = this.playerStates.get(colony.ownerId);
+    const techMods = this._getTechModifiers(playerState);
+
     // Assign pops to districts in order — each working district needs 1 pop
     let assignedPops = 0;
     for (const d of colony.districts) {
@@ -207,8 +266,9 @@ class GameEngine {
       if (assignedPops >= workingPops) break;
       assignedPops++;
 
+      const districtMod = techMods.district[d.type] || 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
-        production[resource] = (production[resource] || 0) + amount;
+        production[resource] = (production[resource] || 0) + (amount * districtMod);
       }
       for (const [resource, amount] of Object.entries(def.consumes)) {
         consumption[resource] = (consumption[resource] || 0) + amount;
@@ -328,6 +388,13 @@ class GameEngine {
         growthTarget = GROWTH_BASE_TICKS;
       }
 
+      // Apply growth tech modifier (e.g., Frontier Medicine reduces ticks needed)
+      const playerState = this.playerStates.get(colony.ownerId);
+      const techMods = this._getTechModifiers(playerState);
+      if (techMods.growth !== 1) {
+        growthTarget = Math.floor(growthTarget * techMods.growth);
+      }
+
       colony.growthProgress++;
       if (colony.growthProgress >= growthTarget) {
         colony.pops++;
@@ -351,6 +418,74 @@ class GameEngine {
             colonyName: colony.name,
             pops: colony.pops,
             housing: newHousing,
+          });
+        }
+      }
+    }
+  }
+
+  // Get district output multipliers from completed techs
+  _getTechModifiers(playerState) {
+    const modifiers = {}; // districtType -> multiplier
+    let growthMultiplier = 1;
+
+    if (!playerState || !playerState.completedTechs) return { district: modifiers, growth: growthMultiplier };
+
+    for (const techId of playerState.completedTechs) {
+      const tech = TECH_TREE[techId];
+      if (!tech) continue;
+
+      if (tech.effect.type === 'districtBonus') {
+        const current = modifiers[tech.effect.district] || 1;
+        // Use the highest multiplier (T2 supersedes T1 for same district)
+        if (tech.effect.multiplier > current) {
+          modifiers[tech.effect.district] = tech.effect.multiplier;
+        }
+      } else if (tech.effect.type === 'growthBonus') {
+        // Stack growth bonuses multiplicatively
+        growthMultiplier *= tech.effect.multiplier;
+      }
+    }
+
+    return { district: modifiers, growth: growthMultiplier };
+  }
+
+  // Process research each month — consume accumulated research toward active techs
+  _processResearch() {
+    for (const [playerId, state] of this.playerStates) {
+      if (!state.currentResearch) continue;
+
+      for (const track of ['physics', 'society', 'engineering']) {
+        const techId = state.currentResearch[track];
+        if (!techId) continue;
+
+        const tech = TECH_TREE[techId];
+        if (!tech) continue;
+
+        const available = state.resources.research[track];
+        if (available <= 0) continue;
+
+        // Consume research from stockpile toward tech progress
+        state.researchProgress[techId] = (state.researchProgress[techId] || 0) + available;
+        state.resources.research[track] = 0;
+
+        // Check completion
+        if (state.researchProgress[techId] >= tech.cost) {
+          state.completedTechs.push(techId);
+          state.currentResearch[track] = null;
+          delete state.researchProgress[techId];
+
+          // Invalidate production caches for all player colonies (modifiers changed)
+          const colonyIds = this._playerColonies.get(playerId) || [];
+          for (const cId of colonyIds) {
+            const colony = this.colonies.get(cId);
+            if (colony) this._invalidateColonyCache(colony);
+          }
+
+          this._emitEvent('researchComplete', playerId, {
+            techId,
+            techName: tech.name,
+            track,
           });
         }
       }
@@ -382,6 +517,7 @@ class GameEngine {
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
+      this._processResearch();
       this._processPopStarvation();
     }
 
@@ -505,6 +641,40 @@ class GameEngine {
         return { error: 'District not found' };
       }
 
+      case 'setResearch': {
+        const { techId } = cmd;
+        if (!techId) return { error: 'Missing techId' };
+        if (typeof techId !== 'string') return { error: 'Invalid techId' };
+
+        const tech = TECH_TREE[techId];
+        if (!tech) return { error: 'Unknown technology' };
+
+        const state = this.playerStates.get(playerId);
+        if (!state) return { error: 'Player not found' };
+
+        // Check if already completed
+        if (state.completedTechs.includes(techId)) {
+          return { error: 'Technology already researched' };
+        }
+
+        // Check prerequisites
+        if (tech.requires && !state.completedTechs.includes(tech.requires)) {
+          return { error: 'Prerequisite not met' };
+        }
+
+        // Check not already researching this tech
+        if (state.currentResearch[tech.track] === techId) {
+          return { error: 'Already researching this technology' };
+        }
+
+        // Set research — replaces any current research in this track (progress preserved)
+        state.currentResearch[tech.track] = techId;
+        this._dirty = true;
+        this._cachedState = null;
+        this._cachedStateJSON = null;
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -514,7 +684,11 @@ class GameEngine {
     if (this._cachedState) return this._cachedState;
     const playersArr = [];
     for (const p of this.playerStates.values()) {
-      playersArr.push({ id: p.id, name: p.name, color: p.color, resources: p.resources });
+      playersArr.push({
+        id: p.id, name: p.name, color: p.color, resources: p.resources,
+        currentResearch: p.currentResearch, researchProgress: p.researchProgress,
+        completedTechs: p.completedTechs,
+      });
     }
     const coloniesArr = [];
     for (const c of this.colonies.values()) {
@@ -539,8 +713,12 @@ class GameEngine {
     const player = this.playerStates.get(playerId);
     if (!player) return this.getState(); // fallback
 
-    // Own resources
-    const me = { id: player.id, name: player.name, color: player.color, resources: player.resources };
+    // Own resources + research state
+    const me = {
+      id: player.id, name: player.name, color: player.color, resources: player.resources,
+      currentResearch: player.currentResearch, researchProgress: player.researchProgress,
+      completedTechs: player.completedTechs,
+    };
 
     // Other players: name/color only (no resources — saves bandwidth, not needed by client)
     const others = [];
@@ -611,4 +789,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };

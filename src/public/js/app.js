@@ -146,7 +146,12 @@
         break;
 
       case 'gameEvent':
-        // Will be rendered by UI module in future sprints
+        if (msg.eventType === 'researchComplete') {
+          // Re-render research panel if open
+          if (researchPanel && !researchPanel.classList.contains('hidden')) {
+            _renderResearchPanel();
+          }
+        }
         break;
     }
   }
@@ -181,6 +186,16 @@
     agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
     industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+3 Alloys', consumes: '-3 Energy' },
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
+  };
+
+  // ── Tech tree (client-side mirror for UI) ──
+  const TECH_TREE_UI = {
+    improved_power_plants: { track: 'physics', tier: 1, name: 'Improved Power Plants', desc: '+25% Generator output', cost: 150, requires: null },
+    frontier_medicine:     { track: 'society', tier: 1, name: 'Frontier Medicine', desc: '+25% pop growth speed', cost: 150, requires: null },
+    improved_mining:       { track: 'engineering', tier: 1, name: 'Improved Mining', desc: '+25% Mining output', cost: 150, requires: null },
+    advanced_reactors:     { track: 'physics', tier: 2, name: 'Advanced Reactors', desc: '+50% Generator output', cost: 500, requires: 'improved_power_plants' },
+    gene_crops:            { track: 'society', tier: 2, name: 'Gene Crops', desc: '+50% Agriculture output', cost: 500, requires: 'frontier_medicine' },
+    deep_mining:           { track: 'engineering', tier: 2, name: 'Deep Mining', desc: '+50% Mining output', cost: 500, requires: 'improved_mining' },
   };
 
   // ── HUD elements ──
@@ -220,6 +235,11 @@
   const districtInfoBody = document.getElementById('district-info-body');
   const districtInfoClose = document.getElementById('district-info-close');
   const districtDemolishBtn = document.getElementById('district-demolish-btn');
+
+  // ── Research panel refs ──
+  const researchPanel = document.getElementById('research-panel');
+  const researchTracks = document.getElementById('research-tracks');
+  const researchPanelClose = document.getElementById('research-panel-close');
 
   let _selectedTileData = null;
   let _uiInterval = null;
@@ -317,6 +337,84 @@
     districtInfo.classList.remove('hidden');
   }
 
+  // ── Research panel ──
+  function _toggleResearchPanel() {
+    if (researchPanel.classList.contains('hidden')) {
+      _renderResearchPanel();
+      researchPanel.classList.remove('hidden');
+    } else {
+      researchPanel.classList.add('hidden');
+    }
+  }
+
+  function _renderResearchPanel() {
+    const player = _getMyPlayer();
+    if (!player) return;
+
+    const completed = player.completedTechs || [];
+    const current = player.currentResearch || {};
+    const progress = player.researchProgress || {};
+
+    researchTracks.innerHTML = '';
+
+    for (const track of ['physics', 'society', 'engineering']) {
+      const trackDiv = document.createElement('div');
+      trackDiv.className = 'research-track';
+
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'research-track-title ' + track;
+      titleDiv.textContent = track.charAt(0).toUpperCase() + track.slice(1);
+      trackDiv.appendChild(titleDiv);
+
+      // Get techs for this track sorted by tier
+      const techs = Object.entries(TECH_TREE_UI)
+        .filter(([, t]) => t.track === track)
+        .sort((a, b) => a[1].tier - b[1].tier);
+
+      for (const [techId, tech] of techs) {
+        const card = document.createElement('div');
+        card.className = 'tech-card';
+
+        const isCompleted = completed.includes(techId);
+        const isResearching = current[track] === techId;
+        const isLocked = tech.requires && !completed.includes(tech.requires);
+
+        if (isCompleted) card.classList.add('completed');
+        else if (isResearching) card.classList.add('researching');
+        else if (isLocked) card.classList.add('locked');
+
+        let statusHtml = '';
+        if (isCompleted) {
+          statusHtml = '<div class="tech-card-status completed">COMPLETED</div>';
+        } else if (isResearching) {
+          const prog = progress[techId] || 0;
+          const pct = Math.min(100, (prog / tech.cost) * 100);
+          statusHtml =
+            '<div class="tech-card-status researching">RESEARCHING</div>' +
+            `<div class="tech-progress"><div class="tech-progress-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+        }
+
+        card.innerHTML =
+          `<div class="tech-card-name">${tech.name}</div>` +
+          `<div class="tech-card-desc">${tech.desc}</div>` +
+          `<div class="tech-card-cost">Cost: ${tech.cost} ${track}</div>` +
+          statusHtml;
+
+        if (!isCompleted && !isLocked && !isResearching) {
+          card.addEventListener('click', () => {
+            send({ type: 'setResearch', techId });
+            // Optimistic: re-render after short delay
+            setTimeout(() => _renderResearchPanel(), 100);
+          });
+        }
+
+        trackDiv.appendChild(card);
+      }
+
+      researchTracks.appendChild(trackDiv);
+    }
+  }
+
   function _getMyPlayer() {
     if (!gameState) return null;
     return gameState.players.find(p => p.id === gameState.yourId) || null;
@@ -341,10 +439,16 @@
       resBar.minerals.textContent = Math.floor(r.minerals);
       resBar.food.textContent = Math.floor(r.food);
       resBar.alloys.textContent = Math.floor(r.alloys);
-      // Research: sum of 3 types
-      const totalResearch = Math.floor((r.physics || 0) + (r.society || 0) + (r.engineering || 0));
+      // Research: sum of 3 types (stockpile)
+      const rr = r.research || {};
+      const totalResearch = Math.floor((rr.physics || 0) + (rr.society || 0) + (rr.engineering || 0));
       resBar.research.textContent = totalResearch;
       resBar.influence.textContent = Math.floor(r.influence);
+
+      // Update research panel if open
+      if (researchPanel && !researchPanel.classList.contains('hidden')) {
+        _renderResearchPanel();
+      }
     }
 
     // Net production from colony
@@ -471,6 +575,21 @@
   if (districtInfoClose) districtInfoClose.addEventListener('click', () => {
     _hideAllPanels();
     if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+  });
+  if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
+    researchPanel.classList.add('hidden');
+  });
+
+  // R key toggles research panel (only during game)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (!gameState) return;
+      _toggleResearchPanel();
+    }
+    if (e.key === 'Escape' && researchPanel && !researchPanel.classList.contains('hidden')) {
+      researchPanel.classList.add('hidden');
+    }
   });
 
   // ── Button wiring ──

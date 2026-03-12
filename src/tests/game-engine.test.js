@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS } = require('../../server/game-engine');
 
 function makeRoom(playerCount = 2) {
   const players = new Map();
@@ -1256,5 +1256,217 @@ describe('GameEngine — Per-Player State Filtering', () => {
     // Each player's colonies should only be their own
     assert.ok(received.get(1).colonies.every(c => c.ownerId === 1));
     assert.ok(received.get(2).colonies.every(c => c.ownerId === 2));
+  });
+});
+
+describe('GameEngine — Mini Tech Tree', () => {
+  it('TECH_TREE has 6 techs across 3 tracks and 2 tiers', () => {
+    const techs = Object.entries(TECH_TREE);
+    assert.strictEqual(techs.length, 6);
+    for (const track of ['physics', 'society', 'engineering']) {
+      const trackTechs = techs.filter(([, t]) => t.track === track);
+      assert.strictEqual(trackTechs.length, 2, `${track} should have 2 techs`);
+      assert.ok(trackTechs.some(([, t]) => t.tier === 1), `${track} missing T1`);
+      assert.ok(trackTechs.some(([, t]) => t.tier === 2), `${track} missing T2`);
+    }
+  });
+
+  it('T2 techs require T1 in the same track', () => {
+    for (const [, tech] of Object.entries(TECH_TREE)) {
+      if (tech.tier === 2) {
+        assert.ok(tech.requires, `T2 tech ${tech.name} must have a prerequisite`);
+        const prereq = TECH_TREE[tech.requires];
+        assert.ok(prereq, `Prerequisite ${tech.requires} must exist`);
+        assert.strictEqual(prereq.track, tech.track, 'Prerequisite must be same track');
+        assert.strictEqual(prereq.tier, 1, 'Prerequisite must be T1');
+      }
+    }
+  });
+
+  it('player starts with empty research state', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    const player = state.players[0];
+    assert.deepStrictEqual(player.currentResearch, { physics: null, society: null, engineering: null });
+    assert.deepStrictEqual(player.researchProgress, {});
+    assert.deepStrictEqual(player.completedTechs, []);
+  });
+
+  it('setResearch assigns tech to correct track', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    assert.ok(result.ok);
+    assert.strictEqual(engine.playerStates.get(1).currentResearch.physics, 'improved_power_plants');
+  });
+
+  it('setResearch rejects unknown tech', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'warp_drive' });
+    assert.ok(result.error);
+  });
+
+  it('setResearch rejects T2 without T1 completed', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'advanced_reactors' });
+    assert.ok(result.error);
+    assert.ok(result.error.includes('Prerequisite'));
+  });
+
+  it('setResearch allows T2 after T1 completed', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).completedTechs.push('improved_power_plants');
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'advanced_reactors' });
+    assert.ok(result.ok);
+  });
+
+  it('setResearch rejects already completed tech', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).completedTechs.push('improved_power_plants');
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    assert.ok(result.error);
+    assert.ok(result.error.includes('already'));
+  });
+
+  it('research progress accumulates from monthly research production', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Add a research district for physics production
+    const colony = Array.from(engine.colonies.values())[0];
+    engine._addBuiltDistrict(colony, 'research');
+    engine._invalidateColonyCache(colony);
+
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+
+    // Run one month
+    for (let i = 0; i < MONTH_TICKS; i++) engine.tick();
+
+    // Research district produces 3 physics/month + unemployed pops produce some too
+    const progress = engine.playerStates.get(1).researchProgress['improved_power_plants'];
+    assert.ok(progress > 0, 'Research progress should be positive');
+    // Physics stockpile should be consumed (set to 0)
+    assert.strictEqual(engine.playerStates.get(1).resources.research.physics, 0);
+  });
+
+  it('tech completes when progress reaches cost', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+
+    // Give enough research to complete in one month
+    engine.playerStates.get(1).resources.research.physics = 200;
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    // Process one month
+    for (let i = 0; i < MONTH_TICKS; i++) engine.tick();
+
+    assert.ok(engine.playerStates.get(1).completedTechs.includes('improved_power_plants'));
+    assert.strictEqual(engine.playerStates.get(1).currentResearch.physics, null);
+
+    const rcEvents = collected.filter(e => e.eventType === 'researchComplete');
+    assert.strictEqual(rcEvents.length, 1);
+    assert.strictEqual(rcEvents[0].techId, 'improved_power_plants');
+    assert.strictEqual(rcEvents[0].track, 'physics');
+  });
+
+  it('Improved Power Plants applies +25% Generator output', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Before tech: generator produces 6 energy
+    const before = engine._calcProduction(colony);
+    assert.strictEqual(before.production.energy, 6);
+
+    // Complete tech
+    engine.playerStates.get(1).completedTechs.push('improved_power_plants');
+    engine._invalidateColonyCache(colony);
+
+    const after = engine._calcProduction(colony);
+    assert.strictEqual(after.production.energy, 7.5); // 6 * 1.25
+  });
+
+  it('Improved Mining applies +25% Mining output', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    engine.playerStates.get(1).completedTechs.push('improved_mining');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    assert.strictEqual(prod.production.minerals, 7.5); // 6 * 1.25
+  });
+
+  it('T2 supersedes T1 for same district type (highest multiplier wins)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    engine.playerStates.get(1).completedTechs.push('improved_power_plants', 'advanced_reactors');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Should use 1.5x (T2), not 1.25x (T1)
+    assert.strictEqual(prod.production.energy, 9); // 6 * 1.5
+  });
+
+  it('Frontier Medicine reduces pop growth time by 25%', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    colony.pops = 8;
+    colony.growthProgress = 0;
+    engine._invalidateColonyCache(colony);
+
+    // Without tech: base growth takes 400 ticks (food surplus = 4)
+    // With Frontier Medicine: 400 * 0.75 = 300 ticks
+    engine.playerStates.get(1).completedTechs.push('frontier_medicine');
+    engine._invalidateColonyCache(colony);
+
+    for (let i = 0; i < 299; i++) engine.tick();
+    assert.strictEqual(colony.pops, 8, 'Should not grow before 300 ticks');
+
+    engine.tick(); // tick 300
+    assert.strictEqual(colony.pops, 9, 'Should grow at 300 ticks with Frontier Medicine');
+  });
+
+  it('can research all 3 tracks simultaneously', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'frontier_medicine' });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_mining' });
+
+    const cr = engine.playerStates.get(1).currentResearch;
+    assert.strictEqual(cr.physics, 'improved_power_plants');
+    assert.strictEqual(cr.society, 'frontier_medicine');
+    assert.strictEqual(cr.engineering, 'improved_mining');
+  });
+
+  it('research state included in getState serialization', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    engine.playerStates.get(1).completedTechs.push('improved_mining');
+
+    const state = engine.getState();
+    const player = state.players[0];
+    assert.strictEqual(player.currentResearch.physics, 'improved_power_plants');
+    assert.ok(player.completedTechs.includes('improved_mining'));
+  });
+
+  it('research state included in per-player state', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+
+    const state = engine.getPlayerState(1);
+    const me = state.players.find(p => p.id === 1);
+    assert.strictEqual(me.currentResearch.physics, 'improved_power_plants');
+  });
+
+  it('Gene Crops applies +50% Agriculture output', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    engine.playerStates.get(1).completedTechs.push('frontier_medicine', 'gene_crops');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 2 agriculture districts, each producing 6 * 1.5 = 9 food
+    assert.strictEqual(prod.production.food, 18); // 2 * 9
   });
 });

@@ -203,7 +203,8 @@ function startServer(options = {}) {
       }
 
       case 'buildDistrict':
-      case 'demolish': {
+      case 'demolish':
+      case 'setResearch': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);

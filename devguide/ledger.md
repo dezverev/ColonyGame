@@ -525,3 +525,45 @@ Each entry records an iteration of automated development.
 - 2Hz UI refresh prevents DOM thrashing while keeping resource display responsive — Three.js renders independently at 60fps
 
 **Next:** Energy deficit consequences (auto-disable districts when energy negative), or mini tech tree for research sink
+
+---
+
+## Entry 17 — 2026-03-11 — Mini Tech Tree (Research Sink)
+
+**Phase:** 2 (Colony Management) — early deliverable pulled forward
+**Status:** Complete
+
+**What was built:**
+- 2-tier, 3-track tech tree: Physics (Generator bonuses), Society (growth + agriculture), Engineering (Mining bonuses)
+- T1 techs cost 150 research, T2 techs cost 500 research (tuned for 20-minute matches)
+- Research processing: monthly cycle consumes accumulated research stockpile toward active tech
+- Tech modifiers apply to `_calcProduction()` — district output multiplied by highest completed tech bonus
+- Frontier Medicine growth modifier applies to `_processPopGrowth()` — reduces ticks needed by 25%
+- T2 supersedes T1 for same district type (uses highest multiplier, not stacking)
+- `setResearch` command handler with prerequisite, completion, and duplicate validation
+- `researchComplete` event emitted on tech completion with invalidation of all player colony caches
+- Research state (currentResearch, researchProgress, completedTechs) serialized in player state
+- Client research panel: toggle with R key, shows 3 tracks side-by-side with T1/T2 cards
+- Cards show status (available/researching/completed/locked), progress bars, costs
+- Click to start researching — panel auto-refreshes on 2Hz HUD cycle and on researchComplete event
+
+**Files changed:**
+- `server/game-engine.js` — TECH_TREE constant, research state in playerStates, _getTechModifiers, _processResearch, tech modifiers in _calcProduction/_processPopGrowth, setResearch command, serialization
+- `server/server.js` — setResearch command routing
+- `src/public/js/app.js` — TECH_TREE_UI data, research panel DOM refs, _toggleResearchPanel, _renderResearchPanel, R key handler, HUD refresh integration
+- `src/public/index.html` — research panel HTML
+- `src/public/css/style.css` — research panel, track, tech card, progress bar styles
+- `src/tests/game-engine.test.js` — 18 new tech tree tests
+- `devguide/design.md` — marked mini tech tree + research cost adjustment tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 138 total (18 new: tech tree definitions, setResearch validation, research progress, tech completion, production modifiers for all 6 techs, growth modifier, simultaneous tracks, serialization). All passing.
+
+**Key decisions:**
+- Used adjusted research costs (150/500) instead of original spec (500/1000) for better 20-minute match pacing
+- T2 supersedes T1 rather than stacking — prevents overpowered 1.875x multiplier, keeps balance clean
+- Research is consumed from monthly stockpile, not per-tick — matches the monthly economic cycle pattern
+- Growth modifier uses target tick reduction (×0.75) rather than progress acceleration — simpler implementation
+- Research panel centered as overlay rather than permanent side panel — avoids cluttering the colony view
+
+**Next:** Energy deficit consequences (auto-disable districts when energy negative)
