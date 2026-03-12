@@ -35,6 +35,10 @@
   const _mouse = typeof THREE !== 'undefined' ? new THREE.Vector2() : null;
   let _playerColorMap = null; // playerId -> color string, rebuilt per ownership update
 
+  // Hover throttle — limit raycasting to ~30Hz (every 33ms) instead of every mousemove
+  let _lastHoverTime = 0;
+  const _HOVER_INTERVAL = 33; // ms
+
   // Shared materials/geometries
   const _matCache = {};
   const _geoCache = {};
@@ -371,6 +375,11 @@
       if (hoverLabelEl) hoverLabelEl.style.display = 'none';
       return;
     }
+
+    // Throttle raycasting to ~30Hz — avoid expensive intersect on every mousemove
+    const now = performance.now();
+    if (now - _lastHoverTime < _HOVER_INTERVAL) return;
+    _lastHoverTime = now;
 
     const rect = renderer.domElement.getBoundingClientRect();
     _mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
