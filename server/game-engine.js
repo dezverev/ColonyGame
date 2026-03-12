@@ -1,5 +1,28 @@
 const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#ecf0f1'];
 
+const UNIT_DEFS = {
+  worker: {
+    hp: 30, atk: 3, armor: 0, speed: 2.0, range: 1, cooldown: 1.5,
+    cost: { gold: 50, wood: 20, stone: 0 }, supplyCost: 1,
+    bonusVs: { soldier: 0.5, archer: 0.5, cavalry: 0.5 },
+  },
+  soldier: {
+    hp: 60, atk: 10, armor: 2, speed: 1.5, range: 1, cooldown: 1.0,
+    cost: { gold: 60, wood: 20, stone: 0 }, supplyCost: 1,
+    bonusVs: { archer: 1.5 },
+  },
+  archer: {
+    hp: 40, atk: 8, armor: 0, speed: 1.8, range: 5, cooldown: 1.2,
+    cost: { gold: 40, wood: 50, stone: 0 }, supplyCost: 1,
+    bonusVs: { cavalry: 1.5 },
+  },
+  cavalry: {
+    hp: 70, atk: 12, armor: 1, speed: 3.5, range: 1, cooldown: 1.3,
+    cost: { gold: 80, wood: 30, stone: 0 }, supplyCost: 2,
+    bonusVs: { soldier: 1.5 },
+  },
+};
+
 class GameEngine {
   constructor(room, options = {}) {
     this.room = room;
@@ -59,9 +82,14 @@ class GameEngine {
 
   _createUnit(ownerId, type, x, y) {
     const id = this._nextId();
-    const defs = { worker: { hp: 30, speed: 2, atk: 3 }, soldier: { hp: 60, speed: 1.5, atk: 10 }, archer: { hp: 40, speed: 1.8, atk: 8 } };
-    const def = defs[type] || defs.worker;
-    const unit = { id, ownerId, type, x, y, hp: def.hp, maxHp: def.hp, speed: def.speed, atk: def.atk, target: null, state: 'idle' };
+    const def = UNIT_DEFS[type] || UNIT_DEFS.worker;
+    const unit = {
+      id, ownerId, type, x, y,
+      hp: def.hp, maxHp: def.hp,
+      atk: def.atk, armor: def.armor, speed: def.speed,
+      range: def.range, cooldown: def.cooldown,
+      target: null, state: 'idle',
+    };
     this.units.set(id, unit);
     return unit;
   }
@@ -148,4 +176,11 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine };
+function calcDamage(attackerType, defenderType) {
+  const aDef = UNIT_DEFS[attackerType] || UNIT_DEFS.worker;
+  const dDef = UNIT_DEFS[defenderType] || UNIT_DEFS.worker;
+  const bonus = (aDef.bonusVs && aDef.bonusVs[defenderType]) || 1.0;
+  return Math.max(1, Math.round((aDef.atk * bonus) - dDef.armor));
+}
+
+module.exports = { GameEngine, UNIT_DEFS, calcDamage };
