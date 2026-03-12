@@ -190,6 +190,24 @@ describe('GameEngine — Demolish', () => {
     assert.ok(result.error);
     assert.match(result.error, /not found/i);
   });
+
+  it('cancels a build queue item with 50% resource refund', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    // Build a generator (100 minerals)
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    const afterBuild = engine.getState();
+    const mineralsBefore = afterBuild.players[0].resources.minerals;
+    const queueItem = afterBuild.colonies[0].buildQueue[0];
+    assert.ok(queueItem, 'queue item should exist');
+    // Cancel it
+    const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id, districtId: queueItem.id });
+    assert.strictEqual(result.ok, true);
+    const afterCancel = engine.getState();
+    assert.strictEqual(afterCancel.colonies[0].buildQueue.length, 0);
+    // Should get 50% refund (50 minerals)
+    assert.strictEqual(afterCancel.players[0].resources.minerals, mineralsBefore + 50);
+  });
 });
 
 describe('GameEngine — Construction Processing', () => {
@@ -418,6 +436,26 @@ describe('GameEngine — State Serialization', () => {
     const colony = state.colonies[0];
     assert.strictEqual(colony.housing, 10); // base housing from capital (no housing districts)
     assert.strictEqual(colony.jobs, 4); // 4 working districts (gen, mining, 2x agri)
+  });
+
+  it('getState includes growth data (progress, target, status)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    const colony = state.colonies[0];
+    assert.strictEqual(colony.growthProgress, 0);
+    assert.strictEqual(colony.growthTarget, GROWTH_BASE_TICKS); // food surplus = 4 (base rate)
+    assert.strictEqual(colony.growthStatus, 'slow'); // food surplus 4 <= 5 = slow
+  });
+
+  it('getState shows housing_full growth status when pops at cap', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Run enough ticks for pops to fill housing (8 pops → 10 housing)
+    for (let i = 0; i < GROWTH_BASE_TICKS * 3; i++) engine.tick();
+    const state = engine.getState();
+    const colony = state.colonies[0];
+    assert.strictEqual(colony.pops, 10); // should have hit housing cap
+    assert.strictEqual(colony.growthStatus, 'housing_full');
+    assert.strictEqual(colony.growthTarget, 0);
   });
 });
 

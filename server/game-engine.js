@@ -474,12 +474,33 @@ class GameEngine {
         if (!colony) return { error: 'Colony not found' };
         if (colony.ownerId !== playerId) return { error: 'Not your colony' };
 
+        // Check built districts first
         const idx = colony.districts.findIndex(d => d.id === districtId);
-        if (idx === -1) return { error: 'District not found' };
+        if (idx !== -1) {
+          colony.districts.splice(idx, 1);
+          this._invalidateColonyCache(colony);
+          return { ok: true };
+        }
 
-        colony.districts.splice(idx, 1);
-        this._invalidateColonyCache(colony);
-        return { ok: true };
+        // Check build queue — cancel with 50% resource refund
+        const qIdx = colony.buildQueue.findIndex(q => q.id === districtId);
+        if (qIdx !== -1) {
+          const qItem = colony.buildQueue[qIdx];
+          const def = DISTRICT_DEFS[qItem.type];
+          if (def) {
+            const player = this.playerStates.get(playerId);
+            for (const [resource, amount] of Object.entries(def.cost)) {
+              player.resources[resource] += Math.floor(amount / 2);
+            }
+          }
+          colony.buildQueue.splice(qIdx, 1);
+          this._dirty = true;
+          this._cachedState = null;
+          this._cachedStateJSON = null;
+          return { ok: true };
+        }
+
+        return { error: 'District not found' };
       }
 
       default:
@@ -500,6 +521,24 @@ class GameEngine {
       for (const q of c.buildQueue) {
         queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
       }
+      // Calculate growth state for UI
+      const housing = this._calcHousing(c);
+      const foodSurplus = production.food - (consumption.food || 0);
+      let growthTarget = 0;
+      let growthStatus = 'none';
+      if (foodSurplus <= 0) {
+        growthStatus = foodSurplus < 0 ? 'starving' : 'stalled';
+      } else if (c.pops >= housing) {
+        growthStatus = 'housing_full';
+      } else {
+        if (foodSurplus > 10) growthTarget = GROWTH_FASTEST_TICKS;
+        else if (foodSurplus > 5) growthTarget = GROWTH_FAST_TICKS;
+        else growthTarget = GROWTH_BASE_TICKS;
+        if (foodSurplus > 10) growthStatus = 'rapid';
+        else if (foodSurplus > 5) growthStatus = 'fast';
+        else growthStatus = 'slow';
+      }
+
       coloniesArr.push({
         id: c.id,
         ownerId: c.ownerId,
@@ -508,8 +547,11 @@ class GameEngine {
         districts: c.districts,
         buildQueue: queueArr,
         pops: c.pops,
-        housing: this._calcHousing(c),
+        housing,
         jobs: this._calcJobs(c),
+        growthProgress: c.growthProgress,
+        growthTarget,
+        growthStatus,
         netProduction: {
           energy: production.energy - (consumption.energy || 0),
           minerals: production.minerals - (consumption.minerals || 0),

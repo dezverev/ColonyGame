@@ -126,6 +126,10 @@
           const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
           if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
         }
+        // Start 2Hz HUD refresh
+        if (_uiInterval) clearInterval(_uiInterval);
+        _uiInterval = setInterval(_updateHUD, 500);
+        _updateHUD();
         break;
 
       case 'gameState':
@@ -179,6 +183,34 @@
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
+  // ── HUD elements ──
+  const resBar = {
+    energy: document.getElementById('res-energy'),
+    energyNet: document.getElementById('res-energy-net'),
+    minerals: document.getElementById('res-minerals'),
+    mineralsNet: document.getElementById('res-minerals-net'),
+    food: document.getElementById('res-food'),
+    foodNet: document.getElementById('res-food-net'),
+    alloys: document.getElementById('res-alloys'),
+    alloysNet: document.getElementById('res-alloys-net'),
+    research: document.getElementById('res-research'),
+    researchNet: document.getElementById('res-research-net'),
+    influence: document.getElementById('res-influence'),
+  };
+  const statusMonth = document.getElementById('status-month');
+  const statusPops = document.getElementById('status-pops');
+  const statusGrowth = document.getElementById('status-growth');
+  const growthBarFill = document.getElementById('growth-bar-fill');
+  const colonyPanelTitle = document.getElementById('colony-panel-title');
+  const cpPlanet = document.getElementById('cp-planet');
+  const cpDistricts = document.getElementById('cp-districts');
+  const cpWorking = document.getElementById('cp-working');
+  const cpIdle = document.getElementById('cp-idle');
+  const cpHousing = document.getElementById('cp-housing');
+  const colonyQueueHeader = document.getElementById('colony-queue-header');
+  const colonyQueueList = document.getElementById('colony-queue-list');
+  const buildMenuResources = document.getElementById('build-menu-resources');
+
   // ── Tile selection UI ──
   const buildMenu = document.getElementById('build-menu');
   const buildMenuOptions = document.getElementById('build-menu-options');
@@ -190,6 +222,7 @@
   const districtDemolishBtn = document.getElementById('district-demolish-btn');
 
   let _selectedTileData = null;
+  let _uiInterval = null;
 
   function _onTileSelect(tileData) {
     _hideAllPanels();
@@ -212,6 +245,14 @@
   function _showBuildMenu(tileData) {
     buildMenuOptions.innerHTML = '';
     const myPlayer = _getMyPlayer();
+
+    // Resource header in build menu
+    if (myPlayer && buildMenuResources) {
+      const r = myPlayer.resources;
+      buildMenuResources.innerHTML =
+        `<span style="color:#95a5a6">⛏ ${Math.floor(r.minerals)}</span>` +
+        `<span style="color:#f1c40f">⚡ ${Math.floor(r.energy)}</span>`;
+    }
     const myColony = _getMyColony();
     const slotsUsed = myColony ? myColony.districts.length + myColony.buildQueue.length : 0;
     const slotsFull = myColony ? slotsUsed >= myColony.planet.size : true;
@@ -284,6 +325,142 @@
   function _getMyColony() {
     if (!gameState) return null;
     return gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
+  // ── HUD update (throttled to 2Hz) ──
+
+  function _updateHUD() {
+    if (!gameState) return;
+    const player = _getMyPlayer();
+    const colony = _getMyColony();
+
+    // Resource bar
+    if (player) {
+      const r = player.resources;
+      resBar.energy.textContent = Math.floor(r.energy);
+      resBar.minerals.textContent = Math.floor(r.minerals);
+      resBar.food.textContent = Math.floor(r.food);
+      resBar.alloys.textContent = Math.floor(r.alloys);
+      // Research: sum of 3 types
+      const totalResearch = Math.floor((r.physics || 0) + (r.society || 0) + (r.engineering || 0));
+      resBar.research.textContent = totalResearch;
+      resBar.influence.textContent = Math.floor(r.influence);
+    }
+
+    // Net production from colony
+    if (colony && colony.netProduction) {
+      const np = colony.netProduction;
+      _setNet(resBar.energyNet, np.energy);
+      _setNet(resBar.mineralsNet, np.minerals);
+      _setNet(resBar.foodNet, np.food);
+      _setNet(resBar.alloysNet, np.alloys);
+      const totalResNet = (np.physics || 0) + (np.society || 0) + (np.engineering || 0);
+      _setNet(resBar.researchNet, totalResNet);
+    }
+
+    // Status bar
+    const month = Math.floor((gameState.tick || 0) / 100);
+    statusMonth.textContent = 'Month ' + month;
+
+    if (colony) {
+      statusPops.textContent = 'Pop: ' + colony.pops + '/' + colony.housing;
+      // Housing warning
+      if (colony.pops >= colony.housing) {
+        statusPops.style.color = '#e74c3c';
+      } else if (colony.pops >= colony.housing - 2) {
+        statusPops.style.color = '#f1c40f';
+      } else {
+        statusPops.style.color = '';
+      }
+
+      // Growth indicator
+      const growthLabels = {
+        slow: 'Slow', fast: 'Fast', rapid: 'Rapid',
+        starving: 'Starving', stalled: 'Stalled',
+        housing_full: 'Housing Full', none: '—',
+      };
+      const growthColors = {
+        slow: '#2ecc71', fast: '#27ae60', rapid: '#00ff88',
+        starving: '#e74c3c', stalled: '#f1c40f',
+        housing_full: '#e67e22', none: '#888',
+      };
+      const gs = colony.growthStatus || 'none';
+      statusGrowth.textContent = 'Growth: ' + (growthLabels[gs] || '—');
+      statusGrowth.style.color = growthColors[gs] || '#888';
+
+      // Growth progress bar
+      if (colony.growthTarget > 0 && colony.growthProgress !== undefined) {
+        const pct = Math.min(100, (colony.growthProgress / colony.growthTarget) * 100);
+        growthBarFill.style.width = pct + '%';
+        growthBarFill.style.background = growthColors[gs] || '#2ecc71';
+      } else {
+        growthBarFill.style.width = '0%';
+      }
+
+      // Colony info panel
+      colonyPanelTitle.textContent = colony.name;
+      cpPlanet.textContent = (colony.planet.type || 'Unknown') + ' (Size ' + colony.planet.size + ')';
+      const totalDistricts = colony.districts.length + colony.buildQueue.length;
+      cpDistricts.textContent = totalDistricts + '/' + colony.planet.size;
+      const working = Math.min(colony.pops, colony.jobs);
+      const idle = Math.max(0, colony.pops - colony.jobs);
+      cpWorking.textContent = working;
+      cpIdle.textContent = idle;
+      cpIdle.style.color = idle > 0 ? '#f1c40f' : '';
+      cpHousing.textContent = colony.pops + '/' + colony.housing;
+      cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
+
+      // Build queue
+      if (colony.buildQueue.length > 0) {
+        colonyQueueHeader.classList.remove('hidden');
+        colonyQueueList.innerHTML = '';
+        for (const q of colony.buildQueue) {
+          const ui = DISTRICT_UI[q.type] || {};
+          const def = DISTRICT_UI[q.type];
+          const totalTicks = def ? _getBuildTime(q.type) : 300;
+          const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
+          const secLeft = (q.ticksRemaining / 10).toFixed(0);
+
+          const div = document.createElement('div');
+          div.className = 'queue-item';
+          div.innerHTML =
+            `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
+            `<span class="queue-item-name">${ui.label || q.type}</span>` +
+            `<span class="queue-item-time">${secLeft}s</span>` +
+            `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+            `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+
+          const cancelBtn = div.querySelector('.queue-item-cancel');
+          cancelBtn.addEventListener('click', () => {
+            send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
+          });
+
+          colonyQueueList.appendChild(div);
+        }
+      } else {
+        colonyQueueHeader.classList.add('hidden');
+        colonyQueueList.innerHTML = '';
+      }
+    }
+  }
+
+  function _setNet(el, value) {
+    if (!el) return;
+    if (value > 0) {
+      el.textContent = '+' + value;
+      el.className = 'res-net positive';
+    } else if (value < 0) {
+      el.textContent = '' + value;
+      el.className = 'res-net negative';
+    } else {
+      el.textContent = '0';
+      el.className = 'res-net';
+    }
+  }
+
+  function _getBuildTime(type) {
+    const times = { housing: 200, generator: 300, mining: 300, agriculture: 300, industrial: 400, research: 400 };
+    return times[type] || 300;
   }
 
   // Panel close buttons

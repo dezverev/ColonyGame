@@ -122,6 +122,91 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 #render-container { position: absolute; inset: 0; }
 #colony-ui { position: absolute; inset: 0; pointer-events: none; }
 
+/* ── Resource Bar (top) ── */
+#resource-bar {
+  pointer-events: auto;
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; justify-content: center; gap: 0.2rem;
+  padding: 0.4rem 1rem;
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(6px);
+  border-bottom: 1px solid #2a2a4e;
+  z-index: 10;
+}
+.res-item {
+  display: flex; align-items: center; gap: 0.3rem;
+  padding: 0.2rem 0.6rem;
+  font-family: monospace; font-size: 0.85rem;
+}
+.res-icon { font-size: 1rem; }
+.res-name { color: #888; font-size: 0.7rem; margin-right: 0.1rem; }
+.res-val { color: #e0e0e0; font-weight: bold; }
+.res-net { font-size: 0.75rem; margin-left: 0.1rem; }
+.res-net.positive { color: #2ecc71; }
+.res-net.negative { color: #e74c3c; }
+
+/* ── Status Bar ── */
+#status-bar {
+  pointer-events: auto;
+  position: absolute; top: 38px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.2rem 1rem;
+  background: rgba(26, 26, 46, 0.75);
+  backdrop-filter: blur(4px);
+  border: 1px solid #2a2a4e; border-top: none;
+  border-radius: 0 0 6px 6px;
+  font-family: monospace; font-size: 0.8rem; color: #ccc;
+  z-index: 10;
+}
+.status-sep { color: #444; }
+#growth-bar-wrap {
+  width: 60px; height: 6px; background: #1a1a2e; border-radius: 3px;
+  overflow: hidden; margin-left: 0.2rem;
+}
+#growth-bar-fill {
+  height: 100%; width: 0%; border-radius: 3px;
+  background: #2ecc71; transition: width 0.3s;
+}
+
+/* ── Colony Info Panel (right) ── */
+#colony-panel {
+  top: 50px; right: 0.8rem; width: 200px;
+}
+#colony-panel-body { margin-bottom: 0.4rem; }
+#colony-queue-header {
+  font-weight: bold; font-size: 0.8rem; color: #aaa;
+  border-top: 1px solid #2a2a4e; padding-top: 0.4rem; margin-top: 0.2rem;
+}
+#colony-queue-list { font-size: 0.8rem; }
+.queue-item {
+  display: flex; align-items: center; gap: 0.4rem;
+  padding: 0.3rem 0; border-bottom: 1px solid rgba(42,42,78,0.5);
+}
+.queue-item-swatch {
+  width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+}
+.queue-item-name { flex: 1; }
+.queue-item-time { color: #aaa; font-family: monospace; font-size: 0.75rem; }
+.queue-item-cancel {
+  background: none; border: none; color: #e74c3c; cursor: pointer;
+  font-size: 0.9rem; padding: 0 0.2rem; line-height: 1;
+}
+.queue-item-cancel:hover { color: #ff6b6b; }
+.queue-progress {
+  width: 100%; height: 3px; background: #1a1a2e; border-radius: 2px;
+  margin-top: 0.2rem;
+}
+.queue-progress-fill {
+  height: 100%; border-radius: 2px; background: #f1c40f;
+}
+
+/* ── Build Menu Resource Header ── */
+#build-menu-resources {
+  display: flex; gap: 1rem; margin-bottom: 0.5rem;
+  font-family: monospace; font-size: 0.8rem; color: #ccc;
+  padding-bottom: 0.4rem; border-bottom: 1px solid #2a2a4e;
+}
+
 /* ── Game Panels ── */
 .game-panel {
   pointer-events: auto;

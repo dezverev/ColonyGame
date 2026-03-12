@@ -488,3 +488,40 @@ Each entry records an iteration of automated development.
 - Highlight uses emissive green (#00ffaa) material for visibility against dark space theme
 
 **Next:** CLIENT UX SPRINT 5/5 — HTML overlay UI (resource bar, status bar, colony info panel with production breakdown)
+
+---
+
+## Entry 16 — 2026-03-11 — CLIENT UX SPRINT 5/5: HTML Overlay UI on 3D View
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Resource bar (top): all 6 resource types showing stockpile and net income/month colored green(+)/red(−). Resource-specific colors: energy=#f1c40f, minerals=#95a5a6, food=#2ecc71, alloys=#e67e22, research=#3498db, influence=#9b59b6
+- Status bar (below resource bar): month counter (tick/100), pop count with housing cap warning (yellow near cap, red at cap), growth indicator (slow/fast/rapid/starving/stalled/housing full) with progress bar
+- Colony info panel (right side): colony name, planet type/size, district count, pop breakdown (working/idle), housing used/cap, build queue with progress bars (ticks as seconds) and cancel buttons with 50% refund
+- Build menu resource header: shows current mineral and energy stockpile at top of build menu
+- Server: added growthProgress, growthTarget, and growthStatus to colony serialization for growth indicator UI
+- Server: extended demolish command to support build queue cancellation with 50% resource refund (floor-rounded)
+- UI data refresh throttled to 2Hz (500ms setInterval), Three.js renders independently at 60fps
+- Dark space theme: panels rgba(26,26,46,0.85) with backdrop-blur, borders #2a2a4e, monospace for numbers
+
+**Files changed:**
+- `server/game-engine.js` — growth data in getState(), build queue cancellation in demolish handler, state cache invalidation
+- `src/public/js/app.js` — HUD elements, _updateHUD() with 2Hz refresh, resource bar, status bar, colony panel, queue cancel wiring, build menu resource header
+- `src/public/index.html` — resource bar, status bar, colony info panel, build-menu-resources div
+- `src/public/css/style.css` — resource bar, status bar, colony panel, queue item, build menu resource header styles
+- `src/tests/game-engine.test.js` — 3 new tests (queue cancellation, growth data serialization, housing full status)
+- `devguide/design.md` — marked Sprint 5/5 and build menu resource header complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 116 total (84 game-engine + 18 room-manager + 7 integration + 7 performance). All passing.
+
+**Key decisions:**
+- All UI logic stays in app.js rather than a separate ui.js — keeps the pattern simple until the module grows large enough to warrant splitting
+- Growth status computed server-side (not client) to keep client thin and match server-authoritative design
+- Queue cancellation reuses the demolish command type (checks queue after districts) rather than adding a new command — minimal protocol change
+- 50% refund on queue cancel (floor-rounded) prevents build-cancel resource duplication exploits while being generous enough to encourage experimentation
+- 2Hz UI refresh prevents DOM thrashing while keeping resource display responsive — Three.js renders independently at 60fps
+
+**Next:** Energy deficit consequences (auto-disable districts when energy negative), or mini tech tree for research sink

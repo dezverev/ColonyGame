@@ -69,9 +69,44 @@
   <div id="game-screen" class="screen">
     <div id="render-container"></div>
     <div id="colony-ui">
+      <!-- Resource bar (top) -->
+      <div id="resource-bar">
+        <div class="res-item" data-res="energy"><span class="res-icon" style="color:#f1c40f">⚡</span><span class="res-name">Energy</span><span class="res-val" id="res-energy">0</span><span class="res-net" id="res-energy-net"></span></div>
+        <div class="res-item" data-res="minerals"><span class="res-icon" style="color:#95a5a6">⛏</span><span class="res-name">Minerals</span><span class="res-val" id="res-minerals">0</span><span class="res-net" id="res-minerals-net"></span></div>
+        <div class="res-item" data-res="food"><span class="res-icon" style="color:#2ecc71">🌾</span><span class="res-name">Food</span><span class="res-val" id="res-food">0</span><span class="res-net" id="res-food-net"></span></div>
+        <div class="res-item" data-res="alloys"><span class="res-icon" style="color:#e67e22">⚙</span><span class="res-name">Alloys</span><span class="res-val" id="res-alloys">0</span><span class="res-net" id="res-alloys-net"></span></div>
+        <div class="res-item" data-res="research"><span class="res-icon" style="color:#3498db">🔬</span><span class="res-name">Research</span><span class="res-val" id="res-research">0</span><span class="res-net" id="res-research-net"></span></div>
+        <div class="res-item" data-res="influence"><span class="res-icon" style="color:#9b59b6">★</span><span class="res-name">Influence</span><span class="res-val" id="res-influence">0</span></div>
+      </div>
+
+      <!-- Status bar (below resource bar) -->
+      <div id="status-bar">
+        <span id="status-month">Month 0</span>
+        <span class="status-sep">|</span>
+        <span id="status-pops">Pop: 0/0</span>
+        <span class="status-sep">|</span>
+        <span id="status-growth">Growth: —</span>
+        <div id="growth-bar-wrap"><div id="growth-bar-fill"></div></div>
+      </div>
+
+      <!-- Colony info panel (right side) -->
+      <div id="colony-panel" class="game-panel">
+        <div class="panel-header"><span id="colony-panel-title">Colony</span></div>
+        <div id="colony-panel-body">
+          <div class="info-row"><span class="info-label">Planet</span><span class="info-value" id="cp-planet">—</span></div>
+          <div class="info-row"><span class="info-label">Districts</span><span class="info-value" id="cp-districts">0/0</span></div>
+          <div class="info-row"><span class="info-label">Working</span><span class="info-value" id="cp-working">0</span></div>
+          <div class="info-row"><span class="info-label">Idle</span><span class="info-value" id="cp-idle">0</span></div>
+          <div class="info-row"><span class="info-label">Housing</span><span class="info-value" id="cp-housing">0/0</span></div>
+        </div>
+        <div id="colony-queue-header" class="hidden">Build Queue</div>
+        <div id="colony-queue-list"></div>
+      </div>
+
       <!-- Build menu — appears when empty tile clicked -->
       <div id="build-menu" class="game-panel hidden">
         <div class="panel-header">Build District<button id="build-menu-close" class="panel-close">&times;</button></div>
+        <div id="build-menu-resources"></div>
         <div id="build-menu-options"></div>
       </div>
       <!-- District info — appears when built district clicked -->
