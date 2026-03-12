@@ -25,6 +25,7 @@ const PLANET_TYPES = {
 };
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
+const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
 // Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
@@ -343,8 +344,6 @@ class GameEngine {
       if (colony.buildQueue.length === 0) continue;
       // Mark owner dirty — ticksRemaining changed, client needs updated progress
       this._dirtyPlayers.add(colony.ownerId);
-      this._cachedState = null;
-      this._cachedStateJSON = null;
       const item = colony.buildQueue[0];
       item.ticksRemaining--;
       if (item.ticksRemaining <= 0) {
@@ -411,8 +410,6 @@ class GameEngine {
       colony.growthProgress++;
       // Mark owner dirty — growth progress changed, client needs updated progress bar
       this._dirtyPlayers.add(colony.ownerId);
-      this._cachedState = null;
-      this._cachedStateJSON = null;
       if (colony.growthProgress >= growthTarget) {
         colony.pops++;
         colony.growthProgress = 0;
@@ -640,8 +637,9 @@ class GameEngine {
       this.onEvent(events);
     }
 
-    // Only broadcast to players whose state actually changed
-    if (this.onTick && this._dirtyPlayers.size > 0) {
+    // Throttled broadcast — send state at ~3.3Hz instead of every tick.
+    // Dirty set accumulates between broadcasts so no updates are lost.
+    if (this.onTick && this._dirtyPlayers.size > 0 && this.tickCount % BROADCAST_EVERY === 0) {
       for (const playerId of this._dirtyPlayers) {
         this.onTick(playerId, this.getPlayerStateJSON(playerId));
       }
@@ -902,4 +900,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };
