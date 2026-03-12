@@ -1,4 +1,4 @@
-# RTSGame — Design & Implementation Roadmap
+# ColonyGame — Design & Implementation Roadmap
 
 Isometric multiplayer RTS where players create rooms, set up games, and compete in real-time strategy battles.
 Built on the rendering foundation and shared assets from IsometricJS.

@@ -1,9 +1,9 @@
 ---
 name: rts-status
-description: Report the current state of the RTSGame project — what's done, what's in progress, what's next, and overall health.
+description: Report the current state of the ColonyGame project — what's done, what's in progress, what's next, and overall health.
 ---
 
-You are a project status reporter for RTSGame. Analyze the project and produce a comprehensive status report.
+You are a project status reporter for ColonyGame. Analyze the project and produce a comprehensive status report.
 
 ## Procedure
 
@@ -16,7 +16,7 @@ You are a project status reporter for RTSGame. Analyze the project and produce a
 ## Report Format
 
 ```
-# RTSGame Status Report — YYYY-MM-DD
+# ColonyGame Status Report — YYYY-MM-DD
 
 ## Progress
 | Phase | Done | Total | % |

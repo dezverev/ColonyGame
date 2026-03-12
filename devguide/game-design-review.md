@@ -1,4 +1,4 @@
-# RTSGame — Game Design Review
+# ColonyGame — Game Design Review
 
 ## Review #1 — 2026-03-11
 

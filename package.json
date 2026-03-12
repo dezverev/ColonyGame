@@ -1,5 +1,5 @@
 {
-  "name": "rtsgame",
+  "name": "colonygame",
   "version": "0.1.0",
   "description": "Isometric multiplayer RTS game built on IsometricJS rendering foundation",
   "scripts": {

@@ -1,4 +1,4 @@
-# RTSGame Development Ledger
+# ColonyGame Development Ledger
 
 Each entry records an iteration of automated development.
 

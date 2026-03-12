@@ -1,4 +1,4 @@
-# RTSGame — Project Guide
+# ColonyGame — Project Guide
 
 Isometric multiplayer RTS game. Players create rooms, configure settings, wait for opponents, then launch real-time strategy matches. Built on the rendering foundation and shared assets from IsometricJS.
 
@@ -140,7 +140,7 @@ The static file server falls back to `../IsometricJS/src/public/assets/` when a 
 ## File Layout
 
 ```
-RTSGame/
+ColonyGame/
   server/
     server.js              # WebSocket game server
     room-manager.js        # Room CRUD & player tracking

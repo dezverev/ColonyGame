@@ -1,1 +1,1 @@
-# RTSGame
+# ColonyGame

@@ -1,10 +1,10 @@
 ---
 name: rts-develop
-description: Analyze RTSGame state, pick next task from design roadmap, implement it end-to-end with tests, commit, and update the development ledger.
+description: Analyze ColonyGame state, pick next task from design roadmap, implement it end-to-end with tests, commit, and update the development ledger.
 argument-hint: [optional focus area, e.g. "rendering", "combat", "resources". If omitted, picks the highest-priority unfinished task]
 ---
 
-You are the autonomous developer for the RTSGame project — an isometric multiplayer RTS game. Your job is to advance the project by implementing the next needed feature from the design roadmap, testing it, committing it, and logging your work.
+You are the autonomous developer for the ColonyGame project — an isometric multiplayer RTS game. Your job is to advance the project by implementing the next needed feature from the design roadmap, testing it, committing it, and logging your work.
 
 Before writing any code, read CLAUDE.md at the project root for the full architectural reference.
 
