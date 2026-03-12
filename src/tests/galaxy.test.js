@@ -410,3 +410,325 @@ describe('Galaxy integration with GameEngine', () => {
     }
   });
 });
+
+// ─── weightedPick ─────────────────────────────────────────────
+
+describe('weightedPick', () => {
+  it('returns a valid key from the items', () => {
+    const rng = mulberry32(50);
+    const items = { a: { weight: 1 }, b: { weight: 1 }, c: { weight: 1 } };
+    for (let i = 0; i < 50; i++) {
+      const result = weightedPick(rng, items);
+      assert.ok(['a', 'b', 'c'].includes(result), `Got unexpected key: ${result}`);
+    }
+  });
+
+  it('heavily weighted item is picked most often', () => {
+    const rng = mulberry32(60);
+    const items = { rare: { weight: 1 }, common: { weight: 99 } };
+    let commonCount = 0;
+    for (let i = 0; i < 200; i++) {
+      if (weightedPick(rng, items) === 'common') commonCount++;
+    }
+    assert.ok(commonCount > 150, `Common should dominate, got ${commonCount}/200`);
+  });
+
+  it('single item always returns that item', () => {
+    const rng = mulberry32(70);
+    const items = { only: { weight: 5 } };
+    assert.strictEqual(weightedPick(rng, items), 'only');
+  });
+});
+
+// ─── Name Generation — Edge Cases ─────────────────────────────
+
+describe('generateName — edge cases', () => {
+  it('falls back to System-N when all name combos are taken', () => {
+    const rng = mulberry32(80);
+    // Pre-fill the used set with every possible prefix+suffix combo
+    // so that all 100 attempts in generateName will collide
+    const used = new Set();
+    const prefixes = [
+      'Sol', 'Veg', 'Sir', 'Bet', 'Alp', 'Tau', 'Kep', 'Pro', 'Arc',
+      'Ald', 'Pol', 'Rig', 'Den', 'Alt', 'Ant', 'Cap', 'For', 'Lyn',
+      'Nor', 'Pav', 'Ser', 'Vel', 'Zet', 'Omi', 'Sig', 'Del', 'Gam',
+      'Eta', 'The', 'Iot', 'Kap', 'Lam', 'Rho', 'Phi', 'Chi', 'Psi',
+    ];
+    const suffixes = [
+      'aris', 'ion', 'ius', 'ara', 'eon', 'ica', 'una', 'oris',
+      'enna', 'alis', 'axis', 'exa', 'ura', 'entis', 'olus',
+      'andri', 'ella', 'anis', 'eron', 'ova', 'ux', 'ix', 'ax',
+      'or', 'en', 'an', 'us', 'is', 'os', 'um', 'es',
+    ];
+    const designations = [
+      'Prime', 'Major', 'Minor', 'Alpha', 'Beta', 'Gamma',
+      'I', 'II', 'III', 'IV', 'V', 'VI', 'VII',
+    ];
+    for (const p of prefixes) {
+      for (const s of suffixes) {
+        used.add(p + s);
+        for (const d of designations) {
+          used.add(p + s + ' ' + d);
+        }
+      }
+    }
+    const name = generateName(rng, used);
+    assert.ok(name.startsWith('System-'), `Expected System-N fallback, got: ${name}`);
+  });
+});
+
+// ─── Planet Generation Details ────────────────────────────────
+
+describe('generatePlanets detail checks', () => {
+  it('gas giants have size 0', () => {
+    // Generate galaxies until we find a gas giant
+    let found = false;
+    for (let i = 0; i < 200 && !found; i++) {
+      const galaxy = generateGalaxy({ size: 'small', seed: 1000 + i });
+      for (const sys of galaxy.systems) {
+        for (const p of sys.planets) {
+          if (p.type === 'gasGiant') {
+            assert.strictEqual(p.size, 0, 'Gas giant should have size 0');
+            found = true;
+            break;
+          }
+        }
+        if (found) break;
+      }
+    }
+    assert.ok(found, 'Should find at least one gas giant across multiple galaxies');
+  });
+
+  it('habitable planets have size 8-20', () => {
+    const galaxy = generateGalaxy({ size: 'medium', seed: 2222 });
+    for (const sys of galaxy.systems) {
+      for (const p of sys.planets) {
+        if (p.habitability >= 60 && p.type !== 'gasGiant') {
+          assert.ok(p.size >= 8 && p.size <= 20,
+            `Habitable ${p.type} has invalid size ${p.size}`);
+        }
+      }
+    }
+  });
+
+  it('barren/molten planets have size 6-15', () => {
+    const galaxy = generateGalaxy({ size: 'medium', seed: 3333 });
+    for (const sys of galaxy.systems) {
+      for (const p of sys.planets) {
+        if (p.habitability === 0 && p.type !== 'gasGiant') {
+          assert.ok(p.size >= 6 && p.size <= 15,
+            `Uninhabitable ${p.type} has invalid size ${p.size}`);
+        }
+      }
+    }
+  });
+
+  it('all planets have orbit numbers 1 through count', () => {
+    const galaxy = generateGalaxy({ size: 'small', seed: 4444 });
+    for (const sys of galaxy.systems) {
+      for (let i = 0; i < sys.planets.length; i++) {
+        assert.strictEqual(sys.planets[i].orbit, i + 1,
+          `Planet orbit mismatch in ${sys.name}`);
+      }
+    }
+  });
+});
+
+// ─── Galaxy Generation — Default Options ──────────────────────
+
+describe('generateGalaxy — defaults and invalid input', () => {
+  it('generates a galaxy with no options (all defaults)', () => {
+    const galaxy = generateGalaxy();
+    assert.ok(galaxy.systems.length > 0);
+    assert.ok(galaxy.hyperlanes.length > 0);
+    assert.strictEqual(galaxy.size, 'small');
+    assert.ok(typeof galaxy.seed === 'number');
+  });
+
+  it('falls back to small for unknown galaxy size', () => {
+    const galaxy = generateGalaxy({ size: 'gigantic', seed: 5555 });
+    // Should use GALAXY_SIZES.small fallback
+    assert.ok(galaxy.systems.length >= 25 && galaxy.systems.length <= 75,
+      `System count ${galaxy.systems.length} not in small range`);
+  });
+
+  it('all system names are unique', () => {
+    const galaxy = generateGalaxy({ size: 'medium', seed: 6666 });
+    const names = galaxy.systems.map(s => s.name);
+    const unique = new Set(names);
+    assert.strictEqual(unique.size, names.length, 'Duplicate system names found');
+  });
+
+  it('no duplicate hyperlanes', () => {
+    const galaxy = generateGalaxy({ size: 'small', seed: 7777 });
+    const edgeSet = new Set();
+    for (const [a, b] of galaxy.hyperlanes) {
+      const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+      assert.ok(!edgeSet.has(key), `Duplicate hyperlane: ${key}`);
+      edgeSet.add(key);
+    }
+  });
+});
+
+// ─── Starting System Assignment — Edge Cases ──────────────────
+
+describe('assignStartingSystems — edge cases', () => {
+  it('assigns starting systems with habitable planets (>=60 habitability)', () => {
+    const galaxy = generateGalaxy({ size: 'small', seed: 8888 });
+    const assignments = assignStartingSystems(galaxy, ['p1', 'p2']);
+    for (const [, systemId] of Object.entries(assignments)) {
+      const sys = galaxy.systems[systemId];
+      const hasHabitable = sys.planets.some(p => p.habitability >= 60);
+      assert.ok(hasHabitable,
+        `Starting system ${sys.name} has no habitable planet`);
+    }
+  });
+
+  it('marks all starting system planets as surveyed', () => {
+    const g = generateGalaxy({ size: 'small', seed: 10101 });
+    const a = assignStartingSystems(g, ['p1']);
+    const startSys = g.systems[a.p1];
+    for (const planet of startSys.planets) {
+      assert.strictEqual(planet.surveyed, true,
+        `Planet orbit ${planet.orbit} in starting system should be surveyed`);
+    }
+  });
+
+  it('handles more players than habitable systems gracefully', () => {
+    // Create a tiny galaxy manually with few habitable systems
+    const galaxy = {
+      systems: [
+        { id: 0, x: 0, z: 0, planets: [{ habitability: 80, size: 12, surveyed: false }], owner: null, surveyed: {} },
+        { id: 1, x: 100, z: 0, planets: [{ habitability: 0, size: 10, surveyed: false }], owner: null, surveyed: {} },
+        { id: 2, x: 0, z: 100, planets: [{ habitability: 0, size: 10, surveyed: false }], owner: null, surveyed: {} },
+      ],
+      hyperlanes: [[0, 1], [1, 2]],
+    };
+    // 3 players but only 1 habitable system — should fall back to using all systems
+    const assignments = assignStartingSystems(galaxy, ['p1', 'p2', 'p3']);
+    assert.strictEqual(Object.keys(assignments).length, 3);
+    const ids = new Set(Object.values(assignments));
+    assert.strictEqual(ids.size, 3, 'Each player gets a unique system');
+  });
+});
+
+// ─── bestHabitablePlanet — Boundary Cases ─────────────────────
+
+describe('bestHabitablePlanet — boundary cases', () => {
+  it('returns planet with exactly 20 habitability (minimum threshold)', () => {
+    const system = {
+      planets: [
+        { type: 'barren', habitability: 0, size: 10 },
+        { type: 'arid', habitability: 20, size: 8 },
+      ],
+    };
+    const best = bestHabitablePlanet(system);
+    assert.ok(best !== null);
+    assert.strictEqual(best.habitability, 20);
+  });
+
+  it('returns null for planet with habitability 19 (below threshold)', () => {
+    const system = {
+      planets: [
+        { type: 'barren', habitability: 19, size: 10 },
+      ],
+    };
+    assert.strictEqual(bestHabitablePlanet(system), null);
+  });
+
+  it('handles empty planets array', () => {
+    const system = { planets: [] };
+    assert.strictEqual(bestHabitablePlanet(system), null);
+  });
+});
+
+// ─── GameEngine Galaxy Integration — Deep Checks ──────────────
+
+describe('GameEngine galaxy integration — deep checks', () => {
+  const { GameEngine } = require('../../server/game-engine');
+
+  function makeRoom(playerCount = 1) {
+    const room = {
+      id: 'test-room',
+      matchTimer: 0,
+      galaxySize: 'small',
+      players: new Map(),
+    };
+    for (let i = 1; i <= playerCount; i++) {
+      room.players.set(i, { id: i, name: `Player ${i}` });
+    }
+    return room;
+  }
+
+  it('colony systemId matches an actual galaxy system', () => {
+    const engine = new GameEngine(makeRoom(), { galaxySeed: 42 });
+    const state = engine.getState();
+    const colony = state.colonies[0];
+    const systemIds = engine.galaxy.systems.map(s => s.id);
+    assert.ok(systemIds.includes(colony.systemId),
+      `Colony systemId ${colony.systemId} not found in galaxy systems`);
+  });
+
+  it('colony planet type matches the galaxy planet data', () => {
+    const engine = new GameEngine(makeRoom(), { galaxySeed: 42 });
+    const colony = [...engine.colonies.values()][0];
+    const system = engine.galaxy.systems[colony.systemId];
+    const colonizedPlanet = system.planets.find(p => p.colonized);
+    assert.ok(colonizedPlanet, 'Starting planet should be marked as colonized');
+    assert.strictEqual(colony.planet.type, colonizedPlanet.type);
+    assert.strictEqual(colony.planet.size, colonizedPlanet.size);
+    assert.strictEqual(colony.planet.habitability, colonizedPlanet.habitability);
+  });
+
+  it('starting planet is marked colonized with correct owner', () => {
+    const engine = new GameEngine(makeRoom(), { galaxySeed: 42 });
+    const colony = [...engine.colonies.values()][0];
+    const system = engine.galaxy.systems[colony.systemId];
+    const colonizedPlanet = system.planets.find(p => p.colonized);
+    assert.strictEqual(colonizedPlanet.colonyOwner, 1);
+  });
+
+  it('getInitState galaxy does not include surveyed hash (only owner)', () => {
+    const engine = new GameEngine(makeRoom(), { galaxySeed: 42 });
+    const initState = engine.getInitState();
+    // Systems in initState should have owner but the surveyed hash is stripped
+    const sys = initState.galaxy.systems[0];
+    assert.ok('owner' in sys, 'Should include owner');
+    assert.ok(!('surveyed' in sys), 'Should not include surveyed hash in client payload');
+  });
+
+  it('room galaxySize setting is used by game engine', () => {
+    const room = makeRoom();
+    room.galaxySize = 'medium';
+    const engine = new GameEngine(room, { galaxySeed: 42 });
+    assert.strictEqual(engine.galaxy.size, 'medium');
+    assert.ok(engine.galaxy.systems.length >= 50,
+      `Medium galaxy should have >=50 systems, got ${engine.galaxy.systems.length}`);
+  });
+});
+
+// ─── Room Manager Galaxy Size Validation ──────────────────────
+
+describe('Room Manager — galaxy size validation', () => {
+  const { RoomManager } = require('../../server/room-manager');
+
+  it('accepts valid galaxy sizes', () => {
+    const rm = new RoomManager();
+    for (const size of ['small', 'medium', 'large']) {
+      const room = rm.createRoom(`host-${size}`, `Host`, `Room ${size}`, { galaxySize: size });
+      assert.strictEqual(room.galaxySize, size);
+    }
+  });
+
+  it('defaults to small for invalid galaxy size', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('host1', 'Host', 'Room', { galaxySize: 'huge' });
+    assert.strictEqual(room.galaxySize, 'small');
+  });
+
+  it('defaults to small when galaxy size not specified', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('host2', 'Host', 'Room', {});
+    assert.strictEqual(room.galaxySize, 'small');
+  });
+});

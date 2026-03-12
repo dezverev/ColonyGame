@@ -121,11 +121,13 @@ describe('GameEngine — District Building', () => {
     const state = engine.getState();
     const colonyId = state.colonies[0].id;
     const colony = engine.colonies.get(colonyId);
-    // Fill up to max (planet size 16, already have 4)
-    for (let i = 0; i < 12; i++) {
+    // Fill up to max districts (planet size varies with galaxy generation)
+    const maxDistricts = colony.planet.size;
+    const currentDistricts = engine._totalDistricts(colony);
+    for (let i = 0; i < maxDistricts - currentDistricts; i++) {
       engine._addBuiltDistrict(colony, 'housing');
     }
-    assert.strictEqual(engine._totalDistricts(colony), 16);
+    assert.strictEqual(engine._totalDistricts(colony), maxDistricts);
     const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
     assert.ok(result.error);
     assert.match(result.error, /no district slots/i);
