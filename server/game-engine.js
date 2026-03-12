@@ -3,12 +3,12 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#
 // District definitions: type -> { produces, consumes, cost, buildTime }
 // Production/consumption is per "month" (every 100 ticks = 10 seconds)
 const DISTRICT_DEFS = {
-  housing:     { produces: {}, consumes: {}, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 300 },
-  generator:   { produces: { energy: 4 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 150 }, buildTime: 300 },
+  housing:     { produces: {}, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 300 },
+  generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 150 }, buildTime: 300 },
   mining:      { produces: { minerals: 4 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 150 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
-  industrial:  { produces: { alloys: 3 }, consumes: { energy: 50 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 50 }, buildTime: 300 },
-  research:    { produces: { physics: 3, society: 3, engineering: 3 }, consumes: { energy: 100 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 100 }, buildTime: 300 },
+  industrial:  { produces: { alloys: 3 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 300 },
+  research:    { produces: { physics: 3, society: 3, engineering: 3 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 300 },
 };
 
 // Planet types and their habitability ranges
@@ -166,7 +166,16 @@ class GameEngine {
     let assignedPops = 0;
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
-      if (!def || def.jobs === 0) continue;
+      if (!def) continue;
+
+      // Jobless districts (e.g., housing) still consume resources
+      if (def.jobs === 0) {
+        for (const [resource, amount] of Object.entries(def.consumes)) {
+          consumption[resource] = (consumption[resource] || 0) + amount;
+        }
+        continue;
+      }
+
       if (assignedPops >= workingPops) break;
       assignedPops++;
 

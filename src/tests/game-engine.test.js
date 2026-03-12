@@ -224,9 +224,9 @@ describe('GameEngine — Resource Production', () => {
     }
 
     const after = engine.playerStates.get(1).resources;
-    // Starting districts: generator(+4 energy), mining(+4 minerals), agriculture(+6 food)
+    // Starting districts: generator(+6 energy), mining(+4 minerals), agriculture(+6 food)
     // 10 pops consume 10 food, so net food = +6 - 10 = -4
-    assert.strictEqual(after.energy, before.energy + 4);
+    assert.strictEqual(after.energy, before.energy + 6);
     assert.strictEqual(after.minerals, before.minerals + 4);
     assert.strictEqual(after.food, before.food + 6 - 10);
   });
@@ -298,7 +298,7 @@ describe('GameEngine — State Serialization', () => {
     assert.ok(colony.production);
     assert.ok(colony.production.production);
     assert.ok(colony.production.consumption);
-    assert.strictEqual(colony.production.production.energy, 4); // generator
+    assert.strictEqual(colony.production.production.energy, 6); // generator
     assert.strictEqual(colony.production.production.minerals, 4); // mining
     assert.strictEqual(colony.production.production.food, 6); // agriculture
   });
@@ -326,6 +326,57 @@ describe('GameEngine — Tick Loop', () => {
     assert.strictEqual(engine.tickCount, 0);
     engine.tick();
     assert.strictEqual(engine.tickCount, 1);
+  });
+});
+
+describe('GameEngine — Energy Balance', () => {
+  it('generator produces 6 energy per month', () => {
+    assert.strictEqual(DISTRICT_DEFS.generator.produces.energy, 6);
+  });
+
+  it('industrial consumes 3 energy per month (not 50)', () => {
+    assert.strictEqual(DISTRICT_DEFS.industrial.consumes.energy, 3);
+  });
+
+  it('research consumes 4 energy per month (not 100)', () => {
+    assert.strictEqual(DISTRICT_DEFS.research.consumes.energy, 4);
+  });
+
+  it('housing consumes 1 energy per month', () => {
+    assert.strictEqual(DISTRICT_DEFS.housing.consumes.energy, 1);
+  });
+
+  it('industrial build cost has no energy requirement', () => {
+    assert.strictEqual(DISTRICT_DEFS.industrial.cost.energy, undefined);
+  });
+
+  it('research build cost is 20 energy (not 100)', () => {
+    assert.strictEqual(DISTRICT_DEFS.research.cost.energy, 20);
+  });
+
+  it('housing district energy consumption is applied in production calc', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    const colony = engine.colonies.get(colonyId);
+    engine._addBuiltDistrict(colony, 'housing');
+
+    const { consumption } = engine._calcProduction(colony);
+    // Housing consumes 1 energy, no other districts consume energy in starting setup
+    assert.strictEqual(consumption.energy, 1);
+  });
+
+  it('one generator can power two industrials (6 energy vs 3+3)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony, 'generator');
+    engine._addBuiltDistrict(colony, 'industrial');
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+
+    const { production, consumption } = engine._calcProduction(colony);
+    // Generator: +6 energy, 2 industrials: -6 energy = net 0
+    assert.strictEqual(production.energy, 6);
+    assert.strictEqual(consumption.energy, 6);
   });
 });
 

@@ -107,3 +107,34 @@ Each entry records an iteration of automated development.
 - Starting colonies get 3 pre-built districts so resources flow immediately without player action
 
 **Next:** Add Three.js dependency and basic scene setup (Phase 1 rendering tasks), or basic resource HUD to make the economy visible
+
+---
+
+## Entry 4 — 2026-03-11 — Balance Fix: Energy Economy
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Rebalanced all energy-related district values to make alloys and research obtainable
+- Generator output increased from 4 to 6 energy/month
+- Industrial energy consumption reduced from 50 to 3 energy/month, energy build cost removed
+- Research energy consumption reduced from 100 to 4 energy/month, energy build cost reduced from 100 to 20
+- Housing now consumes 1 energy/month (was 0)
+- Fixed _calcProduction to apply consumption from jobless districts (housing)
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS values, _calcProduction jobless district handling
+- `src/tests/game-engine.test.js` — updated 2 existing tests, added 8 new energy balance tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 63 total (46 game-engine + 12 room-manager + 5 integration). All passing.
+
+**Key decisions:**
+- One generator (6 energy) can power two industrial districts (3 energy each) — achievable ratio
+- Housing energy cost (1/month) adds meaningful energy pressure as colonies grow without being punishing
+- Removed industrial energy build cost entirely (was 50) rather than reducing — minerals-only cost keeps it accessible
+- Added production calc fix for jobless districts so housing consumption actually applies
+
+**Next:** Fix starting food deficit (2 Agriculture districts), then pop growth pacing
