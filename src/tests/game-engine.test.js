@@ -394,24 +394,22 @@ describe('GameEngine — Pop Growth', () => {
     assert.strictEqual(colony.growthProgress, 0, 'Growth progress should reset on starvation');
   });
 
-  it('growthProgress is included in serialized state', () => {
+  it('growthProgress tracked on internal colony object', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
-    const state = engine.getState();
-    assert.strictEqual(state.colonies[0].growthProgress, 0);
+    const colony = engine.colonies.values().next().value;
+    assert.strictEqual(colony.growthProgress, 0);
   });
 });
 
 describe('GameEngine — State Serialization', () => {
-  it('getState includes production data per colony', () => {
+  it('getState includes netProduction data per colony', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.ok(colony.production);
-    assert.ok(colony.production.production);
-    assert.ok(colony.production.consumption);
-    assert.strictEqual(colony.production.production.energy, 6); // generator
-    assert.strictEqual(colony.production.production.minerals, 6); // mining
-    assert.strictEqual(colony.production.production.food, 12); // 2x agriculture
+    assert.ok(colony.netProduction);
+    assert.strictEqual(colony.netProduction.energy, 6); // generator (no consumers yet)
+    assert.strictEqual(colony.netProduction.minerals, 6); // mining
+    assert.strictEqual(colony.netProduction.food, 4); // 2x agriculture (12) - 8 pops consuming
   });
 
   it('getState includes housing and jobs', () => {
@@ -495,10 +493,9 @@ describe('GameEngine — Food & Housing Balance', () => {
   it('starting colony food production exceeds consumption (no deficit)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = engine.getState().colonies[0];
-    const { production, consumption } = colony.production;
     // 2 agriculture = 12 food, 8 pops consume 8 food => net +4
-    assert.ok(production.food > consumption.food,
-      `Food production (${production.food}) should exceed consumption (${consumption.food})`);
+    assert.ok(colony.netProduction.food > 0,
+      `Net food (${colony.netProduction.food}) should be positive`);
   });
 
   it('starting colony housing accommodates all starting pops', () => {
@@ -519,8 +516,7 @@ describe('GameEngine — Food & Housing Balance', () => {
   it('starting food surplus is +4 (12 production - 8 consumption)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = engine.getState().colonies[0];
-    const { production, consumption } = colony.production;
-    assert.strictEqual(production.food - consumption.food, 4);
+    assert.strictEqual(colony.netProduction.food, 4);
   });
 
   it('base capital housing is 10', () => {
@@ -1071,5 +1067,59 @@ describe('GameEngine — Performance', () => {
     const result3 = engine._calcProduction(colony);
     assert.notStrictEqual(result1, result3, 'Should return new object after invalidation');
     assert.deepStrictEqual(result1, result3, 'Values should still match');
+  });
+});
+
+describe('GameEngine — Performance', () => {
+  it('tick completes within 5ms at 8 players / 40 colonies', () => {
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) {
+      players.set(i, { id: i, name: `P${i}`, ready: true, isHost: i === 1 });
+    }
+    const room = { id: 'perf', name: 'Perf', hostId: 1, maxPlayers: 8, status: 'playing', players };
+    const engine = new GameEngine(room, { tickRate: 10 });
+    // Add 4 extra colonies per player (5 total each = 40 colonies)
+    for (let i = 1; i <= 8; i++) {
+      for (let c = 0; c < 4; c++) {
+        const colony = engine._createColony(i, `Extra${c}`, { size: 16, type: 'continental', habitability: 80 });
+        engine._addBuiltDistrict(colony, 'generator');
+        engine._addBuiltDistrict(colony, 'mining');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'housing');
+      }
+    }
+    // Warm up caches
+    for (let i = 0; i < 10; i++) engine.tick();
+
+    const start = process.hrtime.bigint();
+    engine.tick();
+    const duration = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(duration < 5, `Tick took ${duration.toFixed(3)}ms, budget is 5ms`);
+  });
+
+  it('state payload under 25KB at 8 players / 40 colonies', () => {
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) {
+      players.set(i, { id: i, name: `P${i}`, ready: true, isHost: i === 1 });
+    }
+    const room = { id: 'perf', name: 'Perf', hostId: 1, maxPlayers: 8, status: 'playing', players };
+    const engine = new GameEngine(room, { tickRate: 10 });
+    for (let i = 1; i <= 8; i++) {
+      for (let c = 0; c < 4; c++) {
+        const colony = engine._createColony(i, `Extra${c}`, { size: 16, type: 'continental', habitability: 80 });
+        engine._addBuiltDistrict(colony, 'generator');
+        engine._addBuiltDistrict(colony, 'mining');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'housing');
+      }
+    }
+    engine._dirty = true;
+    engine._cachedState = null;
+    engine._cachedStateJSON = null;
+    const json = engine.getStateJSON();
+    const sizeKB = json.length / 1024;
+    assert.ok(sizeKB < 25, `Payload is ${sizeKB.toFixed(1)}KB, limit is 25KB`);
   });
 });

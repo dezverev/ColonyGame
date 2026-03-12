@@ -138,6 +138,7 @@
           yourId: msg.yourId,
         };
         selectedUnits = [];
+        _selectionDirty = true;
         camera = { x: msg.mapWidth / 2, y: msg.mapHeight / 2, zoom: 1 };
         showScreen('game');
         startGameLoop();
@@ -181,7 +182,8 @@
   let animFrame = null;
   let renderDirty = true; // tracks whether a redraw is needed
   const _playerMap = Object.create(null);
-  let _selectedSet = new Set();
+  const _selectedSet = new Set();
+  let _selectionDirty = true; // rebuild Set only when selection changes
   const _opts = { originX: 0, originY: 0 }; // reusable projection options
 
   function markRenderDirty() { renderDirty = true; }
@@ -242,7 +244,11 @@
     // Rebuild player lookup (reuse object, clear old keys)
     for (const k in _playerMap) delete _playerMap[k];
     for (const p of players) _playerMap[p.id] = p;
-    _selectedSet = new Set(selectedUnits);
+    if (_selectionDirty) {
+      _selectedSet.clear();
+      for (const id of selectedUnits) _selectedSet.add(id);
+      _selectionDirty = false;
+    }
 
     // Apply zoom transform
     ctx.save();
@@ -464,6 +470,7 @@
 
     const isClick = Math.abs(maxX - minX) < 5 && Math.abs(maxY - minY) < 5;
     selectedUnits = [];
+    _selectionDirty = true;
 
     for (const u of gameState.units) {
       if (u.ownerId !== gameState.yourId) continue;

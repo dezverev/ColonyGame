@@ -304,14 +304,13 @@ class GameEngine {
   // Process pop growth every tick — increment growthProgress when food surplus > 0
   _processPopGrowth() {
     for (const [, colony] of this.colonies) {
+      const housing = this._calcHousing(colony);
+      if (colony.pops >= housing) continue;
+
       const { production, consumption } = this._calcProduction(colony);
       const foodSurplus = production.food - consumption.food;
 
       if (foodSurplus <= 0) continue;
-
-      // Check housing cap
-      const housing = this._calcHousing(colony);
-      if (colony.pops >= housing) continue;
 
       // Determine growth speed based on food surplus
       let growthTarget;
@@ -339,12 +338,13 @@ class GameEngine {
         }
 
         // Housing full: fire when pops reach housing cap
-        if (colony.pops >= this._calcHousing(colony)) {
+        const newHousing = this._calcHousing(colony);
+        if (colony.pops >= newHousing) {
           this._emitEvent('housingFull', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
             pops: colony.pops,
-            housing: this._calcHousing(colony),
+            housing: newHousing,
           });
         }
       }
@@ -460,32 +460,40 @@ class GameEngine {
   }
 
   getState() {
-    if (this._cachedState) {
-      this._cachedState.tick = this.tickCount;
-      return this._cachedState;
+    if (this._cachedState) return this._cachedState;
+    const playersArr = [];
+    for (const p of this.playerStates.values()) {
+      playersArr.push({ id: p.id, name: p.name, color: p.color, resources: p.resources });
     }
-    const state = {
-      tick: this.tickCount,
-      players: Array.from(this.playerStates.values()).map(p => ({
-        id: p.id,
-        name: p.name,
-        color: p.color,
-        resources: p.resources,
-      })),
-      colonies: Array.from(this.colonies.values()).map(c => ({
+    const coloniesArr = [];
+    for (const c of this.colonies.values()) {
+      const { production, consumption } = this._calcProduction(c);
+      const queueArr = [];
+      for (const q of c.buildQueue) {
+        queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
+      }
+      coloniesArr.push({
         id: c.id,
         ownerId: c.ownerId,
         name: c.name,
         planet: c.planet,
         districts: c.districts,
-        buildQueue: c.buildQueue.map(q => ({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining })),
+        buildQueue: queueArr,
         pops: c.pops,
-        growthProgress: c.growthProgress,
         housing: this._calcHousing(c),
         jobs: this._calcJobs(c),
-        production: this._calcProduction(c),
-      })),
-    };
+        netProduction: {
+          energy: production.energy - (consumption.energy || 0),
+          minerals: production.minerals - (consumption.minerals || 0),
+          food: production.food - (consumption.food || 0),
+          alloys: production.alloys - (consumption.alloys || 0),
+          physics: production.physics,
+          society: production.society,
+          engineering: production.engineering,
+        },
+      });
+    }
+    const state = { tick: this.tickCount, players: playersArr, colonies: coloniesArr };
     this._cachedState = state;
     return state;
   }
