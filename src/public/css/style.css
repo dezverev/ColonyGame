@@ -118,28 +118,6 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 #chat-input { padding: 0.5rem; background: #16213e; color: #fff; border: 1px solid #333; border-radius: 4px; }
 
 /* ── Game View ── */
-#game-screen { flex-direction: column; background: #0a0a1a; }
-#game-canvas { flex: 1; display: block; }
-
-#game-hud { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
-#resource-bar {
-  display: flex; gap: 1.5rem; padding: 0.5rem 1rem;
-  background: rgba(0,0,0,0.7); pointer-events: auto; font-size: 0.9rem;
-}
-#resource-bar span { font-weight: bold; }
-#hud-gold { color: #f1c40f; }
-#hud-wood { color: #8b4513; }
-#hud-stone { color: #95a5a6; }
-#hud-supply { color: #3498db; }
-
-#minimap-container {
-  position: absolute; bottom: 10px; right: 10px;
-  border: 2px solid #333; pointer-events: auto;
-}
-#minimap-canvas { display: block; background: #1a1a2e; }
-
-#selection-panel {
-  position: absolute; bottom: 10px; left: 10px;
-  background: rgba(0,0,0,0.7); padding: 0.5rem; border-radius: 4px;
-  pointer-events: auto; min-width: 200px; min-height: 60px; color: #ccc; font-size: 0.85rem;
-}
+#game-screen { position: relative; background: #0a0a1a; }
+#render-container { position: absolute; inset: 0; }
+#colony-ui { position: absolute; inset: 0; pointer-events: none; }

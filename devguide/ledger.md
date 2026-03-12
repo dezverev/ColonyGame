@@ -375,3 +375,41 @@ Each entry records an iteration of automated development.
 - `housingFull` fires on the exact tick pops reach housing cap, giving immediate feedback
 
 **Next:** Energy deficit consequences (auto-disable districts when energy negative)
+
+---
+
+## Entry 13 — 2026-03-11 — CLIENT UX SPRINT 2/5: Stale Client Cleanup
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Stripped all RTS rendering code from app.js: removed Canvas 2D renderer, Projection module references, unit selection/drag-select, minimap rendering, gold/wood/stone HUD update, camera/zoom system, selection box, render loop
+- Updated gameInit handler to parse colony 4X state (tick, players, colonies, yourId)
+- Updated gameState handler to receive tick/player/colony updates
+- Added gameEvent handler stub for future UI rendering
+- Exposed `window.GameClient = { send, getState }` for future modules (renderer.js, ui.js)
+- Removed from index.html: game-canvas, minimap-canvas, gold/wood/stone/supply resource bar, selection-panel, game-hud, projection.js script tag
+- Added to index.html: `<div id="render-container">` for Three.js canvas, `<div id="colony-ui">` for HTML overlay
+- Updated title from "RTS Game" to "ColonyGame"
+- Removed RTS game styles from style.css (canvas, minimap, gold/wood/stone colors, selection panel)
+- Added colony 4X game screen styles (render-container, colony-ui overlay)
+- Deleted `src/public/js/projection.js` (no longer referenced anywhere)
+
+**Files changed:**
+- `src/public/js/app.js` — complete rewrite (stripped RTS, added colony 4X handlers)
+- `src/public/index.html` — removed RTS elements, added 4X containers, updated title
+- `src/public/css/style.css` — replaced RTS game styles with colony 4X layout
+- `src/public/js/projection.js` — deleted
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (no client-side tests needed for this cleanup — all changes are browser UI).
+
+**Key decisions:**
+- Exposed `window.GameClient` so future renderer.js and ui.js modules can send commands and read game state without tight coupling to app.js internals
+- render-container and colony-ui are both absolute-positioned overlays on game-screen — Three.js canvas goes in render-container, HTML panels go in colony-ui with pointer-events: none (individual panels opt-in to pointer events)
+- Kept lobby/room/chat code untouched — it works correctly and is 4X-agnostic
+- No game loop in app.js anymore — Three.js renderer.js will own requestAnimationFrame in Sprint 3
+
+**Next:** CLIENT UX SPRINT 3/5 — Three.js scene + isometric colony view (OrthographicCamera, terrain grid, camera controls)
