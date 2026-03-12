@@ -767,3 +767,38 @@ Each entry records an iteration of automated development.
 - Energy consumption unchanged (Industrial: 3, Research: 4) — the buff is output-only, energy pressure remains the same
 
 **Next:** Event toast notification HUD (game-designer R18 priority #2)
+
+---
+
+## Entry 23 — 2026-03-12 — Event Toast Notification HUD
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Toast notification system that surfaces server game events as slide-in cards on the right side of the game screen
+- Covers all 8 existing game event types: constructionComplete, popMilestone, researchComplete, districtEnabled, queueEmpty, housingFull, foodDeficit, districtDisabled
+- Color-coded borders: green for positive events, yellow for warnings, red for crises
+- CSS slide-in animation from right, auto-dismiss after 4 seconds with fade-out
+- Max 5 visible toasts (oldest removed when 6th arrives)
+- Human-readable text formatting with colony name, district type, pop count, tech name
+- Shared toast-format.js module (IIFE pattern) for both browser and Node.js testing
+
+**Files changed:**
+- `src/public/index.html` — added toast container div, added toast-format.js script tag
+- `src/public/css/style.css` — added toast notification styles (container, cards, animations)
+- `src/public/js/toast-format.js` — **new** shared module with formatGameEvent() and TOAST_TYPE_MAP
+- `src/public/js/app.js` — added _showToast() function, wired gameEvent handler to create toasts
+- `src/tests/toast-notifications.test.js` — **new** 15 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 313 total (15 new). All passing.
+
+**Key decisions:**
+- Extracted formatting logic into shared toast-format.js to enable Node.js testing without DOM dependencies
+- Toast container positioned at top: 80px, right: 10px — below resource bar, doesn't overlap colony panel
+- Used CSS-only animations (no JS animation libraries) for performance
+- All event types already had the required detail fields (colonyName, districtType, etc.) from earlier event work
+
+**Next:** Planet type signature bonuses (game-designer R19 priority #2)

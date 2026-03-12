@@ -171,6 +171,13 @@
         } else if (msg.eventType === 'finalCountdown') {
           _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
         }
+        // Show toast for game events
+        {
+          const toastText = _formatGameEvent(msg);
+          if (toastText) {
+            _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
+          }
+        }
         break;
 
       case 'gameOver':
@@ -296,6 +303,34 @@
   const systemPanelTitle = document.getElementById('system-panel-title');
   const systemPanelBody = document.getElementById('system-panel-body');
   const systemPanelClose = document.getElementById('system-panel-close');
+
+  // ── Toast notifications ──
+  const toastContainer = document.getElementById('toast-container');
+  const TOAST_MAX = 5;
+  const TOAST_DURATION = 4000;
+
+  function _showToast(text, type) {
+    if (!toastContainer) return;
+    const el = document.createElement('div');
+    el.className = 'toast toast-' + (type || 'info');
+    el.textContent = text;
+    toastContainer.appendChild(el);
+
+    // Enforce max visible
+    while (toastContainer.children.length > TOAST_MAX) {
+      toastContainer.removeChild(toastContainer.firstChild);
+    }
+
+    // Auto-dismiss
+    setTimeout(() => {
+      el.classList.add('toast-out');
+      setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 400);
+    }, TOAST_DURATION);
+  }
+
+  // Toast formatting from shared module (loaded via toast-format.js script tag)
+  const _formatGameEvent = window.ToastFormat ? window.ToastFormat.formatGameEvent : function() { return null; };
+  const TOAST_TYPE_MAP = window.ToastFormat ? window.ToastFormat.TOAST_TYPE_MAP : {};
 
   let _selectedTileData = null;
   let _uiInterval = null;
@@ -973,4 +1008,5 @@
   if (typeof window !== 'undefined') {
     window.GameClient = { send, getState: () => gameState };
   }
+
 })();
