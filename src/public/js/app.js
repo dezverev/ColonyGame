@@ -20,6 +20,7 @@
   const nameInput = document.getElementById('name-input');
   const nameSubmit = document.getElementById('name-submit');
   const playerNameDisplay = document.getElementById('player-name-display');
+  const singlePlayerBtn = document.getElementById('single-player-btn');
   const createRoomBtn = document.getElementById('create-room-btn');
   const createRoomDialog = document.getElementById('create-room-dialog');
   const roomNameInput = document.getElementById('room-name-input');
@@ -232,15 +233,22 @@
     const myPlayer = currentRoom.players.find(p => p.id === myId);
     const amReady = myPlayer ? myPlayer.ready : false;
 
-    readyBtn.textContent = amReady ? 'Unready' : 'Ready';
-    readyBtn.classList.toggle('is-ready', amReady);
-
-    if (isHost) {
-      const allReady = currentRoom.players.every(p => p.id === currentRoom.hostId || p.ready);
-      const enoughPlayers = currentRoom.players.length >= 2;
-      launchBtn.classList.toggle('hidden', !(allReady && enoughPlayers));
+    if (currentRoom.practiceMode) {
+      // Single player — no ready needed, just show launch
+      readyBtn.classList.add('hidden');
+      launchBtn.classList.remove('hidden');
     } else {
-      launchBtn.classList.add('hidden');
+      readyBtn.classList.remove('hidden');
+      readyBtn.textContent = amReady ? 'Unready' : 'Ready';
+      readyBtn.classList.toggle('is-ready', amReady);
+
+      if (isHost) {
+        const allReady = currentRoom.players.every(p => p.id === currentRoom.hostId || p.ready);
+        const enoughPlayers = currentRoom.players.length >= 2;
+        launchBtn.classList.toggle('hidden', !(allReady && enoughPlayers));
+      } else {
+        launchBtn.classList.add('hidden');
+      }
     }
   }
 
@@ -1404,6 +1412,10 @@
   });
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') nameSubmit.click();
+  });
+
+  singlePlayerBtn.addEventListener('click', () => {
+    send({ type: 'createRoom', name: `${myName}'s Game`, practiceMode: true });
   });
 
   createRoomBtn.addEventListener('click', () => {

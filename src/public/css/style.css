@@ -28,6 +28,11 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 .lobby-header h2 { flex: 1; }
 #player-name-display { color: #e94560; font-weight: bold; }
+#single-player-btn {
+  padding: 0.5rem 1rem; background: #1a6b3c; color: #fff;
+  border: 1px solid #2ecc71; border-radius: 4px; cursor: pointer;
+}
+#single-player-btn:hover { background: #2ecc71; }
 #create-room-btn {
   padding: 0.5rem 1rem; background: #0f3460; color: #fff;
   border: 1px solid #e94560; border-radius: 4px; cursor: pointer;
