@@ -326,6 +326,9 @@ class GameEngine {
     const playerState = this.playerStates.get(colony.ownerId);
     const techMods = this._getTechModifiers(playerState);
 
+    // Planet type signature bonuses — lookup once per colony (planet type is constant)
+    const planetBonus = PLANET_BONUSES[colony.planet.type] || null;
+
     // Assign pops to districts in order — each working district needs 1 pop
     let assignedPops = 0;
     for (const d of colony.districts) {
@@ -351,9 +354,9 @@ class GameEngine {
         production[resource] = (production[resource] || 0) + (amount * districtMod);
       }
       // Planet type signature bonuses (additive, after tech modifier)
-      const planetBonus = PLANET_BONUSES[colony.planet.type];
-      if (planetBonus && planetBonus[d.type]) {
-        for (const [resource, amount] of Object.entries(planetBonus[d.type])) {
+      const districtBonus = planetBonus && planetBonus[d.type];
+      if (districtBonus) {
+        for (const [resource, amount] of Object.entries(districtBonus)) {
           production[resource] = (production[resource] || 0) + amount;
         }
       }

@@ -1867,14 +1867,15 @@ describe('GameEngine — Energy Deficit', () => {
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
-    // Add industrial + research to create energy deficit
+    // Add multiple energy consumers to guarantee deficit regardless of planet bonuses
     engine._addBuiltDistrict(colony, 'industrial');
     engine._addBuiltDistrict(colony, 'research');
-    colony.pops = 10;
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 12;
     engine._invalidateColonyCache(colony);
 
-    // Set energy low enough that monthly processing puts it negative
-    // Net energy: 6 (gen) - 3 (industrial) - 4 (research) = -1/month
+    // Net energy before planet bonuses: 6 (gen) - 3 (industrial) - 4 (research) - 4 (research) = -5/month
+    // Even with arid bonus (+1 energy on gen), net = -4 — always negative
     state.resources.energy = 0;
 
     // Run ticks until monthly processing
