@@ -11,6 +11,8 @@
   let starMeshes = [];         // one mesh per system, indexed by system.id
   let starMeshArray = [];      // pre-filtered array (no nulls) for raycasting
   let hyperlaneLines = null;   // single LineSegments object
+  let hyperlaneKnownLines = null;  // solid hyperlanes between known systems
+  let hyperlaneFadedLines = null;  // faded hyperlanes at fog border
   let ownerRings = [];         // ownership indicator meshes
   let ownerRingPool = [];      // reusable ring mesh pool
   let selectedSystemId = -1;
@@ -19,6 +21,10 @@
   let onSystemSelect = null;   // callback: (system) => void
   let colonyShipMeshes = [];   // active colony ship marker meshes
   let colonyShipPool = [];     // reusable colony ship mesh pool
+
+  // Fog of war state
+  let _adjacency = null;       // adjacency list built from hyperlanes
+  let _knownSystemIds = new Set(); // systems visible to the local player
 
   // Camera orbit state
   let orbitTheta = 0;          // horizontal angle (radians)
@@ -119,9 +125,20 @@
       color: 0x00ffaa, side: THREE.DoubleSide, transparent: true, opacity: 0.8,
     });
 
-    // Hyperlane material
+    // Hyperlane materials
     _matCache.hyperlane = new THREE.LineBasicMaterial({
       color: 0x4466aa, transparent: true, opacity: 0.25,
+    });
+    _matCache.hyperlaneKnown = new THREE.LineBasicMaterial({
+      color: 0x4466aa, transparent: true, opacity: 0.4,
+    });
+    _matCache.hyperlaneFaded = new THREE.LineBasicMaterial({
+      color: 0x334466, transparent: true, opacity: 0.12,
+    });
+
+    // Unknown star material (dim gray)
+    _matCache.starUnknown = new THREE.MeshBasicMaterial({
+      color: 0x555566, transparent: true, opacity: 0.2,
     });
 
     // Colony ship: diamond shape (octahedron)
@@ -143,7 +160,13 @@
     const systems = data.systems;
     const hyperlanes = data.hyperlanes;
 
-    // Create star meshes
+    // Build adjacency list for fog of war
+    const FoW = (typeof window !== 'undefined' && window.FogOfWar) || {};
+    if (FoW.buildAdjacency) {
+      _adjacency = FoW.buildAdjacency(hyperlanes, systems.length);
+    }
+
+    // Create star meshes (initially all use their real material — fog applied in _applyFog)
     starMeshes = new Array(systems.length).fill(null);
     for (const sys of systems) {
       const color = new THREE.Color(sys.starColor || '#ffffff');
@@ -157,27 +180,9 @@
       mesh.position.set(sys.x, sys.y || 0, sys.z);
       mesh.scale.setScalar(radius);
       mesh.userData.systemId = sys.id;
+      mesh.userData.knownMaterial = _matCache[matKey]; // store original material
       scene.add(mesh);
       starMeshes[sys.id] = mesh;
-    }
-
-    // Create hyperlane lines (single LineSegments for efficiency)
-    if (hyperlanes.length > 0) {
-      const positions = new Float32Array(hyperlanes.length * 6); // 2 vertices per line * 3 coords
-      for (let i = 0; i < hyperlanes.length; i++) {
-        const [a, b] = hyperlanes[i];
-        const sa = systems[a], sb = systems[b];
-        positions[i * 6 + 0] = sa.x;
-        positions[i * 6 + 1] = (sa.y || 0) - 0.5; // slightly below stars
-        positions[i * 6 + 2] = sa.z;
-        positions[i * 6 + 3] = sb.x;
-        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
-        positions[i * 6 + 5] = sb.z;
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      hyperlaneLines = new THREE.LineSegments(geo, _matCache.hyperlane);
-      scene.add(hyperlaneLines);
     }
 
     // Pre-filter star meshes for raycasting (avoids allocation on every mouse event)
@@ -196,11 +201,7 @@
     }
     starMeshes = [];
     starMeshArray = [];
-    if (hyperlaneLines) {
-      if (hyperlaneLines.geometry) hyperlaneLines.geometry.dispose();
-      scene.remove(hyperlaneLines);
-      hyperlaneLines = null;
-    }
+    _removeHyperlanes();
     for (const ring of ownerRings) scene.remove(ring);
     ownerRings = [];
     ownerRingPool = [];
@@ -213,6 +214,26 @@
       highlightMesh = null;
     }
     selectedSystemId = -1;
+    _adjacency = null;
+    _knownSystemIds = new Set();
+  }
+
+  function _removeHyperlanes() {
+    if (hyperlaneLines) {
+      if (hyperlaneLines.geometry) hyperlaneLines.geometry.dispose();
+      scene.remove(hyperlaneLines);
+      hyperlaneLines = null;
+    }
+    if (hyperlaneKnownLines) {
+      if (hyperlaneKnownLines.geometry) hyperlaneKnownLines.geometry.dispose();
+      scene.remove(hyperlaneKnownLines);
+      hyperlaneKnownLines = null;
+    }
+    if (hyperlaneFadedLines) {
+      if (hyperlaneFadedLines.geometry) hyperlaneFadedLines.geometry.dispose();
+      scene.remove(hyperlaneFadedLines);
+      hyperlaneFadedLines = null;
+    }
   }
 
   function _updateOwnership(systems) {
@@ -404,10 +425,18 @@
       const sysId = intersects[0].object.userData.systemId;
       const sys = galaxyData.systems[sysId];
       if (sys) {
-        hoverLabelEl.textContent = sys.name;
-        hoverLabelEl.style.display = 'block';
-        hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
-        hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        // Only show name for known systems
+        if (_knownSystemIds.size === 0 || _knownSystemIds.has(sysId)) {
+          hoverLabelEl.textContent = sys.name;
+          hoverLabelEl.style.display = 'block';
+          hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
+          hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        } else {
+          hoverLabelEl.textContent = 'Unknown System';
+          hoverLabelEl.style.display = 'block';
+          hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
+          hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        }
         renderer.domElement.style.cursor = 'pointer';
       }
     } else {
@@ -526,6 +555,106 @@
       }
     }
     _updateOwnership(galaxyData.systems);
+
+    // Recompute fog of war visibility
+    _recomputeFog(colonies);
+    _applyFog();
+  }
+
+  function _recomputeFog(colonies) {
+    const FoW = (typeof window !== 'undefined' && window.FogOfWar) || {};
+    if (!FoW.computeVisibility || !FoW.getOwnedSystemIds || !_adjacency) return;
+
+    const myId = (typeof window !== 'undefined' && window.GameClient)
+      ? window.GameClient.getState() && window.GameClient.getState().yourId
+      : null;
+    if (!myId) return;
+
+    const ownedIds = FoW.getOwnedSystemIds(colonies, myId);
+    _knownSystemIds = FoW.computeVisibility(ownedIds, _adjacency);
+  }
+
+  function _applyFog() {
+    if (!galaxyData) return;
+
+    // Apply star visibility
+    for (const sys of galaxyData.systems) {
+      const mesh = starMeshes[sys.id];
+      if (!mesh) continue;
+      const known = _knownSystemIds.has(sys.id);
+      if (known) {
+        mesh.material = mesh.userData.knownMaterial;
+        mesh.scale.setScalar(STAR_RADIUS[sys.starType] || 2.0);
+      } else {
+        // Unknown: dim gray, smaller
+        mesh.material = _matCache.starUnknown;
+        mesh.scale.setScalar((STAR_RADIUS[sys.starType] || 2.0) * 0.6);
+      }
+    }
+
+    // Rebuild hyperlanes split by visibility
+    _rebuildHyperlanes();
+  }
+
+  function _rebuildHyperlanes() {
+    if (!galaxyData || !scene) return;
+    _removeHyperlanes();
+
+    const systems = galaxyData.systems;
+    const hyperlanes = galaxyData.hyperlanes;
+    if (!hyperlanes || hyperlanes.length === 0) return;
+
+    // Partition hyperlanes into: known (both ends known), faded (one end known), hidden (neither)
+    const knownPairs = [];
+    const fadedPairs = [];
+    for (const [a, b] of hyperlanes) {
+      const aKnown = _knownSystemIds.has(a);
+      const bKnown = _knownSystemIds.has(b);
+      if (aKnown && bKnown) {
+        knownPairs.push([a, b]);
+      } else if (aKnown || bKnown) {
+        fadedPairs.push([a, b]);
+      }
+      // neither known: hidden entirely
+    }
+
+    // Known hyperlanes (solid)
+    if (knownPairs.length > 0) {
+      const positions = new Float32Array(knownPairs.length * 6);
+      for (let i = 0; i < knownPairs.length; i++) {
+        const [a, b] = knownPairs[i];
+        const sa = systems[a], sb = systems[b];
+        positions[i * 6 + 0] = sa.x;
+        positions[i * 6 + 1] = (sa.y || 0) - 0.5;
+        positions[i * 6 + 2] = sa.z;
+        positions[i * 6 + 3] = sb.x;
+        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
+        positions[i * 6 + 5] = sb.z;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      hyperlaneKnownLines = new THREE.LineSegments(geo, _matCache.hyperlaneKnown);
+      scene.add(hyperlaneKnownLines);
+    }
+
+    // Faded hyperlanes (border of known space)
+    if (fadedPairs.length > 0) {
+      const positions = new Float32Array(fadedPairs.length * 6);
+      for (let i = 0; i < fadedPairs.length; i++) {
+        const [a, b] = fadedPairs[i];
+        const sa = systems[a], sb = systems[b];
+        positions[i * 6 + 0] = sa.x;
+        positions[i * 6 + 1] = (sa.y || 0) - 0.5;
+        positions[i * 6 + 2] = sa.z;
+        positions[i * 6 + 3] = sb.x;
+        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
+        positions[i * 6 + 5] = sb.z;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      hyperlaneFadedLines = new THREE.LineSegments(geo, _matCache.hyperlaneFaded);
+      scene.add(hyperlaneFadedLines);
+    }
   }
 
   // ── Render ──
@@ -575,6 +704,7 @@
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,
     setOnSystemSelect: (cb) => { onSystemSelect = cb; },
     getGalaxyData: () => galaxyData,
+    isSystemKnown: (sysId) => _knownSystemIds.size === 0 || _knownSystemIds.has(sysId),
   };
 
   if (typeof window !== 'undefined') {

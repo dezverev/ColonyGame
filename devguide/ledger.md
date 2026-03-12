@@ -955,3 +955,43 @@ Each entry records an iteration of automated development.
 - Shared resource pool (not per-colony) matches Stellaris model — simpler accounting, colony ships use global resources
 
 **Next:** Fog of war on galaxy map (R25 priority #3)
+
+---
+
+## Entry 28 — 2026-03-12 — Fog of War on Galaxy Map
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- Client-side fog of war visibility system with BFS from owned systems to depth 2 along hyperlanes
+- Shared `fog-of-war.js` module (IIFE pattern) with `buildAdjacency`, `computeVisibility`, `getOwnedSystemIds` — testable in both browser and Node.js
+- Three visibility tiers for star systems: **Known** (within 2 hops of owned system) renders full-color at normal size, **Unknown** renders as dim gray dot at 60% size with opacity 0.2
+- Hyperlane visibility: **known** (both endpoints known) renders solid at 0.4 opacity, **faded** (one endpoint known) renders at 0.12 opacity, **hidden** (neither known) not rendered at all
+- Hover labels show "Unknown System" for systems outside fog range, full name for known systems
+- System panel shows "Unexplored — send a colony ship to learn more" for unknown systems instead of planet details
+- Unknown systems still show ownership dots if another player has colonized them (colored ring visible, but no planet data)
+- Fog recomputes on every `updateOwnership` call (each gameState update), so visibility expands in real-time as colonies are founded
+- Hyperlanes rebuilt on each fog recompute (partitioned into known/faded/hidden LineSegments)
+
+**Files changed:**
+- `src/public/js/fog-of-war.js` — **new** shared fog of war computation module
+- `src/public/js/galaxy-view.js` — adjacency list, fog state, star material swapping, hyperlane partitioning, hover label gating, `isSystemKnown` API
+- `src/public/js/app.js` — system panel fog of war check, "Unexplored" UI for unknown systems
+- `src/public/index.html` — fog-of-war.js script tag
+- `src/public/css/style.css` — `.system-unexplored` style
+- `src/tests/fog-of-war.test.js` — **new** 19 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 419 total (19 new: adjacency building ×3, BFS visibility ×9, owned system extraction ×3, constant validation ×1, integration scenarios ×3). All passing.
+
+**Key decisions:**
+- Extracted BFS/adjacency into shared `fog-of-war.js` module rather than inlining in galaxy-view.js — enables Node.js testing without DOM/Three.js dependencies
+- Client-side only — no server changes needed. Server sends full galaxy data; client filters what to render based on owned systems
+- Fog recomputes on every gameState update rather than being cached across sessions — simple, correct, and fast enough (BFS on 50-200 nodes is trivial)
+- Unknown systems still rendered (dim dot) rather than completely hidden — preserves galaxy shape awareness and lets players see the extent of unexplored space
+- Ownership rings still visible on unknown systems — creates "who owns that?" tension without revealing planet details
+- Hyperlane rebuild on each fog update creates 2-3 LineSegments objects max — negligible memory cost vs maintaining a single object with per-line opacity
+
+**Next:** Base capital housing reduction 10→8 (R25 priority #4), or in-game chat panel (R25 priority #5)

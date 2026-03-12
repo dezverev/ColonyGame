@@ -372,6 +372,7 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .system-star-type { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
 .system-star-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .system-owner { margin-bottom: 0.4rem; font-size: 0.8rem; }
+.system-unexplored { color: #888; font-style: italic; font-size: 0.85rem; margin-top: 0.8rem; padding: 0.4rem; border: 1px dashed #3a3a5e; border-radius: 4px; text-align: center; }
 .system-planet-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.3rem; }
 .system-planet-table th { text-align: left; color: #888; padding: 0.2rem 0.3rem; border-bottom: 1px solid #2a2a4e; font-weight: normal; }
 .system-planet-table td { padding: 0.2rem 0.3rem; border-bottom: 1px solid rgba(42,42,78,0.4); }

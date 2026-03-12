@@ -925,7 +925,14 @@
       return;
     }
 
-    systemPanelTitle.textContent = system.name;
+    // Check fog of war visibility
+    const isKnown = !window.GalaxyView || window.GalaxyView.isSystemKnown(system.id);
+
+    if (isKnown) {
+      systemPanelTitle.textContent = system.name;
+    } else {
+      systemPanelTitle.textContent = 'Unknown System';
+    }
 
     // Star type
     const starLabel = {
@@ -933,7 +940,22 @@
       white: 'White Star', orange: 'Orange Star',
     };
 
-    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${system.starColor}"></span>${starLabel[system.starType] || system.starType}</div>`;
+    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${isKnown ? system.starColor : '#555566'}"></span>${isKnown ? (starLabel[system.starType] || system.starType) : 'Unknown'}</div>`;
+
+    if (!isKnown) {
+      // Unknown system — show exploration prompt
+      // Still show ownership dot if another player owns it
+      if (system.owner) {
+        const ownerPlayer = gameState.players.find(p => p.id === system.owner);
+        if (ownerPlayer) {
+          html += `<div class="system-owner">Claimed by: <span style="color:${ownerPlayer.color}">${ownerPlayer.name}</span></div>`;
+        }
+      }
+      html += '<div class="system-unexplored">Unexplored &mdash; send a colony ship to learn more</div>';
+      systemPanelBody.innerHTML = html;
+      systemPanel.classList.remove('hidden');
+      return;
+    }
 
     // Owner
     if (system.owner) {
