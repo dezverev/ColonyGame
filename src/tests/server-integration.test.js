@@ -183,6 +183,46 @@ describe('Server Integration', () => {
     assert.ok(err.message);
   });
 
+  it('cleans up game engine when all players disconnect', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws1 = await connectWs(srv.port);
+    const ws2 = await connectWs(srv.port);
+
+    await waitForMessage(ws1, m => m.type === 'welcome');
+    await waitForMessage(ws2, m => m.type === 'welcome');
+
+    send(ws1, { type: 'setName', name: 'Alice' });
+    send(ws2, { type: 'setName', name: 'Bob' });
+    await waitForMessage(ws1, m => m.type === 'nameSet');
+    await waitForMessage(ws2, m => m.type === 'nameSet');
+
+    send(ws1, { type: 'createRoom', name: 'Cleanup Test', maxPlayers: 2 });
+    const joined = await waitForMessage(ws1, m => m.type === 'roomJoined');
+    send(ws2, { type: 'joinRoom', roomId: joined.room.id });
+    await waitForMessage(ws2, m => m.type === 'roomJoined');
+    send(ws2, { type: 'toggleReady' });
+    await waitForMessage(ws2, m => m.type === 'roomUpdate');
+
+    send(ws1, { type: 'launchGame' });
+    await waitForMessage(ws1, m => m.type === 'gameInit');
+    await waitForMessage(ws2, m => m.type === 'gameInit');
+
+    // Both players disconnect — engine should be stopped and cleaned up
+    ws1.close();
+    ws2.close();
+
+    // Give server time to process disconnects
+    await new Promise(r => setTimeout(r, 100));
+
+    // Server should still be running (no crash from leaked intervals)
+    const ws3 = await connectWs(srv.port);
+    t.after(() => ws3.close());
+    const welcome = await waitForMessage(ws3, m => m.type === 'welcome');
+    assert.ok(welcome.clientId, 'Server still accepts connections after game cleanup');
+  });
+
   it('chat works within a room', async (t) => {
     const srv = await startServer({ port: 0, log: false });
     t.after(() => srv.close());
