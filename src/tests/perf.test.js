@@ -144,6 +144,45 @@ describe('Performance — stress test (max load)', () => {
   });
 });
 
+describe('Performance — pathfinding', () => {
+  it('BFS pathfinding uses cached adjacency list', () => {
+    const engine = new GameEngine(makeRoom(2, { galaxySize: 'large' }), { tickRate: 10, profile: true });
+    // Adjacency list should be built once at construction
+    assert.ok(engine._adjacency instanceof Map, 'Adjacency list should be a Map');
+    assert.ok(engine._adjacency.size > 0, 'Adjacency list should not be empty');
+
+    // Run 100 pathfinding calls — should be fast with cached adjacency
+    const systems = engine.galaxy.systems;
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) {
+      const from = i % systems.length;
+      const to = (i * 7 + 13) % systems.length;
+      engine._findPath(from, to);
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(durationMs < 50, `100 pathfinding calls took ${durationMs.toFixed(2)}ms, budget 50ms`);
+    engine.stop();
+  });
+});
+
+describe('Performance — multi-colony stress', () => {
+  it('5-colony player tick stays under budget', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10, profile: true });
+    // Give player 1 additional colonies
+    for (let i = 0; i < 4; i++) {
+      const sys = engine.galaxy.systems[i + 5]; // pick non-starting systems
+      if (!sys) continue;
+      const planet = { size: 12, type: 'continental', habitability: 80 };
+      engine._createColony(1, `Colony ${i + 2}`, planet, sys.id);
+    }
+
+    for (let i = 0; i < 300; i++) engine.tick();
+    const stats = engine.getTickStats();
+    assert.ok(stats.avg < 5, `Avg tick ${stats.avg.toFixed(4)}ms exceeds 5ms with multi-colony`);
+    engine.stop();
+  });
+});
+
 describe('Performance — galaxy generation', () => {
   it('large galaxy generates under 50ms', () => {
     const { generateGalaxy } = require('../../server/galaxy');

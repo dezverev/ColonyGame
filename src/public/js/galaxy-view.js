@@ -17,7 +17,8 @@
   let highlightMesh = null;
   let hoverLabelEl = null;     // DOM element for system name on hover
   let onSystemSelect = null;   // callback: (system) => void
-  let colonyShipMeshes = [];   // colony ship marker meshes
+  let colonyShipMeshes = [];   // active colony ship marker meshes
+  let colonyShipPool = [];     // reusable colony ship mesh pool
 
   // Camera orbit state
   let orbitTheta = 0;          // horizontal angle (radians)
@@ -205,6 +206,8 @@
     ownerRingPool = [];
     for (const mesh of colonyShipMeshes) scene.remove(mesh);
     colonyShipMeshes = [];
+    for (const mesh of colonyShipPool) scene.remove(mesh);
+    colonyShipPool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -449,12 +452,16 @@
   function updateColonyShips(ships) {
     if (!scene || !galaxyData) return;
 
-    // Remove old ship meshes
-    for (const mesh of colonyShipMeshes) scene.remove(mesh);
+    // Return active meshes to pool (hide, don't destroy)
+    for (const mesh of colonyShipMeshes) {
+      mesh.visible = false;
+      colonyShipPool.push(mesh);
+    }
     colonyShipMeshes = [];
 
     if (!ships || ships.length === 0) return;
 
+    const now = performance.now();
     for (const ship of ships) {
       const playerColor = _getPlayerColor(ship.ownerId);
       const matKey = 'colonyShip_' + playerColor;
@@ -464,11 +471,20 @@
         });
       }
 
-      const mesh = new THREE.Mesh(_geoCache.colonyShip, _matCache[matKey]);
+      // Reuse pooled mesh or create new one
+      let mesh;
+      if (colonyShipPool.length > 0) {
+        mesh = colonyShipPool.pop();
+        mesh.material = _matCache[matKey];
+        mesh.visible = true;
+      } else {
+        mesh = new THREE.Mesh(_geoCache.colonyShip, _matCache[matKey]);
+        scene.add(mesh);
+      }
 
       // Position: interpolate between current system and next hop
       const currentSys = galaxyData.systems[ship.systemId];
-      if (!currentSys) continue;
+      if (!currentSys) { mesh.visible = false; colonyShipPool.push(mesh); continue; }
 
       if (ship.path && ship.path.length > 0) {
         const nextSys = galaxyData.systems[ship.path[0]];
@@ -488,8 +504,7 @@
       }
 
       // Slow rotation for visual flair
-      mesh.rotation.y = Date.now() * 0.002;
-      scene.add(mesh);
+      mesh.rotation.y = now * 0.002;
       colonyShipMeshes.push(mesh);
     }
   }

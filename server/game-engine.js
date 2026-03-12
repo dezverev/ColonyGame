@@ -163,6 +163,9 @@ class GameEngine {
     const galaxySeed = options.galaxySeed != null ? options.galaxySeed : Math.floor(Math.random() * 2147483647);
     this.galaxy = generateGalaxy({ size: galaxySize, seed: galaxySeed });
 
+    // Build adjacency list from hyperlanes (cached for BFS pathfinding)
+    this._adjacency = this._buildAdjacencyList();
+
     // Assign starting systems to players and place colonies
     const playerIds = [...this.playerStates.keys()];
     this._startingSystems = assignStartingSystems(this.galaxy, playerIds);
@@ -646,13 +649,9 @@ class GameEngine {
     return net;
   }
 
-  // BFS shortest path between two systems along hyperlanes
-  // Returns array of system IDs from (excluding) start to target, or null if unreachable
-  _findPath(fromSystemId, toSystemId) {
-    if (fromSystemId === toSystemId) return [];
-    if (!this.galaxy) return null;
-
-    // Build adjacency list from hyperlanes
+  // Build adjacency list from hyperlanes (called once at construction)
+  _buildAdjacencyList() {
+    if (!this.galaxy) return new Map();
     const adj = new Map();
     for (const [a, b] of this.galaxy.hyperlanes) {
       if (!adj.has(a)) adj.set(a, []);
@@ -660,7 +659,16 @@ class GameEngine {
       adj.get(a).push(b);
       adj.get(b).push(a);
     }
+    return adj;
+  }
 
+  // BFS shortest path between two systems along hyperlanes
+  // Returns array of system IDs from (excluding) start to target, or null if unreachable
+  _findPath(fromSystemId, toSystemId) {
+    if (fromSystemId === toSystemId) return [];
+    if (!this.galaxy) return null;
+
+    const adj = this._adjacency;
     const visited = new Set([fromSystemId]);
     const parent = new Map();
     const queue = [fromSystemId];
@@ -723,6 +731,12 @@ class GameEngine {
     }
   }
 
+  // Remove a colony ship by reference (in-place splice, no new array)
+  _removeColonyShip(ship) {
+    const idx = this._colonyShips.indexOf(ship);
+    if (idx !== -1) this._colonyShips.splice(idx, 1);
+  }
+
   // Found a new colony when colony ship arrives
   _foundColonyFromShip(ship) {
     const system = this.galaxy.systems[ship.targetSystemId];
@@ -739,7 +753,7 @@ class GameEngine {
         systemName: system.name,
         reason: 'Colony cap reached',
       });
-      this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+      this._removeColonyShip(ship);
       this._dirtyPlayers.add(ship.ownerId);
       return;
     }
@@ -750,7 +764,7 @@ class GameEngine {
         systemName: system.name,
         reason: 'Planet already colonized',
       });
-      this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+      this._removeColonyShip(ship);
       this._dirtyPlayers.add(ship.ownerId);
       return;
     }
@@ -770,7 +784,7 @@ class GameEngine {
     colony.isStartingColony = false;
 
     // Remove ship
-    this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+    this._removeColonyShip(ship);
 
     // Emit colony founded event
     const playerState = this.playerStates.get(ship.ownerId);
@@ -838,19 +852,16 @@ class GameEngine {
     const state = this.playerStates.get(playerId);
     if (!state) return 0;
 
-    // Pops × 2
+    // Pops × 2 + Districts × 1 (single pass)
     let totalPops = 0;
+    let totalDistricts = 0;
     const colonyIds = this._playerColonies.get(playerId) || [];
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
-      if (colony) totalPops += colony.pops;
-    }
-
-    // Districts × 1
-    let totalDistricts = 0;
-    for (const colonyId of colonyIds) {
-      const colony = this.colonies.get(colonyId);
-      if (colony) totalDistricts += colony.districts.length;
+      if (colony) {
+        totalPops += colony.pops;
+        totalDistricts += colony.districts.length;
+      }
     }
 
     // Alloys stockpiled / 25
