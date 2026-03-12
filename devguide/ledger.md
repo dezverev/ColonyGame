@@ -227,3 +227,32 @@ Each entry records an iteration of automated development.
 - Starting minerals of 300 allows exactly 3 district builds at 100 each, giving players meaningful opening choices
 
 **Next:** Dead code fix (first-3-districts discount for newly colonized planets), or stale client cleanup + HTML colony UI
+
+---
+
+## Entry 8 — 2026-03-11 — Balance Fix: Starting Pop/Housing Deadlock
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Reduced starting pops from 10 to 8 in `_createColony`
+- Players now start 2 below housing cap (10), allowing 2 natural growth cycles (~40 sec each at surplus +4) before housing constrains
+- Food surplus increased from +2/month to +4/month (12 production - 8 consumption), making early game feel more abundant
+- Unemployed pops reduced from 6 to 4 (with 4 working districts), slightly lowering early passive research
+
+**Files changed:**
+- `server/game-engine.js` — starting pops 10→8
+- `src/tests/game-engine.test.js` — updated 15 existing tests, added 2 new balance tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 86 total (65 game-engine + 12 room-manager + 6 integration + 3 performance). All passing.
+
+**Key decisions:**
+- 8 pops with 10 housing teaches players that pops grow and Housing matters — they'll see growth happen naturally before hitting the cap
+- Food surplus of +4 (base growth rate) means first pop grows in 40 seconds, second in another 40 seconds, then housing constrains at 10 pops
+- No housing district changes needed — the extra headroom comes purely from reducing starting pops
+- Growth tests no longer need extra housing districts added since there's natural headroom
+
+**Next:** Generator cost parity (150→100 minerals), then variable build times

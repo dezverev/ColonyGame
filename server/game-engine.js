@@ -101,7 +101,7 @@ class GameEngine {
       },
       districts: [],               // built districts: { id, type }
       buildQueue: [],              // { id, type, ticksRemaining }
-      pops: 10,                    // starting population
+      pops: 8,                     // starting population
       growthProgress: 0,           // ticks accumulated toward next pop
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
