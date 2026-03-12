@@ -30,7 +30,7 @@ describe('GameEngine — Initialization', () => {
     const state = engine.getState();
     const p = state.players[0];
     assert.strictEqual(p.resources.energy, 100);
-    assert.strictEqual(p.resources.minerals, 200);
+    assert.strictEqual(p.resources.minerals, 300);
     assert.strictEqual(p.resources.food, 100);
     assert.strictEqual(p.resources.alloys, 50);
     assert.strictEqual(p.resources.influence, 100);
@@ -78,7 +78,7 @@ describe('GameEngine — District Building', () => {
 
     // Check resources deducted (housing costs 100 minerals)
     const state = engine.getState();
-    assert.strictEqual(state.players[0].resources.minerals, 200 - 100);
+    assert.strictEqual(state.players[0].resources.minerals, 300 - 100);
 
     // Check build queue
     assert.strictEqual(state.colonies[0].buildQueue.length, 1);
@@ -224,10 +224,10 @@ describe('GameEngine — Resource Production', () => {
     }
 
     const after = engine.playerStates.get(1).resources;
-    // Starting districts: generator(+6 energy), mining(+4 minerals), 2x agriculture(+12 food)
+    // Starting districts: generator(+6 energy), mining(+6 minerals), 2x agriculture(+12 food)
     // 10 pops consume 10 food, so net food = +12 - 10 = +2
     assert.strictEqual(after.energy, before.energy + 6);
-    assert.strictEqual(after.minerals, before.minerals + 4);
+    assert.strictEqual(after.minerals, before.minerals + 6);
     assert.strictEqual(after.food, before.food + 12 - 10);
   });
 
@@ -416,7 +416,7 @@ describe('GameEngine — State Serialization', () => {
     assert.ok(colony.production.production);
     assert.ok(colony.production.consumption);
     assert.strictEqual(colony.production.production.energy, 6); // generator
-    assert.strictEqual(colony.production.production.minerals, 4); // mining
+    assert.strictEqual(colony.production.production.minerals, 6); // mining
     assert.strictEqual(colony.production.production.food, 12); // 2x agriculture
   });
 
@@ -534,6 +534,49 @@ describe('GameEngine — Food & Housing Balance', () => {
     const after = engine.playerStates.get(1).resources.food;
     // Net +2 food/month × 3 months = +6
     assert.strictEqual(after, before + 6);
+  });
+});
+
+describe('GameEngine — Mineral Pacing Balance', () => {
+  it('mining district produces 6 minerals per month (not 4)', () => {
+    assert.strictEqual(DISTRICT_DEFS.mining.produces.minerals, 6);
+  });
+
+  it('mining district costs 100 minerals (same as agriculture/housing)', () => {
+    assert.strictEqual(DISTRICT_DEFS.mining.cost.minerals, 100);
+    assert.strictEqual(DISTRICT_DEFS.agriculture.cost.minerals, 100);
+    assert.strictEqual(DISTRICT_DEFS.housing.cost.minerals, 100);
+  });
+
+  it('starting minerals are 300 (not 200)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.players[0].resources.minerals, 300);
+  });
+
+  it('starting minerals allow 3 immediate district builds at 100 each', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    // Build 3 mining districts at 100 each = 300 minerals
+    const r1 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'mining' });
+    assert.strictEqual(r1.ok, true);
+    const r2 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'mining' });
+    assert.strictEqual(r2.ok, true);
+    const r3 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'mining' });
+    assert.strictEqual(r3.ok, true);
+    assert.strictEqual(engine.playerStates.get(1).resources.minerals, 0);
+  });
+
+  it('mining income funds a new mining district every ~17 seconds (100 cost / 6 per month)', () => {
+    // At 6 minerals/month (10 seconds), cost 100 minerals takes ~167 seconds ≈ 2.8 minutes
+    // With 2 mining districts (12/month), cost 100 takes ~83 seconds
+    // This is significantly better than the old 4/month which took 37.5 seconds per mining build
+    const monthlyIncome = DISTRICT_DEFS.mining.produces.minerals;
+    const cost = DISTRICT_DEFS.mining.cost.minerals;
+    const monthsToFund = cost / monthlyIncome;
+    // Single mine: 100/6 ≈ 16.7 months. Old was 100/4 = 37.5 months (at old 150 cost).
+    // Actually old was 150/4 = 37.5. New is 100/6 = 16.7. ~2.2x faster.
+    assert.ok(monthsToFund < 20, `Should fund a mining district in under 20 months, got ${monthsToFund.toFixed(1)}`);
   });
 });
 

@@ -5,7 +5,7 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#
 const DISTRICT_DEFS = {
   housing:     { produces: {}, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 300 },
   generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 150 }, buildTime: 300 },
-  mining:      { produces: { minerals: 4 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 150 }, buildTime: 300 },
+  mining:      { produces: { minerals: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   industrial:  { produces: { alloys: 3 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 300 },
   research:    { produces: { physics: 3, society: 3, engineering: 3 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 300 },
@@ -63,7 +63,7 @@ class GameEngine {
         color: PLAYER_COLORS[colorIndex++ % PLAYER_COLORS.length],
         resources: {
           energy: 100,
-          minerals: 200,
+          minerals: 300,
           food: 100,
           alloys: 50,
           research: { physics: 0, society: 0, engineering: 0 },
