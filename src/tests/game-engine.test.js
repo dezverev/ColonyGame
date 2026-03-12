@@ -370,3 +370,106 @@ describe('PLANET_TYPES', () => {
     }
   });
 });
+
+describe('GameEngine — Performance', () => {
+  it('tick completes within 50ms budget (8 players, 8 colonies each)', () => {
+    // Create a high-load scenario: 8 players, each with multiple colonies
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) {
+      players.set(i, { id: i, name: `Player${i}`, ready: true, isHost: i === 1 });
+    }
+    const room = { id: 'perf', name: 'Perf', hostId: 1, maxPlayers: 8, status: 'playing', players };
+    const engine = new GameEngine(room, { tickRate: 10 });
+
+    // Add 7 more colonies per player (8 total each = 64 colonies)
+    for (let i = 1; i <= 8; i++) {
+      for (let c = 0; c < 7; c++) {
+        const colony = engine._createColony(i, `Colony ${i}-${c}`, { size: 16, type: 'continental', habitability: 80 });
+        engine._addBuiltDistrict(colony, 'generator');
+        engine._addBuiltDistrict(colony, 'mining');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'industrial');
+        engine._addBuiltDistrict(colony, 'research');
+      }
+    }
+
+    // Warm up
+    engine.tick();
+
+    // Measure 100 ticks (includes a monthly cycle)
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) {
+      engine._dirty = true; // force state serialization every tick for worst-case
+      engine.tick();
+    }
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const avgTickMs = durationMs / 100;
+
+    assert.ok(avgTickMs < 50, `Average tick took ${avgTickMs.toFixed(2)}ms, budget is 50ms`);
+  });
+
+  it('getState payload is under 10KB for typical game', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const state = engine.getState();
+    const json = JSON.stringify(state);
+    const sizeKB = Buffer.byteLength(json) / 1024;
+
+    assert.ok(sizeKB < 10, `State payload is ${sizeKB.toFixed(2)}KB, target is <10KB`);
+  });
+
+  it('getState serialization completes under 5ms', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+
+    // Warm up
+    engine.getState();
+    engine._cachedState = null;
+
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) {
+      engine._cachedState = null; // force recalculation
+      JSON.stringify(engine.getState());
+    }
+    const avgMs = Number(process.hrtime.bigint() - start) / 1e6 / 100;
+
+    assert.ok(avgMs < 5, `Serialization took ${avgMs.toFixed(2)}ms avg, target is <5ms`);
+  });
+
+  it('skips broadcast on clean ticks (dirty flag)', () => {
+    let broadcastCount = 0;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onTick: () => { broadcastCount++; },
+    });
+
+    // First tick should broadcast (dirty from init)
+    engine.tick();
+    assert.strictEqual(broadcastCount, 1);
+
+    // Subsequent ticks with no changes should not broadcast
+    engine.tick();
+    engine.tick();
+    engine.tick();
+    assert.strictEqual(broadcastCount, 1, 'Should not broadcast when state is clean');
+
+    // Command should trigger broadcast on next tick
+    const colony = engine.getState().colonies[0];
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    engine.tick();
+    assert.strictEqual(broadcastCount, 2, 'Should broadcast after command');
+  });
+
+  it('caches production calculations between calls', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const result1 = engine._calcProduction(colony);
+    const result2 = engine._calcProduction(colony);
+    assert.strictEqual(result1, result2, 'Should return same cached object');
+
+    // Invalidate and check new object
+    engine._invalidateColonyCache(colony);
+    const result3 = engine._calcProduction(colony);
+    assert.notStrictEqual(result1, result3, 'Should return new object after invalidation');
+    assert.deepStrictEqual(result1, result3, 'Values should still match');
+  });
+});

@@ -35,7 +35,10 @@ class GameEngine {
     this._idCounter = 0;
     this.playerStates = new Map();
     this.colonies = new Map(); // colonyId -> colony
+    this._playerColonies = new Map(); // playerId -> colonyId[]
     this.onTick = options.onTick || null;
+    this._dirty = true; // tracks whether state changed since last broadcast
+    this._cachedState = null; // cached serialized state
 
     this._initPlayerStates();
     this._initStartingColonies();
@@ -92,15 +95,33 @@ class GameEngine {
       districts: [],               // built districts: { id, type }
       buildQueue: [],              // { id, type, ticksRemaining }
       pops: 10,                    // starting population
+      _cachedHousing: null,        // cached derived values
+      _cachedJobs: null,
+      _cachedProduction: null,
     };
     this.colonies.set(id, colony);
+    // Maintain player -> colonies index
+    if (!this._playerColonies.has(ownerId)) {
+      this._playerColonies.set(ownerId, []);
+    }
+    this._playerColonies.get(ownerId).push(id);
+    this._dirty = true;
     return colony;
   }
 
   _addBuiltDistrict(colony, type) {
     const id = this._nextId();
     colony.districts.push({ id, type });
+    this._invalidateColonyCache(colony);
     return id;
+  }
+
+  _invalidateColonyCache(colony) {
+    colony._cachedHousing = null;
+    colony._cachedJobs = null;
+    colony._cachedProduction = null;
+    this._dirty = true;
+    this._cachedState = null;
   }
 
   // Count total districts (built + in queue)
@@ -108,28 +129,33 @@ class GameEngine {
     return colony.districts.length + colony.buildQueue.length;
   }
 
-  // Calculate housing capacity for a colony
+  // Calculate housing capacity for a colony (cached)
   _calcHousing(colony) {
+    if (colony._cachedHousing !== null) return colony._cachedHousing;
     let housing = 2; // base housing from capital
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
       if (def) housing += def.housing;
     }
+    colony._cachedHousing = housing;
     return housing;
   }
 
-  // Calculate jobs provided by districts
+  // Calculate jobs provided by districts (cached)
   _calcJobs(colony) {
+    if (colony._cachedJobs !== null) return colony._cachedJobs;
     let jobs = 0;
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
       if (def) jobs += def.jobs;
     }
+    colony._cachedJobs = jobs;
     return jobs;
   }
 
-  // Calculate per-month production for a colony
+  // Calculate per-month production for a colony (cached — invalidated on district/pop changes)
   _calcProduction(colony) {
+    if (colony._cachedProduction !== null) return colony._cachedProduction;
     const production = { energy: 0, minerals: 0, food: 0, alloys: 0, physics: 0, society: 0, engineering: 0 };
     const consumption = { energy: 0, minerals: 0, food: 0, alloys: 0 };
 
@@ -161,15 +187,20 @@ class GameEngine {
     // Pops consume 1 food each per month
     consumption.food = colony.pops;
 
-    return { production, consumption };
+    const result = { production, consumption };
+    colony._cachedProduction = result;
+    return result;
   }
 
   // Process monthly resource production for all colonies of a player
   _processMonthlyResources() {
     for (const [playerId, state] of this.playerStates) {
-      const playerColonies = Array.from(this.colonies.values()).filter(c => c.ownerId === playerId);
+      const colonyIds = this._playerColonies.get(playerId);
+      if (!colonyIds) continue;
 
-      for (const colony of playerColonies) {
+      for (const colonyId of colonyIds) {
+        const colony = this.colonies.get(colonyId);
+        if (!colony) continue;
         const { production, consumption } = this._calcProduction(colony);
 
         // Apply production
@@ -188,6 +219,8 @@ class GameEngine {
         state.resources.alloys -= consumption.alloys;
       }
     }
+    this._dirty = true;
+    this._cachedState = null;
   }
 
   // Process construction queues
@@ -199,6 +232,7 @@ class GameEngine {
       if (item.ticksRemaining <= 0) {
         colony.buildQueue.shift();
         this._addBuiltDistrict(colony, item.type);
+        // _addBuiltDistrict already sets _dirty
       }
     }
   }
@@ -212,6 +246,7 @@ class GameEngine {
       // Pop dies if food deficit
       if (state.resources.food < 0 && colony.pops > 1) {
         colony.pops--;
+        this._invalidateColonyCache(colony); // production depends on pops
       }
     }
   }
@@ -239,7 +274,11 @@ class GameEngine {
       this._processPopGrowth();
     }
 
-    if (this.onTick) this.onTick(this.getState());
+    // Only broadcast when state has changed
+    if (this.onTick && this._dirty) {
+      this._dirty = false;
+      this.onTick(this.getState());
+    }
   }
 
   handleCommand(playerId, cmd) {
@@ -285,6 +324,8 @@ class GameEngine {
 
         const id = this._nextId();
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
+        this._dirty = true;
+        this._cachedState = null;
         return { ok: true, id };
       }
 
@@ -299,6 +340,7 @@ class GameEngine {
         if (idx === -1) return { error: 'District not found' };
 
         colony.districts.splice(idx, 1);
+        this._invalidateColonyCache(colony);
         return { ok: true };
       }
 
@@ -308,7 +350,11 @@ class GameEngine {
   }
 
   getState() {
-    return {
+    if (this._cachedState) {
+      this._cachedState.tick = this.tickCount;
+      return this._cachedState;
+    }
+    const state = {
       tick: this.tickCount,
       players: Array.from(this.playerStates.values()).map(p => ({
         id: p.id,
@@ -329,6 +375,8 @@ class GameEngine {
         production: this._calcProduction(c),
       })),
     };
+    this._cachedState = state;
+    return state;
   }
 
   getInitState() {
