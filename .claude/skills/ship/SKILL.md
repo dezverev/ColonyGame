@@ -39,11 +39,17 @@ Run `git status` and `git diff` (staged + unstaged) to understand what's changed
 
 - Merge the PR using `gh pr merge` with `--squash` for clean history
 - Delete the remote branch after merge
-- Switch back to `main` and pull
+- Switch back to `main` and sync with `git fetch origin && git reset --hard origin/main`
 
-### 6. Report
+### 6. Create Next Working Branch
+
+- Create and switch to a new branch for continued development
+- Name it based on the next likely area of work (e.g., `next-iteration`, `post-<previous-topic>`)
+- Push it with `-u` so it's ready for the next `/ship`
+
+### 7. Report
 
 Output:
 - PR URL
 - What was merged
-- Current branch status after merge
+- Current working branch name
