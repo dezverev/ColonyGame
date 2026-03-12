@@ -1,0 +1,18 @@
+{
+  "name": "rock pile c",
+  "collidable": true,
+  "size": {
+    "w": 48,
+    "h": 48
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.75
+  },
+  "worldOffset": {
+    "x": 0.5,
+    "y": 0.5,
+    "z": 0
+  },
+  "depthBias": 0.75
+}

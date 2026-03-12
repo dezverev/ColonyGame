@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RTS Game</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Name Entry -->
+  <div id="name-screen" class="screen active">
+    <div class="center-box">
+      <h1>RTS Game</h1>
+      <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
+      <button id="name-submit">Play</button>
+    </div>
+  </div>
+
+  <!-- Lobby -->
+  <div id="lobby-screen" class="screen">
+    <div class="lobby-header">
+      <h2>Game Lobby</h2>
+      <span id="player-name-display"></span>
+      <button id="create-room-btn">Create Room</button>
+    </div>
+    <div id="room-list"></div>
+
+    <!-- Create Room Dialog -->
+    <div id="create-room-dialog" class="dialog hidden">
+      <div class="dialog-content">
+        <h3>Create Room</h3>
+        <label>Room Name
+          <input type="text" id="room-name-input" maxlength="30" placeholder="My Room" autocomplete="off">
+        </label>
+        <label>Max Players
+          <select id="room-max-players">
+            <option value="2">2</option>
+            <option value="4" selected>4</option>
+            <option value="6">6</option>
+            <option value="8">8</option>
+          </select>
+        </label>
+        <div class="dialog-buttons">
+          <button id="room-create-confirm">Create</button>
+          <button id="room-create-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Room View -->
+  <div id="room-screen" class="screen">
+    <div class="room-header">
+      <h2 id="room-title"></h2>
+      <button id="leave-room-btn">Leave</button>
+    </div>
+    <div id="player-list"></div>
+    <div class="room-actions">
+      <button id="ready-btn">Ready</button>
+      <button id="launch-btn" class="hidden">Launch Game</button>
+    </div>
+    <div id="room-chat">
+      <div id="chat-messages"></div>
+      <input type="text" id="chat-input" placeholder="Chat..." maxlength="200" autocomplete="off">
+    </div>
+  </div>
+
+  <!-- Game View -->
+  <div id="game-screen" class="screen">
+    <canvas id="game-canvas"></canvas>
+    <div id="game-hud">
+      <div id="resource-bar">
+        <span id="hud-gold">Gold: 0</span>
+        <span id="hud-wood">Wood: 0</span>
+        <span id="hud-stone">Stone: 0</span>
+        <span id="hud-supply">Supply: 0/0</span>
+      </div>
+      <div id="minimap-container">
+        <canvas id="minimap-canvas" width="150" height="150"></canvas>
+      </div>
+      <div id="selection-panel"></div>
+    </div>
+  </div>
+
+  <script src="js/projection.js"></script>
+  <script src="js/lobby.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

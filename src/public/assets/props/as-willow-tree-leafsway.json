@@ -1,0 +1,14 @@
+{
+  "name": "Willow Tree",
+  "type": "tree",
+  "collidable": true,
+  "description": "Weeping willow tree with drooping branches swaying in the breeze.",
+  "size": { "w": 256, "h": 256 },
+  "anchor": { "x": 0.5, "y": 0.85 },
+  "worldOffset": { "x": 0.5, "y": 0.5, "z": -0.5 },
+  "depthBias": 0.75,
+  "frameSize": { "w": 256, "h": 256 },
+  "frames": 25,
+  "fps": 8,
+  "loopDelay": [0, 0]
+}

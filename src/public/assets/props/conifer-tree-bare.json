@@ -1,0 +1,18 @@
+{
+  "name": "conifer tree bare",
+  "collidable": false,
+  "size": {
+    "w": 144,
+    "h": 144
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 1
+  },
+  "worldOffset": {
+    "x": 0.5,
+    "y": 0.5,
+    "z": 0
+  },
+  "depthBias": 0.75
+}

@@ -1,0 +1,145 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; overflow: hidden; height: 100vh; }
+
+.screen { display: none; position: absolute; inset: 0; }
+.screen.active { display: flex; }
+
+/* ── Name Screen ── */
+#name-screen { justify-content: center; align-items: center; }
+.center-box { text-align: center; }
+.center-box h1 { font-size: 3rem; margin-bottom: 1rem; color: #e94560; }
+.center-box input {
+  padding: 0.8rem 1.2rem; font-size: 1.1rem;
+  border: 2px solid #333; border-radius: 6px;
+  background: #16213e; color: #fff; outline: none;
+}
+.center-box input:focus { border-color: #e94560; }
+.center-box button {
+  margin-left: 0.5rem; padding: 0.8rem 1.5rem; font-size: 1.1rem;
+  background: #e94560; color: #fff; border: none; border-radius: 6px; cursor: pointer;
+}
+.center-box button:hover { background: #c73652; }
+
+/* ── Lobby ── */
+#lobby-screen { flex-direction: column; }
+.lobby-header {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1rem 2rem; background: #16213e; border-bottom: 2px solid #0f3460;
+}
+.lobby-header h2 { flex: 1; }
+#player-name-display { color: #e94560; font-weight: bold; }
+#create-room-btn {
+  padding: 0.5rem 1rem; background: #0f3460; color: #fff;
+  border: 1px solid #e94560; border-radius: 4px; cursor: pointer;
+}
+#create-room-btn:hover { background: #e94560; }
+
+#room-list { flex: 1; overflow-y: auto; padding: 1rem 2rem; }
+.room-card {
+  display: flex; align-items: center; padding: 1rem; margin-bottom: 0.5rem;
+  background: #16213e; border: 1px solid #333; border-radius: 6px;
+  cursor: pointer; transition: border-color 0.2s;
+}
+.room-card:hover { border-color: #e94560; }
+.room-card .room-name { flex: 1; font-weight: bold; }
+.room-card .room-info { color: #888; font-size: 0.9rem; margin-right: 1rem; }
+.room-card .room-status {
+  padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; font-weight: bold;
+}
+.room-card .room-status.waiting { background: #2ecc71; color: #000; }
+.room-card .room-status.playing { background: #e67e22; color: #000; }
+
+.no-rooms { text-align: center; color: #666; padding: 3rem; font-size: 1.1rem; }
+
+/* ── Dialog ── */
+.dialog {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; justify-content: center; align-items: center; z-index: 100;
+}
+.dialog.hidden { display: none; }
+.dialog-content {
+  background: #16213e; padding: 2rem; border-radius: 8px;
+  border: 1px solid #e94560; min-width: 300px;
+}
+.dialog-content h3 { margin-bottom: 1rem; }
+.dialog-content label { display: block; margin-bottom: 0.8rem; font-size: 0.9rem; }
+.dialog-content input, .dialog-content select {
+  width: 100%; padding: 0.5rem; margin-top: 0.3rem;
+  background: #0a0a1a; color: #fff; border: 1px solid #333; border-radius: 4px;
+}
+.dialog-buttons { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.dialog-buttons button {
+  flex: 1; padding: 0.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;
+}
+.dialog-buttons button:first-child { background: #e94560; color: #fff; }
+.dialog-buttons button:last-child { background: #333; color: #fff; }
+
+/* ── Room View ── */
+#room-screen { flex-direction: column; }
+.room-header {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 1rem 2rem; background: #16213e; border-bottom: 2px solid #0f3460;
+}
+.room-header h2 { flex: 1; }
+#leave-room-btn {
+  padding: 0.5rem 1rem; background: #333; color: #fff;
+  border: 1px solid #e94560; border-radius: 4px; cursor: pointer;
+}
+
+#player-list { padding: 1rem 2rem; }
+.player-row {
+  display: flex; align-items: center; padding: 0.6rem 1rem; margin-bottom: 0.3rem;
+  background: #16213e; border-radius: 4px;
+}
+.player-row .player-name { flex: 1; }
+.player-row .player-badge {
+  font-size: 0.8rem; padding: 0.15rem 0.5rem; border-radius: 3px; margin-left: 0.5rem;
+}
+.player-badge.host { background: #e94560; color: #fff; }
+.player-badge.ready { background: #2ecc71; color: #000; }
+.player-badge.not-ready { background: #555; color: #aaa; }
+
+.room-actions { display: flex; gap: 0.5rem; padding: 0.5rem 2rem; }
+.room-actions button {
+  padding: 0.6rem 1.5rem; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem;
+}
+#ready-btn { background: #2ecc71; color: #000; }
+#ready-btn.is-ready { background: #e67e22; }
+#launch-btn { background: #e94560; color: #fff; }
+.hidden { display: none !important; }
+
+#room-chat { flex: 1; display: flex; flex-direction: column; padding: 0.5rem 2rem 1rem; min-height: 0; }
+#chat-messages {
+  flex: 1; overflow-y: auto; background: #0a0a1a; border-radius: 4px;
+  padding: 0.5rem; margin-bottom: 0.5rem; font-size: 0.9rem;
+}
+#chat-messages .msg { margin-bottom: 0.2rem; }
+#chat-messages .msg-name { color: #e94560; font-weight: bold; }
+#chat-input { padding: 0.5rem; background: #16213e; color: #fff; border: 1px solid #333; border-radius: 4px; }
+
+/* ── Game View ── */
+#game-screen { flex-direction: column; background: #0a0a1a; }
+#game-canvas { flex: 1; display: block; }
+
+#game-hud { position: absolute; top: 0; left: 0; right: 0; pointer-events: none; }
+#resource-bar {
+  display: flex; gap: 1.5rem; padding: 0.5rem 1rem;
+  background: rgba(0,0,0,0.7); pointer-events: auto; font-size: 0.9rem;
+}
+#resource-bar span { font-weight: bold; }
+#hud-gold { color: #f1c40f; }
+#hud-wood { color: #8b4513; }
+#hud-stone { color: #95a5a6; }
+#hud-supply { color: #3498db; }
+
+#minimap-container {
+  position: absolute; bottom: 10px; right: 10px;
+  border: 2px solid #333; pointer-events: auto;
+}
+#minimap-canvas { display: block; background: #1a1a2e; }
+
+#selection-panel {
+  position: absolute; bottom: 10px; left: 10px;
+  background: rgba(0,0,0,0.7); padding: 0.5rem; border-radius: 4px;
+  pointer-events: auto; min-width: 200px; min-height: 60px; color: #ccc; font-size: 0.85rem;
+}

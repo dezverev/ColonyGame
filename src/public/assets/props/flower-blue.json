@@ -1,0 +1,20 @@
+{
+  "name": "Blue Flowers",
+  "type": "flower",
+  "description": "Cluster of blue tulip-like flowers.",
+  "collidable": false,
+  "size": {
+    "w": 64,
+    "h": 64
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.65
+  },
+  "worldOffset": {
+    "x": 0.5,
+    "y": 0.5,
+    "z": 0
+  },
+  "depthBias": 0.5
+}

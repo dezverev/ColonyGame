@@ -1,0 +1,2102 @@
+{
+  "autumn-leaves": {
+    "name": "Autumn Leaves",
+    "file": "assets/tiles/autumn-leaves.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ground covered in fallen orange, red, and yellow leaves over dark soil. Place in deciduous forest areas during autumn theming. Use in clusters of 5-15 tiles beneath tree props. Pairs well with forest-rotting-leaves and forest-deadwood.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "grass-*", "dirt-*", "patchy-grass-dirt", "pine-needles"]
+  },
+  "beach-coarse": {
+    "name": "Coarse Beach Sand",
+    "file": "assets/tiles/beach-coarse.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Rough, grainy sand with visible pebbles. Use as transition between fine beach sand and rocky/grassy areas. Place in strips 2-4 tiles wide along the inland edge of beaches.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["beach-*", "grass-*", "dirt-*", "rocks-pebbles"]
+  },
+  "beach-cracked": {
+    "name": "Cracked Beach",
+    "file": "assets/tiles/beach-cracked.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dried, cracked sandy surface. Use sparingly in upper beach areas that are far from water and baked by sun. Good for desolate coastal areas. Cluster 3-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["beach-*", "desert-sand", "dirt-dry-cracked", "dirt-sandy"]
+  },
+  "beach-footprints": {
+    "name": "Beach Footprints",
+    "file": "assets/tiles/beach-footprints.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Sandy beach with visible footprints. Use very sparingly (1-3 tiles) near NPC spawn points or paths leading to/from the beach to suggest foot traffic.",
+    "tags": ["natural", "rare", "decoration"],
+    "neighbors": ["beach-*"]
+  },
+  "beach-golden": {
+    "name": "Golden Beach Sand",
+    "file": "assets/tiles/beach-golden.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Warm golden sand, slightly darker than standard beach-sand. Use as base fill for tropical or sun-drenched beach areas. Large patches of 20-50 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["beach-*", "water-*", "shallow-water", "grass-sandy"]
+  },
+  "beach-pebbles": {
+    "name": "Pebble Beach",
+    "file": "assets/tiles/beach-pebbles.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Beach covered in small smooth pebbles. Use along rocky coastlines or as transition from beach to rocky terrain. Strips of 3-8 tiles wide.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["beach-*", "rocks-pebbles", "dirt-gravelly", "water-*"]
+  },
+  "beach-sand": {
+    "name": "Beach Sand",
+    "file": "assets/tiles/beach-sand.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Standard pale tan beach sand. The primary base-fill tile for beach biomes. Use in large areas 30+ tiles for main beach expanses. Should border water on one side and transition to grass/dirt on the other.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["beach-*", "water-*", "shallow-water", "white-sand-beach", "grass-sandy", "dirt-sandy"]
+  },
+  "beach-seashells": {
+    "name": "Seashell Beach",
+    "file": "assets/tiles/beach-seashells.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Sand with scattered seashells. Use as accent near the waterline, 1-4 tiles at a time. Adds visual interest to beach areas.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["beach-*", "water-shallow", "shallow-water"]
+  },
+  "beach-shoreline": {
+    "name": "Beach Shoreline",
+    "file": "assets/tiles/beach-shoreline.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Wet sand at the water's edge with a darker, damp appearance. Use in a 1-2 tile strip directly between dry beach sand and water tiles. Critical transition tile.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["beach-*", "water-*", "shallow-water", "beach-wet"]
+  },
+  "beach-wet": {
+    "name": "Wet Beach Sand",
+    "file": "assets/tiles/beach-wet.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark, waterlogged sand. Use as transition between shoreline and dry beach, 1-3 tiles wide. Slightly darker than shoreline.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["beach-*", "water-*", "shallow-water"]
+  },
+  "beach-white": {
+    "name": "White Beach Sand",
+    "file": "assets/tiles/beach-white.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Bright white tropical sand. Use for pristine tropical beaches. Can be mixed with beach-golden for variation. Large patches 20+ tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["beach-*", "water-*", "water-turquoise", "water-crystal"]
+  },
+  "carpet-blue": {
+    "name": "Blue Carpet",
+    "file": "assets/tiles/carpet-blue.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Rich blue woven carpet with decorative pattern. Use inside buildings for noble or magical rooms. Place in rectangular areas matching room dimensions. 4-20 tiles per room.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["carpet-*", "floor-*", "wooden-planks"]
+  },
+  "carpet-green": {
+    "name": "Green Carpet",
+    "file": "assets/tiles/carpet-green.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Green woven carpet with decorative pattern. Use inside buildings for studies, libraries, or merchant halls. Rectangular areas matching room shape.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["carpet-*", "floor-*", "wooden-planks"]
+  },
+  "carpet-purple": {
+    "name": "Purple Carpet",
+    "file": "assets/tiles/carpet-purple.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Royal purple woven carpet. Use for throne rooms, temples, or wizard towers. Rare and prestigious. Small rectangular areas 4-12 tiles.",
+    "tags": ["man-made", "rare", "indoor"],
+    "neighbors": ["carpet-*", "floor-*", "floor-marble", "white-marble"]
+  },
+  "carpet-red": {
+    "name": "Red Carpet",
+    "file": "assets/tiles/carpet-red.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Ornate red carpet with gold trim pattern. Use for grand halls, throne rooms, or as a runner leading to important areas. Can be placed as a 1-2 tile wide strip for hallway runners.",
+    "tags": ["man-made", "uncommon", "indoor", "decoration"],
+    "neighbors": ["carpet-*", "floor-*", "floor-marble", "stone-plaza"]
+  },
+  "clover-patch": {
+    "name": "Clover Patch",
+    "file": "assets/tiles/clover-patch.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Dense green clover with small purple flowers mixed into grass. Use as accent patches in meadows and fields, 3-8 tiles. Adds variety to large grass areas.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "grass", "light-spring-meadow-grass", "mixed-wildflower-meadow", "lush-green-grass"]
+  },
+  "cobblestone-path": {
+    "name": "Cobblestone Path",
+    "file": "assets/tiles/cobblestone-path.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Rounded cobblestones set in mortar, lighter gray color. Use for village paths, garden walkways, and secondary roads. Strips 1-3 tiles wide connecting buildings or areas. Less formal than cobblestone-road.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["grass-*", "dirt-*", "cobblestone-road", "mossy-cobblestone", "flagstone-tiles", "stone-plaza"]
+  },
+  "cobblestone-road": {
+    "name": "Cobblestone Road",
+    "file": "assets/tiles/cobblestone-road.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Dark blue-gray cobblestones in a formal pattern. Use for main roads through towns and cities, 3-5 tiles wide. The primary road tile for settlements.",
+    "tags": ["man-made", "common", "base-fill"],
+    "neighbors": ["cobblestone-path", "mossy-cobblestone", "flagstone-tiles", "stone-plaza", "grass-*", "dirt-*"]
+  },
+  "cracked-ancient-stone": {
+    "name": "Cracked Ancient Stone",
+    "file": "assets/tiles/cracked-ancient-stone.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Weathered stone with deep cracks and an aged appearance. Use for ruins, ancient temples, and abandoned structures. Clusters of 5-20 tiles forming remnants of old buildings.",
+    "tags": ["man-made", "uncommon", "outdoor"],
+    "neighbors": ["stone-*", "rough-hewn-stone", "mossy-cobblestone", "grass-*", "dirt-*"]
+  },
+  "cracked-desert-earth": {
+    "name": "Cracked Desert Earth",
+    "file": "assets/tiles/cracked-desert-earth.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dry, deeply cracked earth from extreme heat. Use in arid areas and dried lakebeds. Large patches 10-30 tiles in flat desert areas.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["desert-*", "dirt-dry-cracked", "dirt-drought"]
+  },
+  "dark-garden-soil": {
+    "name": "Dark Garden Soil",
+    "file": "assets/tiles/dark-garden-soil.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Rich, dark tilled soil for gardens and farmland. Use in rectangular plots 3x4 to 6x8 tiles near houses or villages for crop fields and gardens.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["grass-*", "dirt-*", "garden-sprouts", "flower-garden-roses", "cobblestone-path"]
+  },
+  "dark-green-forest-grass": {
+    "name": "Dark Forest Grass",
+    "file": "assets/tiles/dark-green-forest-grass.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Very dark green grass found under dense forest canopy. Use as base-fill for deep forest areas where tree props are placed overhead. Large patches 20+ tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["forest-*", "fern-undergrowth", "mossy-ground", "pine-needles", "mushroom-forest", "grass-*"]
+  },
+  "dark-slate": {
+    "name": "Dark Slate",
+    "file": "assets/tiles/dark-slate.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Dark gray-blue slate stone surface. Use for dungeon floors, cave areas, and fortress interiors. Can fill large areas 10-30 tiles.",
+    "tags": ["natural", "common", "base-fill", "indoor"],
+    "neighbors": ["stone-dungeon", "rough-hewn-stone", "stone-plaza", "dark-wood-indoor"]
+  },
+  "dark-wood-indoor": {
+    "name": "Dark Wood Indoor",
+    "file": "assets/tiles/dark-wood-indoor.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Dark stained wooden floorboards. Use inside buildings for taverns, houses, and shops. Fill entire room interiors. The most common indoor floor tile.",
+    "tags": ["man-made", "common", "base-fill", "indoor"],
+    "neighbors": ["floor-*", "wooden-planks", "carpet-*", "straw-hay"]
+  },
+  "desert-adobe": {
+    "name": "Desert Adobe",
+    "file": "assets/tiles/desert-adobe.png",
+    "biome": "desert",
+    "category": "stone",
+    "walkable": true,
+    "description": "Tan adobe brick surface. Use for desert building floors and desert town plazas. Rectangular areas 6-20 tiles in desert settlements.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["desert-*", "desert-sand", "desert-sandstone", "dirt-sandy"]
+  },
+  "desert-canyon": {
+    "name": "Desert Canyon",
+    "file": "assets/tiles/desert-canyon.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Red-orange layered rock forming canyon walls and floors. Use for canyon areas and rocky desert passages. Elongated strips 3-5 tiles wide.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["desert-*", "desert-rock", "desert-red-sand", "desert-mesa"]
+  },
+  "desert-dry-riverbed": {
+    "name": "Desert Dry Riverbed",
+    "file": "assets/tiles/desert-dry-riverbed.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Cracked, pale earth of a dried-up river. Use as winding strips 2-4 tiles wide cutting through desert terrain to show ancient water paths.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["desert-*", "desert-sand", "cracked-desert-earth", "dirt-dry-cracked"]
+  },
+  "desert-dunes": {
+    "name": "Desert Dunes",
+    "file": "assets/tiles/desert-dunes.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Wavy orange-tan sand dunes with visible ripple patterns. Use in open desert areas as base-fill for sandy expanses. Large patches 20-50 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["desert-*", "desert-sand", "desert-dust-trail"]
+  },
+  "desert-dust-trail": {
+    "name": "Desert Dust Trail",
+    "file": "assets/tiles/desert-dust-trail.png",
+    "biome": "desert",
+    "category": "path",
+    "walkable": true,
+    "description": "Faint dusty trail through desert. Use as paths connecting desert settlements or oases, 1-2 tiles wide winding through sand.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["desert-*", "desert-sand", "desert-dunes"]
+  },
+  "desert-gravel": {
+    "name": "Desert Gravel",
+    "file": "assets/tiles/desert-gravel.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Coarse desert gravel and small stones. Use as transition between sandy and rocky desert areas. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["desert-*", "desert-rock", "dirt-gravelly", "rocks-pebbles"]
+  },
+  "desert-mesa": {
+    "name": "Desert Mesa",
+    "file": "assets/tiles/desert-mesa.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Flat-topped red-brown mesa stone. Use for elevated desert plateaus and mesa tops. Clusters of 10-25 tiles forming flat rock surfaces.",
+    "tags": ["natural", "uncommon", "base-fill"],
+    "neighbors": ["desert-*", "desert-rock", "desert-canyon", "desert-sandstone"]
+  },
+  "desert-oasis": {
+    "name": "Desert Oasis",
+    "file": "assets/tiles/desert-oasis.png",
+    "biome": "desert",
+    "category": "flora",
+    "walkable": true,
+    "description": "Lush green vegetation around a water source in the desert. Very rare — use only 3-8 tiles at oasis locations surrounded by desert sand. Always pair with water tiles nearby.",
+    "tags": ["natural", "rare", "accent"],
+    "neighbors": ["desert-sand", "desert-dunes", "water-*", "shallow-water", "grass-sandy"]
+  },
+  "desert-red-sand": {
+    "name": "Desert Red Sand",
+    "file": "assets/tiles/desert-red-sand.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Deep red-orange desert sand. Use for Red Desert biome areas, large patches 15-40 tiles. Visually distinct from standard yellow desert-sand.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["desert-*", "desert-mesa", "desert-canyon", "desert-rock"]
+  },
+  "desert-rock": {
+    "name": "Desert Rock",
+    "file": "assets/tiles/desert-rock.png",
+    "biome": "desert",
+    "category": "stone",
+    "walkable": true,
+    "description": "Exposed rocky desert surface. Use for rocky outcrops and barren desert terrain. Irregular clusters of 5-15 tiles breaking up sandy areas.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["desert-*", "desert-gravel", "rocks-pebbles", "dirt-rocky"]
+  },
+  "desert-salt-flat": {
+    "name": "Desert Salt Flat",
+    "file": "assets/tiles/desert-salt-flat.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Bright white crystalline salt flat surface. Use for dried salt lake areas. Large flat expanses 20-50 tiles. Visually striking and desolate.",
+    "tags": ["natural", "uncommon", "base-fill"],
+    "neighbors": ["desert-*", "cracked-desert-earth", "desert-sand"]
+  },
+  "desert-sand": {
+    "name": "Desert Sand",
+    "file": "assets/tiles/desert-sand.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Standard pale tan desert sand. The primary base-fill tile for desert biomes. Use in very large areas 50+ tiles. The default ground for any desert zone.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["desert-*", "beach-*", "dirt-sandy"]
+  },
+  "desert-sandstone": {
+    "name": "Desert Sandstone",
+    "file": "assets/tiles/desert-sandstone.png",
+    "biome": "desert",
+    "category": "stone",
+    "walkable": true,
+    "description": "Carved sandstone blocks. Use for desert building floors, temple foundations, and ancient ruins in desert areas. Rectangular patches 6-20 tiles.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["desert-*", "desert-adobe", "cracked-ancient-stone"]
+  },
+  "desert-scorched": {
+    "name": "Desert Scorched Earth",
+    "file": "assets/tiles/desert-scorched.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Heat-scorched golden desert surface with visible cracks. Use near volcanic/desert borders or extremely hot zones. Patches of 8-20 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["desert-*", "volcanic-*", "cracked-desert-earth"]
+  },
+  "desert-scrub": {
+    "name": "Desert Scrub",
+    "file": "assets/tiles/desert-scrub.png",
+    "biome": "desert",
+    "category": "flora",
+    "walkable": true,
+    "description": "Desert sand with sparse scrubby vegetation. Use as transition between barren desert and greener areas. Scattered patches of 5-15 tiles at desert edges.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["desert-*", "grass-sparse", "grass-savanna", "dirt-sandy"]
+  },
+  "dirt-chalky": {
+    "name": "Chalky Dirt",
+    "file": "assets/tiles/dirt-chalky.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Pale chalky-white dirt. Use near limestone cliffs or chalk deposits. Small patches of 3-10 tiles as accent.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["dirt-*", "grass-*", "rocks-pebbles", "stone-*"]
+  },
+  "dirt-clay": {
+    "name": "Clay Dirt",
+    "file": "assets/tiles/dirt-clay.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Reddish-brown clay soil. Use near rivers, in pottery village areas, or as transition terrain. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "red-clay-ground", "grass-*", "muddy-trail"]
+  },
+  "dirt-drought": {
+    "name": "Drought Dirt",
+    "file": "assets/tiles/dirt-drought.png",
+    "biome": "desert",
+    "category": "ground",
+    "walkable": true,
+    "description": "Extremely dry, parched dirt with deep cracks. Use in drought-stricken temperate areas or desert edges. Patches of 8-20 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "desert-*", "cracked-desert-earth", "grass-sparse"]
+  },
+  "dirt-dry-cracked": {
+    "name": "Dry Cracked Dirt",
+    "file": "assets/tiles/dirt-dry-cracked.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Hard dirt with visible cracks from dryness. Use in arid zones and dried areas. Patches of 5-15 tiles near desert borders.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "desert-*", "cracked-desert-earth", "grass-sparse"]
+  },
+  "dirt-grass-sprouts": {
+    "name": "Dirt with Grass Sprouts",
+    "file": "assets/tiles/dirt-grass-sprouts.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Brown dirt with new grass starting to grow. Excellent transition tile between dirt paths and grass areas. Use in 1-3 tile wide borders.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["dirt-*", "grass-*", "patchy-grass-dirt"]
+  },
+  "dirt-gravelly": {
+    "name": "Gravelly Dirt",
+    "file": "assets/tiles/dirt-gravelly.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dirt mixed with small gravel and stones. Use near roads, construction areas, and rocky terrain. Patches of 5-12 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "gravel-path", "rocks-pebbles", "cobblestone-*"]
+  },
+  "dirt-gray": {
+    "name": "Gray Dirt",
+    "file": "assets/tiles/dirt-gray.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ashen gray dirt. Use near volcanic areas, burned zones, or mines. Patches of 5-15 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["dirt-*", "volcanic-ash", "stone-*", "dark-slate"]
+  },
+  "dirt-hardpan": {
+    "name": "Hardpan Dirt",
+    "file": "assets/tiles/dirt-hardpan.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Very hard-packed, compressed dirt surface. Use for well-traveled areas without formal roads. Patches of 8-20 tiles near settlements.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["dirt-*", "grass-*", "packed-dirt-road", "cobblestone-path"]
+  },
+  "dirt-loamy": {
+    "name": "Loamy Dirt",
+    "file": "assets/tiles/dirt-loamy.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Rich dark loamy soil. Use for farmland and fertile areas near water. Rectangular plots 4-16 tiles for crop fields.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "dark-garden-soil", "grass-*", "garden-sprouts"]
+  },
+  "dirt-loose": {
+    "name": "Loose Dirt",
+    "file": "assets/tiles/dirt-loose.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Soft, freshly disturbed loose dirt. Use for excavation sites, fresh graves, or construction zones. Small patches 2-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["dirt-*", "grass-*", "rocks-pebbles"]
+  },
+  "dirt-mound": {
+    "name": "Dirt Mound",
+    "file": "assets/tiles/dirt-mound.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Raised dirt mound or hill. Use as accent in open fields, 1-3 tiles at a time. Suggests uneven terrain.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["dirt-*", "grass-*"]
+  },
+  "dirt-packed": {
+    "name": "Packed Dirt",
+    "file": "assets/tiles/dirt-packed.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Hard-packed brown dirt surface. Use as base-fill for camps, clearings, and unpaved village squares. Large areas 15-40 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["dirt-*", "grass-*", "packed-dirt-road", "gravel-path"]
+  },
+  "dirt-path": {
+    "name": "Dirt Path",
+    "file": "assets/tiles/dirt-path.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Well-worn brown dirt path. Use for trails through wilderness, 1-2 tiles wide connecting areas. The most common natural path tile.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["dirt-*", "grass-*", "forest-*", "packed-dirt-road"]
+  },
+  "dirt-pebbly": {
+    "name": "Pebbly Dirt",
+    "file": "assets/tiles/dirt-pebbly.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dirt with scattered small pebbles. Use as transition between dirt and rocky areas. Patches of 3-10 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "rocks-pebbles", "gravel-path"]
+  },
+  "dirt-rocky": {
+    "name": "Rocky Dirt",
+    "file": "assets/tiles/dirt-rocky.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dirt with larger embedded rocks. Use near hills, mountains, and rocky outcrops. Patches of 5-15 tiles as transition to stone.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "rocks-pebbles", "rough-hewn-stone", "stone-*"]
+  },
+  "dirt-roots": {
+    "name": "Dirt with Roots",
+    "file": "assets/tiles/dirt-roots.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dirt with visible tree roots criss-crossing the surface. Use under and around tree props in forests. Patches of 3-8 tiles near large trees.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "forest-*", "dark-green-forest-grass", "mossy-ground"]
+  },
+  "dirt-sandy": {
+    "name": "Sandy Dirt",
+    "file": "assets/tiles/dirt-sandy.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Light brown dirt mixed with sand. Use as transition between desert/beach and temperate zones. Strips 2-5 tiles wide.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "desert-*", "beach-*", "grass-sandy", "sandy-path"]
+  },
+  "dirt-smooth": {
+    "name": "Smooth Dirt",
+    "file": "assets/tiles/dirt-smooth.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Smooth, even brown dirt surface. Use for indoor dirt floors in rustic buildings, or flat outdoor clearings. Areas of 8-25 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["dirt-*", "grass-*", "packed-dirt-road"]
+  },
+  "dirt-topsoil": {
+    "name": "Topsoil",
+    "file": "assets/tiles/dirt-topsoil.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark, nutrient-rich topsoil. Use for garden beds, farmland, and fertile areas. Rectangular patches near settlements.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "dark-garden-soil", "grass-*", "garden-sprouts"]
+  },
+  "dirt-wet": {
+    "name": "Wet Dirt",
+    "file": "assets/tiles/dirt-wet.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark, waterlogged dirt. Use near rivers, lakes, and in rainy areas. Strips 2-4 tiles wide along waterways.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["dirt-*", "muddy-trail", "wet-mud-puddles", "water-*", "swamp-*"]
+  },
+  "dry-autumn-grass": {
+    "name": "Dry Autumn Grass",
+    "file": "assets/tiles/dry-autumn-grass.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Golden-yellow dried grass from late autumn. Use in seasonal transition areas and dry meadows. Large patches 15-40 tiles for autumn-themed zones.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "autumn-leaves", "dirt-*", "patchy-grass-dirt", "grass-golden"]
+  },
+  "dusty-worn-road": {
+    "name": "Dusty Worn Road",
+    "file": "assets/tiles/dusty-worn-road.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Heavily used, dusty road surface. Use for major trade routes and well-traveled roads between towns, 3-5 tiles wide.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["dirt-*", "grass-*", "packed-dirt-road", "gravel-path"]
+  },
+  "fern-undergrowth": {
+    "name": "Fern Undergrowth",
+    "file": "assets/tiles/fern-undergrowth.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Dense fern ground cover in dark green. Use under forest canopy in moist areas. Patches of 5-15 tiles mixed with dark-green-forest-grass.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "mossy-ground", "grass-*"]
+  },
+  "flagstone-tiles": {
+    "name": "Flagstone Tiles",
+    "file": "assets/tiles/flagstone-tiles.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Purple-gray flat flagstone paving. Use for plazas, courtyards, and formal outdoor areas. Large rectangular areas 10-30 tiles.",
+    "tags": ["man-made", "common", "base-fill", "outdoor"],
+    "neighbors": ["cobblestone-*", "stone-plaza", "grass-*", "dirt-*"]
+  },
+  "floor-brick": {
+    "name": "Brick Floor",
+    "file": "assets/tiles/floor-brick.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Red brick floor pattern. Use for kitchens, forges, and rustic indoor areas. Fill room interiors.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "stone-dungeon"]
+  },
+  "floor-cellar-dirt": {
+    "name": "Cellar Dirt Floor",
+    "file": "assets/tiles/floor-cellar-dirt.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Rough dirt floor for cellars and basements. Use for underground rooms and rustic storage areas.",
+    "tags": ["natural", "common", "indoor"],
+    "neighbors": ["floor-*", "dirt-*", "stone-dungeon", "dark-wood-indoor"]
+  },
+  "floor-checkered": {
+    "name": "Checkered Floor",
+    "file": "assets/tiles/floor-checkered.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Black and white checkered tile floor. Use for grand halls, ballrooms, and formal indoor spaces.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["floor-*", "floor-marble", "white-marble", "carpet-*"]
+  },
+  "floor-dark-oak": {
+    "name": "Dark Oak Floor",
+    "file": "assets/tiles/floor-dark-oak.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Rich dark oak wood planks with warm reddish-brown tone. Use for upscale taverns, noble houses, and guild halls.",
+    "tags": ["man-made", "common", "indoor", "base-fill"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "wooden-planks", "carpet-*"]
+  },
+  "floor-flagstone": {
+    "name": "Flagstone Floor",
+    "file": "assets/tiles/floor-flagstone.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Indoor flagstone floor with regular cut stones. Use for castle interiors, temples, and formal buildings.",
+    "tags": ["man-made", "common", "indoor", "base-fill"],
+    "neighbors": ["floor-*", "stone-*", "dark-slate", "carpet-*"]
+  },
+  "floor-hex-stone": {
+    "name": "Hexagonal Stone Floor",
+    "file": "assets/tiles/floor-hex-stone.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Hexagonal stone tile pattern. Use for unique indoor areas like alchemy labs, wizard towers, or ancient structures.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["floor-*", "stone-*", "dark-slate"]
+  },
+  "floor-marble": {
+    "name": "Marble Floor",
+    "file": "assets/tiles/floor-marble.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "White marble floor with gray veining. Use for palaces, temples, and wealthy buildings. Luxurious appearance.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["floor-*", "white-marble", "carpet-*", "floor-checkered"]
+  },
+  "floor-mosaic": {
+    "name": "Mosaic Floor",
+    "file": "assets/tiles/floor-mosaic.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Colorful mosaic tile pattern. Use for temples, bathhouses, and artistic indoor spaces. Small accent areas 4-12 tiles.",
+    "tags": ["man-made", "rare", "indoor", "decoration"],
+    "neighbors": ["floor-*", "floor-marble", "white-marble"]
+  },
+  "floor-ornate-gold": {
+    "name": "Ornate Gold Floor",
+    "file": "assets/tiles/floor-ornate-gold.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Elaborate gold-trimmed floor tiles. Use very sparingly for throne rooms and treasure vaults. 4-8 tiles maximum.",
+    "tags": ["man-made", "rare", "indoor", "decoration"],
+    "neighbors": ["floor-*", "floor-marble", "carpet-red", "carpet-purple"]
+  },
+  "floor-parquet": {
+    "name": "Parquet Floor",
+    "file": "assets/tiles/floor-parquet.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Geometric parquet wood flooring. Use for upper-class residences and formal rooms.",
+    "tags": ["man-made", "uncommon", "indoor"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "wooden-planks", "carpet-*"]
+  },
+  "floor-stone-slate": {
+    "name": "Stone Slate Floor",
+    "file": "assets/tiles/floor-stone-slate.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Cut slate stone floor. Use for castle corridors, guard rooms, and fortified interiors.",
+    "tags": ["man-made", "common", "indoor", "base-fill"],
+    "neighbors": ["floor-*", "dark-slate", "stone-dungeon", "stone-plaza"]
+  },
+  "floor-straw-mat": {
+    "name": "Straw Mat Floor",
+    "file": "assets/tiles/floor-straw-mat.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Woven straw mat flooring. Use for peasant houses, stables, and rustic interiors. Simple and poor.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["floor-*", "straw-hay", "dark-wood-indoor", "dirt-smooth"]
+  },
+  "floor-terracotta": {
+    "name": "Terracotta Floor",
+    "file": "assets/tiles/floor-terracotta.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Warm orange-red terracotta tiles. Use for Mediterranean-style buildings, desert interiors, and kitchens.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["floor-*", "floor-brick", "desert-adobe"]
+  },
+  "floor-wood-plank": {
+    "name": "Wood Plank Floor",
+    "file": "assets/tiles/floor-wood-plank.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Simple wooden plank flooring. Use for common houses, shops, and basic indoor areas. The most basic indoor wood floor.",
+    "tags": ["man-made", "common", "indoor", "base-fill"],
+    "neighbors": ["floor-*", "wooden-planks", "dark-wood-indoor", "carpet-*"]
+  },
+  "floor-worn-wood": {
+    "name": "Worn Wood Floor",
+    "file": "assets/tiles/floor-worn-wood.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Old, worn wooden floor showing age and use. Use for abandoned buildings, old taverns, and rundown interiors.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "wooden-planks"]
+  },
+  "flower-garden-roses": {
+    "name": "Rose Garden",
+    "file": "assets/tiles/flower-garden-roses.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Garden plot with red roses. Use in small decorative patches 2-6 tiles near houses, castles, and parks.",
+    "tags": ["man-made", "uncommon", "decoration"],
+    "neighbors": ["grass-*", "dark-garden-soil", "garden-sprouts", "cobblestone-path"]
+  },
+  "forest-acorns": {
+    "name": "Forest Acorns",
+    "file": "assets/tiles/forest-acorns.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Forest floor scattered with acorns and fallen nuts. Use under oak tree props. Sparse accent, 2-5 tiles near specific trees.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "autumn-leaves", "dirt-roots"]
+  },
+  "forest-birch-leaves": {
+    "name": "Forest Birch Leaves",
+    "file": "assets/tiles/forest-birch-leaves.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Light-colored fallen birch leaves on forest floor. Use under birch tree areas. Patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "grass-*", "light-spring-meadow-grass"]
+  },
+  "forest-bramble": {
+    "name": "Forest Bramble",
+    "file": "assets/tiles/forest-bramble.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Thorny bramble bushes on forest floor. Use to create natural barriers and wild forest edges. Patches of 3-10 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "overgrown-weedy-grass"]
+  },
+  "forest-clearing": {
+    "name": "Forest Clearing",
+    "file": "assets/tiles/forest-clearing.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Bright green grass in a forest clearing where sunlight reaches. Use for open areas within dense forest, 8-20 tiles forming circular clearings.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "grass-*", "fern-undergrowth"]
+  },
+  "forest-deadwood": {
+    "name": "Forest Deadwood",
+    "file": "assets/tiles/forest-deadwood.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dead branches and twigs covering the forest floor. Use in older or decaying forest areas. Patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "forest-rotting-leaves", "dirt-roots", "mushroom-forest"]
+  },
+  "forest-glade": {
+    "name": "Forest Glade",
+    "file": "assets/tiles/forest-glade.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Lush green glade with soft grass and scattered flowers. Use for magical or serene forest locations. Small special areas 6-15 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "forest-clearing", "mixed-wildflower-meadow", "grass-*"]
+  },
+  "forest-ivy": {
+    "name": "Forest Ivy",
+    "file": "assets/tiles/forest-ivy.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Ground-covering ivy in deep green. Use near ruins, old walls, and ancient forest structures. Patches of 3-10 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "mossy-ground", "mossy-cobblestone", "cracked-ancient-stone"]
+  },
+  "forest-lichen-rock": {
+    "name": "Forest Lichen Rock",
+    "file": "assets/tiles/forest-lichen-rock.png",
+    "biome": "forest",
+    "category": "stone",
+    "walkable": true,
+    "description": "Rocky ground covered in colorful lichen. Use for rocky forest areas and boulder fields. Patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "rocks-pebbles", "mossy-ground", "dirt-rocky"]
+  },
+  "forest-loam": {
+    "name": "Forest Loam",
+    "file": "assets/tiles/forest-loam.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Rich, dark forest floor soil. Use as base-fill for deep forest interiors. Large patches 15-30 tiles beneath tree canopy.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "dirt-roots", "fern-undergrowth"]
+  },
+  "forest-path": {
+    "name": "Forest Path",
+    "file": "assets/tiles/forest-path.png",
+    "biome": "forest",
+    "category": "path",
+    "walkable": true,
+    "description": "Narrow dirt trail through forest. Use as 1-2 tile wide paths winding through forest areas connecting clearings.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "dirt-path", "dirt-*"]
+  },
+  "forest-roots": {
+    "name": "Forest Roots",
+    "file": "assets/tiles/forest-roots.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Thick exposed tree roots across the ground. Use at the base of large tree props. 1-4 tiles directly adjacent to trees.",
+    "tags": ["natural", "common", "decoration"],
+    "neighbors": ["forest-*", "dirt-roots", "dark-green-forest-grass", "mossy-ground"]
+  },
+  "forest-rotting-leaves": {
+    "name": "Forest Rotting Leaves",
+    "file": "assets/tiles/forest-rotting-leaves.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Decomposing brown leaves on the forest floor. Use in old-growth forest and autumn areas. Patches of 5-12 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "autumn-leaves", "forest-deadwood", "mushroom-forest"]
+  },
+  "forest-stream-bed": {
+    "name": "Forest Stream Bed",
+    "file": "assets/tiles/forest-stream-bed.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Smooth stones and pebbles of a forest stream bed. Use as 1-3 tile wide strips for small streams through forests.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "water-*", "water-shallow", "rocks-pebbles"]
+  },
+  "forest-stumps": {
+    "name": "Forest Stumps",
+    "file": "assets/tiles/forest-stumps.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Area with old tree stumps from logging. Use for logging camps and cleared forest edges. Patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["forest-*", "grass-*", "dirt-*", "wood-chips"]
+  },
+  "forest-undergrowth": {
+    "name": "Forest Undergrowth",
+    "file": "assets/tiles/forest-undergrowth.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Thick low bushes and small plants covering the forest floor. Use in dense forest areas. Large patches 10-25 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "fern-undergrowth", "forest-bramble"]
+  },
+  "garden-sprouts": {
+    "name": "Garden Sprouts",
+    "file": "assets/tiles/garden-sprouts.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Small green seedlings growing in tilled soil. Use for farm plots and gardens near villages. Rectangular patches 3-12 tiles.",
+    "tags": ["man-made", "common", "decoration"],
+    "neighbors": ["dark-garden-soil", "dirt-*", "grass-*", "flower-garden-roses"]
+  },
+  "grass": {
+    "name": "Standard Grass",
+    "file": "assets/tiles/grass.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Default green grass with visible blades. THE most common terrain tile — use as the primary base-fill for all temperate zones. Hundreds of tiles per chunk for open fields and meadows.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "dirt-*", "patchy-grass-dirt", "clover-patch", "forest-*", "cobblestone-*"]
+  },
+  "grass-bleached": {
+    "name": "Bleached Grass",
+    "file": "assets/tiles/grass-bleached.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Sun-bleached pale grass. Use for drought areas or hot summer zones. Patches of 10-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "dirt-*", "dry-autumn-grass", "desert-scrub"]
+  },
+  "grass-blue-green": {
+    "name": "Blue-Green Grass",
+    "file": "assets/tiles/grass-blue-green.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Cool blue-green tinted grass. Use near water sources and in misty/cool areas. Patches of 8-20 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "water-*", "swamp-grass", "mossy-ground"]
+  },
+  "grass-clover": {
+    "name": "Clover Grass",
+    "file": "assets/tiles/grass-clover.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Grass with abundant clover mixed in. Use in meadows and pastoral areas. Patches of 5-15 tiles near clover-patch.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "clover-patch", "mixed-wildflower-meadow"]
+  },
+  "grass-dewy": {
+    "name": "Dewy Grass",
+    "file": "assets/tiles/grass-dewy.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Grass glistening with morning dew. Use in low-lying areas near water. Patches of 5-15 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["grass-*", "water-*", "swamp-grass", "dirt-wet"]
+  },
+  "grass-dirt-edge": {
+    "name": "Grass-Dirt Edge",
+    "file": "assets/tiles/grass-dirt-edge.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Half grass, half dirt — a key transition tile. Use as 1-tile border between grass areas and dirt paths/clearings.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["grass-*", "dirt-*", "patchy-grass-dirt"]
+  },
+  "grass-emerald": {
+    "name": "Emerald Grass",
+    "file": "assets/tiles/grass-emerald.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Vibrant deep emerald green grass. Use for lush, well-watered areas and magical glades. Patches of 10-25 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "lush-green-grass", "forest-clearing"]
+  },
+  "grass-eroded": {
+    "name": "Eroded Grass",
+    "file": "assets/tiles/grass-eroded.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Thin grass on eroded ground showing dirt underneath. Use on hillsides and slopes. Patches of 5-12 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["grass-*", "dirt-*", "patchy-grass-dirt", "rocks-pebbles"]
+  },
+  "grass-golden": {
+    "name": "Golden Grass",
+    "file": "assets/tiles/grass-golden.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Golden-yellow grass suggesting late summer or savanna. Use for warm-toned open areas. Large patches 15-40 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "dry-autumn-grass", "grass-savanna", "dirt-*"]
+  },
+  "grass-highland": {
+    "name": "Highland Grass",
+    "file": "assets/tiles/grass-highland.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Tough, windswept highland grass. Use for elevated moor and hill areas. Large patches 15-40 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "dirt-rocky", "rocks-pebbles", "grass-sparse"]
+  },
+  "grass-mossy": {
+    "name": "Mossy Grass",
+    "file": "assets/tiles/grass-mossy.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Grass with patches of green moss. Use in damp, shaded areas. Patches of 5-15 tiles near water or under trees.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "mossy-ground", "mossy-cobblestone", "forest-*"]
+  },
+  "grass-new-growth": {
+    "name": "New Growth Grass",
+    "file": "assets/tiles/grass-new-growth.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Fresh, bright green new grass growth. Use for spring-themed areas and recently cleared land. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "dirt-grass-sprouts", "dirt-*"]
+  },
+  "grass-prairie": {
+    "name": "Prairie Grass",
+    "file": "assets/tiles/grass-prairie.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Tall prairie grass blowing in the wind. Use for open plains and grassland areas. Very large patches 30+ tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "tall-wild-grass", "grass-savanna"]
+  },
+  "grass-purple-lavender": {
+    "name": "Lavender Grass",
+    "file": "assets/tiles/grass-purple-lavender.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Grass with purple lavender flowers. Use as accent in meadows and near settlements. Patches of 3-10 tiles for visual variety.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["grass-*", "mixed-wildflower-meadow", "flower-garden-roses"]
+  },
+  "grass-red-poppies": {
+    "name": "Poppy Grass",
+    "file": "assets/tiles/grass-red-poppies.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Grass dotted with red poppies. Use as accent in open fields. Scattered patches of 2-8 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["grass-*", "mixed-wildflower-meadow", "grass-yellow-wildflowers"]
+  },
+  "grass-rocky": {
+    "name": "Rocky Grass",
+    "file": "assets/tiles/grass-rocky.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Grass growing between rocks and stones. Use as transition from grassy areas to rocky terrain. Strips 2-4 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["grass-*", "rocks-pebbles", "dirt-rocky", "rough-hewn-stone"]
+  },
+  "grass-sandy": {
+    "name": "Sandy Grass",
+    "file": "assets/tiles/grass-sandy.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Sparse grass growing in sandy soil. Key transition between beach/desert and grass biomes. Strips 2-5 tiles wide.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["grass-*", "beach-*", "desert-*", "dirt-sandy", "sandy-path"]
+  },
+  "grass-savanna": {
+    "name": "Savanna Grass",
+    "file": "assets/tiles/grass-savanna.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dry, golden-tan savanna grass. Use for African-style savanna biomes. Very large patches 40+ tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "grass-golden", "dirt-*", "desert-scrub"]
+  },
+  "grass-sparse": {
+    "name": "Sparse Grass",
+    "file": "assets/tiles/grass-sparse.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Thin, sparse grass with visible dirt. Use as transition between grass and barren areas. Strips 2-5 tiles.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["grass-*", "dirt-*", "desert-scrub", "patchy-grass-dirt"]
+  },
+  "grass-standard": {
+    "name": "Standard Grass Alt",
+    "file": "assets/tiles/grass-standard.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Alternative standard grass tile. Mix with main grass tile for variation in large temperate areas. Base-fill usage.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "grass", "dirt-*"]
+  },
+  "grass-thick": {
+    "name": "Thick Grass",
+    "file": "assets/tiles/grass-thick.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dense, tall grass. Use for well-watered meadows and unmowed fields. Patches of 10-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "tall-wild-grass", "lush-green-grass"]
+  },
+  "grass-tufts": {
+    "name": "Grass Tufts",
+    "file": "assets/tiles/grass-tufts.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Scattered tufts of grass on bare ground. Use as transition from grass to dirt or stone. 1-3 tile border strips.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["grass-*", "dirt-*", "rocks-pebbles", "patchy-grass-dirt"]
+  },
+  "grass-white-daisies": {
+    "name": "Daisy Grass",
+    "file": "assets/tiles/grass-white-daisies.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Grass with white daisies scattered about. Use as meadow accent. Patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["grass-*", "mixed-wildflower-meadow", "clover-patch"]
+  },
+  "grass-worn": {
+    "name": "Worn Grass",
+    "file": "assets/tiles/grass-worn.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Trampled, worn-down grass showing heavy foot traffic. Use around paths, near buildings, and in high-traffic areas. Patches of 3-10 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["grass-*", "dirt-*", "dirt-path", "cobblestone-path"]
+  },
+  "grass-yellow-wildflowers": {
+    "name": "Yellow Wildflower Grass",
+    "file": "assets/tiles/grass-yellow-wildflowers.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Grass with bright yellow wildflowers. Use as meadow accent. Patches of 3-8 tiles for color variety.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["grass-*", "mixed-wildflower-meadow", "grass-red-poppies"]
+  },
+  "gravel-path": {
+    "name": "Gravel Path",
+    "file": "assets/tiles/gravel-path.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Loose gravel path surface. Use for garden paths, driveways, and informal walkways. Strips 1-3 tiles wide.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["grass-*", "dirt-*", "cobblestone-*", "dirt-gravelly"]
+  },
+  "light-spring-meadow-grass": {
+    "name": "Spring Meadow Grass",
+    "file": "assets/tiles/light-spring-meadow-grass.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Bright light-green spring grass. Use for fresh spring meadows and sunlit fields. Large patches 15-40 tiles. Lighter than standard grass.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "clover-patch", "mixed-wildflower-meadow", "flower-garden-roses"]
+  },
+  "lush-green-grass": {
+    "name": "Lush Green Grass",
+    "file": "assets/tiles/lush-green-grass.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Very green, well-watered lush grass. Use near rivers and in fertile valleys. Large patches 15-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "grass-emerald", "forest-clearing", "water-*"]
+  },
+  "mixed-wildflower-meadow": {
+    "name": "Wildflower Meadow",
+    "file": "assets/tiles/mixed-wildflower-meadow.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Colorful mix of wildflowers in grass — red, yellow, white, purple. Use as meadow centerpiece. Patches of 8-20 tiles in open sunny areas.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "grass-red-poppies", "grass-yellow-wildflowers", "grass-white-daisies", "clover-patch"]
+  },
+  "mossy-cobblestone": {
+    "name": "Mossy Cobblestone",
+    "file": "assets/tiles/mossy-cobblestone.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Old cobblestones overgrown with green moss. Use for abandoned roads, ancient ruins, and overgrown settlements. Patches of 5-15 tiles.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["cobblestone-*", "grass-*", "forest-ivy", "cracked-ancient-stone"]
+  },
+  "mossy-ground": {
+    "name": "Mossy Ground",
+    "file": "assets/tiles/mossy-ground.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ground thickly covered in green moss. Use in damp forest areas, cave entrances, and near waterfalls. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "fern-undergrowth", "swamp-*"]
+  },
+  "muddy-trail": {
+    "name": "Muddy Trail",
+    "file": "assets/tiles/muddy-trail.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Dark, muddy path. Use for rain-soaked trails and swamp edges. Strips 1-3 tiles wide.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["dirt-*", "dirt-wet", "wet-mud-puddles", "swamp-*", "grass-*"]
+  },
+  "mushroom-forest": {
+    "name": "Mushroom Forest Floor",
+    "file": "assets/tiles/mushroom-forest.png",
+    "biome": "forest",
+    "category": "flora",
+    "walkable": true,
+    "description": "Forest floor dotted with red mushrooms. Use for magical or old-growth forest areas. Sparse accent, patches of 3-8 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "mossy-ground", "forest-rotting-leaves"]
+  },
+  "overgrown-weedy-grass": {
+    "name": "Overgrown Weedy Grass",
+    "file": "assets/tiles/overgrown-weedy-grass.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Tall, unkempt grass with weeds. Use for abandoned areas, ruins, and neglected land. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "tall-wild-grass", "forest-bramble", "dirt-*"]
+  },
+  "packed-dirt-road": {
+    "name": "Packed Dirt Road",
+    "file": "assets/tiles/packed-dirt-road.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Hard-packed brown dirt road. Use for main routes between villages, 3-5 tiles wide. The standard rural road tile.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["dirt-*", "grass-*", "dusty-worn-road", "dirt-path"]
+  },
+  "patchy-grass-dirt": {
+    "name": "Patchy Grass-Dirt",
+    "file": "assets/tiles/patchy-grass-dirt.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Mixed patches of grass and exposed dirt. THE key transition tile between grass and dirt zones. Use in 1-3 tile borders everywhere these biomes meet.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["grass-*", "dirt-*", "grass-dirt-edge", "grass-tufts"]
+  },
+  "pine-needles": {
+    "name": "Pine Needles",
+    "file": "assets/tiles/pine-needles.png",
+    "biome": "forest",
+    "category": "ground",
+    "walkable": true,
+    "description": "Reddish-brown carpet of fallen pine needles. Use under pine/conifer tree props. Large patches 10-25 tiles in coniferous forest zones.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["forest-*", "dark-green-forest-grass", "dirt-roots", "dirt-*"]
+  },
+  "pl-grass-1": {
+    "name": "PixelLab Grass 1",
+    "file": "assets/tiles/pl-grass-1.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Light green pixel art grass variant. Mix with other grass tiles for variation. Base-fill usage in temperate zones.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "pl-grass-*", "dirt-*"]
+  },
+  "pl-grass-2": {
+    "name": "PixelLab Grass 2",
+    "file": "assets/tiles/pl-grass-2.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Medium green pixel art grass variant. Mix with other grass tiles for variation. Base-fill usage in temperate zones.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "pl-grass-*", "dirt-*"]
+  },
+  "pl-grass-3": {
+    "name": "PixelLab Grass 3",
+    "file": "assets/tiles/pl-grass-3.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark green pixel art grass variant with purple tints. Mix with other grass tiles for variation. Base-fill usage.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["grass-*", "pl-grass-*", "dirt-*"]
+  },
+  "red-brick-road": {
+    "name": "Red Brick Road",
+    "file": "assets/tiles/red-brick-road.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Red brick paved road surface. Use for wealthy town districts and main plazas, 3-5 tiles wide. Upscale alternative to cobblestone.",
+    "tags": ["man-made", "uncommon", "outdoor"],
+    "neighbors": ["cobblestone-*", "flagstone-tiles", "grass-*", "stone-plaza"]
+  },
+  "red-clay-ground": {
+    "name": "Red Clay Ground",
+    "file": "assets/tiles/red-clay-ground.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Bright red clay earth. Use in tropical/subtropical areas and near clay deposits. Patches of 10-25 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["dirt-*", "dirt-clay", "grass-*", "desert-red-sand"]
+  },
+  "rocks-pebbles": {
+    "name": "Rocks and Pebbles",
+    "file": "assets/tiles/rocks-pebbles.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Ground covered in loose rocks and pebbles. Use for rocky terrain, riverbeds, and mountain base. Patches of 5-20 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "grass-rocky", "rough-hewn-stone", "gravel-path", "beach-pebbles"]
+  },
+  "rough-hewn-stone": {
+    "name": "Rough Hewn Stone",
+    "file": "assets/tiles/rough-hewn-stone.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Roughly cut stone surface. Use for castle walls, mountain outcrops, and fortress foundations. Patches of 5-20 tiles.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["stone-*", "dark-slate", "rocks-pebbles", "cracked-ancient-stone", "dirt-rocky"]
+  },
+  "rug-fur-hide": {
+    "name": "Fur Hide Rug",
+    "file": "assets/tiles/rug-fur-hide.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Animal fur/hide rug. Use as 1-3 tile accent in hunter cabins, taverns, or barbarian dwellings.",
+    "tags": ["man-made", "uncommon", "indoor", "decoration"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "wooden-planks", "floor-cellar-dirt"]
+  },
+  "sandy-path": {
+    "name": "Sandy Path",
+    "file": "assets/tiles/sandy-path.png",
+    "biome": "beach",
+    "category": "path",
+    "walkable": true,
+    "description": "Path through sandy terrain. Use as trails leading to/from beaches, 1-2 tiles wide.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["beach-*", "grass-sandy", "dirt-sandy", "grass-*"]
+  },
+  "shallow-water": {
+    "name": "Shallow Water",
+    "file": "assets/tiles/shallow-water.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Clear shallow water showing the bottom. Use as 1-3 tile border around deeper water bodies. Critical transition between land and water.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["water-*", "beach-*", "grass-*", "dirt-wet", "swamp-shallows"]
+  },
+  "short-trimmed-lawn": {
+    "name": "Short Trimmed Lawn",
+    "file": "assets/tiles/short-trimmed-lawn.png",
+    "biome": "temperate",
+    "category": "ground",
+    "walkable": true,
+    "description": "Neatly trimmed short grass. Use around wealthy houses, castles, and formal gardens. Rectangular patches 8-25 tiles.",
+    "tags": ["man-made", "common", "base-fill"],
+    "neighbors": ["grass-*", "cobblestone-path", "flagstone-tiles", "flower-garden-roses"]
+  },
+  "snow-deep": {
+    "name": "Deep Snow",
+    "file": "assets/tiles/snow-deep.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Thick deep snow cover. Use in heavy snowfall areas and drifts. Large patches 15-40 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["snow-*"]
+  },
+  "snow-drift": {
+    "name": "Snow Drift",
+    "file": "assets/tiles/snow-drift.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Wind-blown snow forming drifts. Use in exposed areas with wind patterns. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["snow-*"]
+  },
+  "snow-frost-crystal": {
+    "name": "Frost Crystal Snow",
+    "file": "assets/tiles/snow-frost-crystal.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Snow with visible frost crystal patterns. Use for magical winter areas or extreme cold zones. Patches of 5-12 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["snow-*", "snow-ice-sheet"]
+  },
+  "snow-frost-grass": {
+    "name": "Frost-Covered Grass",
+    "file": "assets/tiles/snow-frost-grass.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Grass with a light frost coating. Key transition between snow and temperate zones. Strips 2-5 tiles wide at biome borders.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["snow-*", "grass-*", "grass-highland"]
+  },
+  "snow-frozen-earth": {
+    "name": "Frozen Earth",
+    "file": "assets/tiles/snow-frozen-earth.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Hard frozen dirt with frost. Use as base ground in snow biome where snow is thin. Patches of 8-20 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["snow-*", "dirt-*", "snow-permafrost"]
+  },
+  "snow-frozen-lake": {
+    "name": "Frozen Lake",
+    "file": "assets/tiles/snow-frozen-lake.png",
+    "biome": "snow",
+    "category": "water",
+    "walkable": true,
+    "description": "Frozen lake surface with visible ice cracks. Use for frozen bodies of water. Fill lake areas 10-40 tiles. Walkable unlike regular water.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["snow-*", "snow-ice-sheet"]
+  },
+  "snow-frozen-mud": {
+    "name": "Frozen Mud",
+    "file": "assets/tiles/snow-frozen-mud.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Mud frozen solid with frost. Use near frozen water and in thawing areas. Patches of 3-10 tiles.",
+    "tags": ["natural", "uncommon", "transition"],
+    "neighbors": ["snow-*", "dirt-wet", "muddy-trail"]
+  },
+  "snow-glacier": {
+    "name": "Glacier",
+    "file": "assets/tiles/snow-glacier.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dense glacial ice, blue-white. Use for glacier areas and permanent ice fields. Large patches 15-40 tiles.",
+    "tags": ["natural", "uncommon", "base-fill"],
+    "neighbors": ["snow-*", "snow-ice-sheet"]
+  },
+  "snow-ground": {
+    "name": "Snow Ground",
+    "file": "assets/tiles/snow-ground.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Standard white snow-covered ground. THE primary base-fill for snow biomes. Use in very large areas 50+ tiles. Default snow terrain.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["snow-*"]
+  },
+  "snow-ice-sheet": {
+    "name": "Ice Sheet",
+    "file": "assets/tiles/snow-ice-sheet.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Smooth ice sheet surface. Use for frozen rivers and icy paths. Strips and patches of 5-20 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["snow-*", "snow-frozen-lake", "snow-glacier"]
+  },
+  "snow-icy-rock": {
+    "name": "Icy Rock",
+    "file": "assets/tiles/snow-icy-rock.png",
+    "biome": "snow",
+    "category": "stone",
+    "walkable": true,
+    "description": "Rocky surface coated in ice. Use for mountain peaks and frozen rock outcrops. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["snow-*", "rocks-pebbles", "rough-hewn-stone"]
+  },
+  "snow-path": {
+    "name": "Snow Path",
+    "file": "assets/tiles/snow-path.png",
+    "biome": "snow",
+    "category": "path",
+    "walkable": true,
+    "description": "Trampled snow forming a path. Use for trails through snow zones, 1-2 tiles wide.",
+    "tags": ["natural", "common", "outdoor"],
+    "neighbors": ["snow-*"]
+  },
+  "snow-permafrost": {
+    "name": "Permafrost",
+    "file": "assets/tiles/snow-permafrost.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Permanently frozen ground with a dark, hard surface. Use in tundra areas. Large patches 15-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["snow-*", "snow-frozen-earth", "snow-tundra-moss"]
+  },
+  "snow-pine-needles": {
+    "name": "Snowy Pine Needles",
+    "file": "assets/tiles/snow-pine-needles.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Pine needles on snow. Use under conifer trees in snow biome. Patches of 3-10 tiles near trees.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["snow-*", "pine-needles"]
+  },
+  "snow-slush": {
+    "name": "Snow Slush",
+    "file": "assets/tiles/snow-slush.png",
+    "biome": "snow",
+    "category": "ground",
+    "walkable": true,
+    "description": "Melting, slushy snow. Use at the edge of snow biomes and in thawing areas. Strips 2-4 tiles as transition.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["snow-*", "dirt-wet", "muddy-trail", "grass-*"]
+  },
+  "snow-tundra-moss": {
+    "name": "Tundra Moss",
+    "file": "assets/tiles/snow-tundra-moss.png",
+    "biome": "snow",
+    "category": "flora",
+    "walkable": true,
+    "description": "Low-growing tundra moss on frozen ground. Use for arctic tundra biome. Patches of 5-15 tiles mixed with permafrost.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["snow-*", "snow-permafrost", "snow-frozen-earth"]
+  },
+  "stone-dungeon": {
+    "name": "Dungeon Stone",
+    "file": "assets/tiles/stone-dungeon.png",
+    "biome": "indoor",
+    "category": "stone",
+    "walkable": true,
+    "description": "Dark gray dungeon floor stone. Use for underground dungeons, caves, and prison areas. Large areas 15-40 tiles.",
+    "tags": ["man-made", "common", "base-fill", "indoor"],
+    "neighbors": ["dark-slate", "rough-hewn-stone", "floor-stone-slate"]
+  },
+  "stone-plaza": {
+    "name": "Stone Plaza",
+    "file": "assets/tiles/stone-plaza.png",
+    "biome": "universal",
+    "category": "stone",
+    "walkable": true,
+    "description": "Cut stone paving for plazas and town squares. Use for village centers and gathering areas. Large areas 15-40 tiles.",
+    "tags": ["man-made", "common", "base-fill", "outdoor"],
+    "neighbors": ["cobblestone-*", "flagstone-tiles", "grass-*", "red-brick-road"]
+  },
+  "straw-hay": {
+    "name": "Straw Hay",
+    "file": "assets/tiles/straw-hay.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Scattered straw and hay on the ground. Use for stable floors, barns, and farm areas. Patches of 4-12 tiles inside farm buildings.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["dirt-*", "dark-wood-indoor", "wooden-planks", "floor-cellar-dirt"]
+  },
+  "swamp-algae": {
+    "name": "Swamp Algae",
+    "file": "assets/tiles/swamp-algae.png",
+    "biome": "swamp",
+    "category": "water",
+    "walkable": false,
+    "description": "Stagnant water covered in green algae. Use for swamp pools and bogs. Patches of 5-15 tiles. Not walkable.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["swamp-*", "water-murky"]
+  },
+  "swamp-bog-moss": {
+    "name": "Swamp Bog Moss",
+    "file": "assets/tiles/swamp-bog-moss.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Thick spongy moss growing on boggy ground. Use in swamp interiors. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["swamp-*", "mossy-ground"]
+  },
+  "swamp-cattails": {
+    "name": "Swamp Cattails",
+    "file": "assets/tiles/swamp-cattails.png",
+    "biome": "swamp",
+    "category": "flora",
+    "walkable": true,
+    "description": "Tall cattail reeds growing in wet soil. Use at edges of swamp water. Strips 1-3 tiles wide around water.",
+    "tags": ["natural", "common", "edge"],
+    "neighbors": ["swamp-*", "water-*", "swamp-shallows"]
+  },
+  "swamp-cypress-roots": {
+    "name": "Swamp Cypress Roots",
+    "file": "assets/tiles/swamp-cypress-roots.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Exposed cypress tree roots in swamp water. Use under tree props in swamp areas. 2-5 tiles near trees.",
+    "tags": ["natural", "common", "decoration"],
+    "neighbors": ["swamp-*", "dirt-roots"]
+  },
+  "swamp-damp-earth": {
+    "name": "Swamp Damp Earth",
+    "file": "assets/tiles/swamp-damp-earth.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark, waterlogged earth. Use as base-fill for walkable swamp areas. Large patches 15-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["swamp-*", "dirt-wet", "muddy-trail"]
+  },
+  "swamp-dead-leaves": {
+    "name": "Swamp Dead Leaves",
+    "file": "assets/tiles/swamp-dead-leaves.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Decaying leaves floating on wet ground. Use in swamp areas. Patches of 3-10 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["swamp-*", "forest-rotting-leaves"]
+  },
+  "swamp-fungus": {
+    "name": "Swamp Fungus",
+    "file": "assets/tiles/swamp-fungus.png",
+    "biome": "swamp",
+    "category": "flora",
+    "walkable": true,
+    "description": "Ground covered in swamp mushrooms and fungal growth. Use sparingly for mysterious or dangerous swamp spots. 2-6 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["swamp-*", "mushroom-forest"]
+  },
+  "swamp-grass": {
+    "name": "Swamp Grass",
+    "file": "assets/tiles/swamp-grass.png",
+    "biome": "swamp",
+    "category": "flora",
+    "walkable": true,
+    "description": "Dark, coarse grass growing in swampy conditions. Use as transition between swamp and normal terrain. Strips 3-6 tiles wide.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["swamp-*", "grass-*", "grass-blue-green", "dirt-wet"]
+  },
+  "swamp-lily-pads": {
+    "name": "Swamp Lily Pads",
+    "file": "assets/tiles/swamp-lily-pads.png",
+    "biome": "swamp",
+    "category": "water",
+    "walkable": false,
+    "description": "Dark water with green lily pads floating on top. Use for swamp ponds and still water. Patches of 5-15 tiles. Not walkable.",
+    "tags": ["natural", "common", "decoration"],
+    "neighbors": ["swamp-*", "swamp-algae", "water-murky", "swamp-shallows"]
+  },
+  "swamp-mangrove": {
+    "name": "Swamp Mangrove",
+    "file": "assets/tiles/swamp-mangrove.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Tangled mangrove root system above waterlogged ground. Use near coastal swamps. Patches of 5-12 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["swamp-*", "water-*", "beach-*"]
+  },
+  "swamp-marsh-reeds": {
+    "name": "Swamp Marsh Reeds",
+    "file": "assets/tiles/swamp-marsh-reeds.png",
+    "biome": "swamp",
+    "category": "flora",
+    "walkable": true,
+    "description": "Tall marsh reeds in wet soil. Use along swamp water edges. Strips 1-3 tiles wide.",
+    "tags": ["natural", "common", "edge"],
+    "neighbors": ["swamp-*", "swamp-cattails", "water-*"]
+  },
+  "swamp-mud": {
+    "name": "Swamp Mud",
+    "file": "assets/tiles/swamp-mud.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark, thick swamp mud. Use as base-fill for swamp terrain. Large patches 15-40 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["swamp-*", "dirt-wet", "muddy-trail", "wet-mud-puddles"]
+  },
+  "swamp-peat": {
+    "name": "Swamp Peat",
+    "file": "assets/tiles/swamp-peat.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark brown peat bog surface. Use for deep boggy areas. Patches of 8-20 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["swamp-*", "swamp-mud", "swamp-bog-moss"]
+  },
+  "swamp-quicksand": {
+    "name": "Swamp Quicksand",
+    "file": "assets/tiles/swamp-quicksand.png",
+    "biome": "swamp",
+    "category": "ground",
+    "walkable": false,
+    "description": "Dangerous quicksand with a deceptively smooth surface. Use very sparingly (1-4 tiles) as hazards in swamps. Not walkable.",
+    "tags": ["natural", "rare", "decoration"],
+    "neighbors": ["swamp-*", "swamp-mud"]
+  },
+  "swamp-shallows": {
+    "name": "Swamp Shallows",
+    "file": "assets/tiles/swamp-shallows.png",
+    "biome": "swamp",
+    "category": "water",
+    "walkable": false,
+    "description": "Shallow murky swamp water. Use as transition between land and deeper swamp water. Strips 1-3 tiles. Not walkable.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["swamp-*", "water-murky", "swamp-lily-pads"]
+  },
+  "tall-wild-grass": {
+    "name": "Tall Wild Grass",
+    "file": "assets/tiles/tall-wild-grass.png",
+    "biome": "temperate",
+    "category": "flora",
+    "walkable": true,
+    "description": "Very tall wild grass. Use for untamed meadows, field borders, and wild areas. Patches of 5-15 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["grass-*", "overgrown-weedy-grass", "grass-prairie"]
+  },
+  "volcanic-ash": {
+    "name": "Volcanic Ash",
+    "file": "assets/tiles/volcanic-ash.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Gray volcanic ash covering the ground. Use as primary base-fill for volcanic biome outskirts. Large patches 20-50 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["volcanic-*", "dirt-gray"]
+  },
+  "volcanic-basalt": {
+    "name": "Volcanic Basalt",
+    "file": "assets/tiles/volcanic-basalt.png",
+    "biome": "volcanic",
+    "category": "stone",
+    "walkable": true,
+    "description": "Dark basalt rock from cooled lava. Use for volcanic rock formations. Patches of 10-25 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["volcanic-*", "dark-slate"]
+  },
+  "volcanic-black-sand": {
+    "name": "Volcanic Black Sand",
+    "file": "assets/tiles/volcanic-black-sand.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark black volcanic sand. Use for volcanic beaches and ash plains. Large patches 15-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["volcanic-*", "volcanic-ash", "beach-*"]
+  },
+  "volcanic-charred": {
+    "name": "Volcanic Charred Ground",
+    "file": "assets/tiles/volcanic-charred.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Blackened, charred earth from volcanic activity. Use near active volcanic areas. Patches of 8-20 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["volcanic-*", "volcanic-scorched"]
+  },
+  "volcanic-cooled-lava": {
+    "name": "Cooled Lava",
+    "file": "assets/tiles/volcanic-cooled-lava.png",
+    "biome": "volcanic",
+    "category": "stone",
+    "walkable": true,
+    "description": "Solidified, cooled lava with rough dark surface. Use for old lava flows. Strips and patches 5-20 tiles forming flow patterns.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["volcanic-*", "volcanic-basalt"]
+  },
+  "volcanic-embers": {
+    "name": "Volcanic Embers",
+    "file": "assets/tiles/volcanic-embers.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ground with glowing orange embers and sparks. Use near active lava sources. Very small patches 2-6 tiles near lava. Dangerous-looking.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["volcanic-*", "volcanic-lava", "volcanic-magma-crack"]
+  },
+  "volcanic-fire-crack": {
+    "name": "Volcanic Fire Crack",
+    "file": "assets/tiles/volcanic-fire-crack.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ground with glowing red cracks of fire beneath. Use as accent near volcanic vents. Sparse, 1-4 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["volcanic-*", "volcanic-embers", "volcanic-lava"]
+  },
+  "volcanic-lava": {
+    "name": "Volcanic Lava",
+    "file": "assets/tiles/volcanic-lava.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": false,
+    "description": "Bright red-orange flowing lava. HAZARD — not walkable. Use for lava rivers and pools. Strips 2-5 tiles for rivers, patches 5-15 for pools. Never place next to snow or water tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["volcanic-*"]
+  },
+  "volcanic-magma-crack": {
+    "name": "Volcanic Magma Crack",
+    "file": "assets/tiles/volcanic-magma-crack.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Dark rock with bright orange magma visible through cracks. Use near lava features as transition. Strips 1-3 tiles around lava.",
+    "tags": ["natural", "uncommon", "transition", "edge"],
+    "neighbors": ["volcanic-*", "volcanic-lava", "volcanic-embers"]
+  },
+  "volcanic-molten": {
+    "name": "Volcanic Molten Rock",
+    "file": "assets/tiles/volcanic-molten.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": false,
+    "description": "Semi-molten rock glowing with heat. HAZARD — not walkable. Use as transition ring around lava. 1-2 tiles between lava and solid ground.",
+    "tags": ["natural", "uncommon", "transition", "edge"],
+    "neighbors": ["volcanic-*", "volcanic-lava"]
+  },
+  "volcanic-obsidian": {
+    "name": "Volcanic Obsidian",
+    "file": "assets/tiles/volcanic-obsidian.png",
+    "biome": "volcanic",
+    "category": "stone",
+    "walkable": true,
+    "description": "Smooth, dark obsidian glass. Use for volcanic glass formations and obsidian fields. Patches of 5-15 tiles.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["volcanic-*", "volcanic-basalt", "dark-slate"]
+  },
+  "volcanic-pumice": {
+    "name": "Volcanic Pumice",
+    "file": "assets/tiles/volcanic-pumice.png",
+    "biome": "volcanic",
+    "category": "stone",
+    "walkable": true,
+    "description": "Light, porous pumice stone surface. Use near cooled lava flows. Patches of 5-12 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["volcanic-*", "volcanic-ash", "volcanic-cooled-lava"]
+  },
+  "volcanic-rock": {
+    "name": "Volcanic Rock",
+    "file": "assets/tiles/volcanic-rock.png",
+    "biome": "volcanic",
+    "category": "stone",
+    "walkable": true,
+    "description": "Standard dark volcanic rock. Use as base ground in volcanic areas. Large patches 15-30 tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["volcanic-*", "dark-slate", "rocks-pebbles"]
+  },
+  "volcanic-scorched": {
+    "name": "Volcanic Scorched Earth",
+    "file": "assets/tiles/volcanic-scorched.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Heat-scorched golden-brown earth near volcanic activity. Use as transition between volcanic and desert/temperate zones. Strips 3-6 tiles.",
+    "tags": ["natural", "common", "transition"],
+    "neighbors": ["volcanic-*", "desert-scorched", "dirt-*"]
+  },
+  "volcanic-sulfur": {
+    "name": "Volcanic Sulfur",
+    "file": "assets/tiles/volcanic-sulfur.png",
+    "biome": "volcanic",
+    "category": "ground",
+    "walkable": true,
+    "description": "Yellow sulfur deposits around volcanic vents. Use sparingly near geothermal features. Small patches 2-6 tiles.",
+    "tags": ["natural", "uncommon", "decoration"],
+    "neighbors": ["volcanic-*", "volcanic-embers"]
+  },
+  "water-calm": {
+    "name": "Calm Water",
+    "file": "assets/tiles/water-calm.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Still, calm water surface. Use for ponds and sheltered lake areas. Patches of 10-30 tiles. Not walkable.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["water-*", "shallow-water", "beach-*", "grass-*"]
+  },
+  "water-crystal": {
+    "name": "Crystal Clear Water",
+    "file": "assets/tiles/water-crystal.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Very clear, transparent water. Use for mountain springs and pristine pools. Small patches 5-15 tiles. Not walkable.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["water-*", "shallow-water", "rocks-pebbles"]
+  },
+  "water-deep": {
+    "name": "Deep Water",
+    "file": "assets/tiles/water-deep.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Dark, deep water. Use for ocean depths, deep lakes, and rivers. Large areas 20+ tiles for open water. Not walkable.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["water-*", "shallow-water"]
+  },
+  "water-foam": {
+    "name": "Foamy Water",
+    "file": "assets/tiles/water-foam.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Water with white foam on the surface. Use at rapids, waterfall bases, and wave-crashing shores. Strips 1-3 tiles. Not walkable.",
+    "tags": ["natural", "uncommon", "edge"],
+    "neighbors": ["water-*", "beach-shoreline"]
+  },
+  "water-murky": {
+    "name": "Murky Water",
+    "file": "assets/tiles/water-murky.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Dark, murky, opaque water. Use for swamp pools, polluted areas, and stagnant water. Patches of 5-20 tiles. Not walkable.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["water-*", "swamp-*", "swamp-shallows"]
+  },
+  "water-ripple": {
+    "name": "Rippling Water",
+    "file": "assets/tiles/water-ripple.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Water with gentle ripples. Use for lakes and calm rivers. Patches of 10-25 tiles. Not walkable.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["water-*", "shallow-water"]
+  },
+  "water-river": {
+    "name": "River Water",
+    "file": "assets/tiles/water-river.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Flowing river water with slight current pattern and reeds at edges. Use for rivers, 2-5 tiles wide in snaking patterns. Not walkable.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["water-*", "shallow-water", "grass-*", "dirt-wet"]
+  },
+  "water-shallow": {
+    "name": "Shallow Water Alt",
+    "file": "assets/tiles/water-shallow.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Alternative shallow water tile. Use interchangeably with shallow-water for transition zones. Not walkable.",
+    "tags": ["natural", "common", "transition", "edge"],
+    "neighbors": ["water-*", "shallow-water", "beach-*", "grass-*"]
+  },
+  "water-stormy": {
+    "name": "Stormy Water",
+    "file": "assets/tiles/water-stormy.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Rough, dark stormy water with whitecaps. Use for ocean areas and storm-tossed seas. Large patches 20+ tiles. Not walkable.",
+    "tags": ["natural", "uncommon", "base-fill"],
+    "neighbors": ["water-*", "water-deep"]
+  },
+  "water-turquoise": {
+    "name": "Turquoise Water",
+    "file": "assets/tiles/water-turquoise.png",
+    "biome": "water",
+    "category": "water",
+    "walkable": false,
+    "description": "Beautiful turquoise tropical water. Use for tropical lagoons and coral reef areas. Patches of 10-25 tiles. Not walkable.",
+    "tags": ["natural", "uncommon", "accent"],
+    "neighbors": ["water-*", "beach-white", "beach-golden", "shallow-water"]
+  },
+  "wet-mud-puddles": {
+    "name": "Wet Mud Puddles",
+    "file": "assets/tiles/wet-mud-puddles.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Muddy ground with small puddles. Use for rainy areas and swamp edges. Sparse patches 2-8 tiles.",
+    "tags": ["natural", "common", "accent"],
+    "neighbors": ["dirt-*", "dirt-wet", "muddy-trail", "swamp-*"]
+  },
+  "white-marble": {
+    "name": "White Marble",
+    "file": "assets/tiles/white-marble.png",
+    "biome": "indoor",
+    "category": "stone",
+    "walkable": true,
+    "description": "Polished white marble surface. Use for palace floors, temple steps, and wealthy building exteriors. Patches of 8-25 tiles.",
+    "tags": ["man-made", "uncommon", "indoor", "outdoor"],
+    "neighbors": ["floor-marble", "floor-checkered", "stone-plaza", "carpet-*"]
+  },
+  "white-sand-beach": {
+    "name": "White Sand Beach",
+    "file": "assets/tiles/white-sand-beach.png",
+    "biome": "beach",
+    "category": "ground",
+    "walkable": true,
+    "description": "Pristine white tropical sand. Use interchangeably with beach-white for tropical beach areas. Large patches 20+ tiles.",
+    "tags": ["natural", "common", "base-fill"],
+    "neighbors": ["beach-*", "water-*", "water-turquoise"]
+  },
+  "wood-chips": {
+    "name": "Wood Chips",
+    "file": "assets/tiles/wood-chips.png",
+    "biome": "universal",
+    "category": "ground",
+    "walkable": true,
+    "description": "Ground covered in wood chips and shavings. Use near lumber mills, carpenter shops, and forest-stumps areas. Small patches 3-8 tiles.",
+    "tags": ["man-made", "uncommon", "decoration"],
+    "neighbors": ["dirt-*", "forest-stumps", "wooden-planks", "grass-*"]
+  },
+  "wooden-planks": {
+    "name": "Wooden Planks",
+    "file": "assets/tiles/wooden-planks.png",
+    "biome": "universal",
+    "category": "floor",
+    "walkable": true,
+    "description": "Rough wooden plank surface. Use for docks, bridges, outdoor platforms, and simple building floors. Rectangular areas matching the structure.",
+    "tags": ["man-made", "common", "outdoor", "indoor"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "water-*", "grass-*", "dirt-*"]
+  },
+  "worn-stone-path": {
+    "name": "Worn Stone Path",
+    "file": "assets/tiles/worn-stone-path.png",
+    "biome": "universal",
+    "category": "path",
+    "walkable": true,
+    "description": "Old, worn stone pathway. Use for ancient paths, temple approaches, and old road remnants. Strips 1-3 tiles wide.",
+    "tags": ["man-made", "common", "outdoor"],
+    "neighbors": ["stone-*", "cracked-ancient-stone", "mossy-cobblestone", "grass-*"]
+  },
+  "woven-carpet": {
+    "name": "Woven Carpet",
+    "file": "assets/tiles/woven-carpet.png",
+    "biome": "indoor",
+    "category": "floor",
+    "walkable": true,
+    "description": "Simple woven carpet/rug. Use for basic indoor rooms and merchant tents. Small areas 3-10 tiles.",
+    "tags": ["man-made", "common", "indoor"],
+    "neighbors": ["floor-*", "dark-wood-indoor", "carpet-*"]
+  }
+}

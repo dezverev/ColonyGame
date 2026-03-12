@@ -1,0 +1,18 @@
+{
+  "name": "iron rocks",
+  "collidable": false,
+  "size": {
+    "w": 48,
+    "h": 48
+  },
+  "anchor": {
+    "x": 0.5,
+    "y": 0.7
+  },
+  "worldOffset": {
+    "x": 0.5,
+    "y": 0.5,
+    "z": 0
+  },
+  "depthBias": 0.75
+}
