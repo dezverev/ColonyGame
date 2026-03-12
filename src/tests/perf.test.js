@@ -206,6 +206,47 @@ describe('Performance — multi-colony stress', () => {
   });
 });
 
+describe('Performance — VP breakdown single source of truth', () => {
+  it('_calcVPBreakdown is tick-cached (8 players, no redundant computation)', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+    for (let i = 0; i < 100; i++) engine.tick();
+
+    // First call computes, subsequent calls within same tick return cached
+    const t0 = process.hrtime.bigint();
+    for (let round = 0; round < 100; round++) {
+      for (let pid = 1; pid <= 8; pid++) {
+        engine._calcVPBreakdown(pid);
+      }
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    // 800 calls should be nearly free (all cached within same tick)
+    assert.ok(durationMs < 5, `800 VP breakdown calls took ${durationMs.toFixed(2)}ms, budget 5ms`);
+
+    // Verify breakdown matches _calcVictoryPoints
+    for (let pid = 1; pid <= 8; pid++) {
+      const breakdown = engine._calcVPBreakdown(pid);
+      assert.strictEqual(breakdown.vp, engine._calcVictoryPoints(pid));
+    }
+    engine.stop();
+  });
+
+  it('_getPlayerSummary is tick-cached (N² calls reduced to N)', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+    for (let i = 0; i < 100; i++) engine.tick();
+
+    const t0 = process.hrtime.bigint();
+    // Simulate broadcast pattern: each player queries all 8 summaries
+    for (let self = 1; self <= 8; self++) {
+      for (let pid = 1; pid <= 8; pid++) {
+        engine._getPlayerSummary(pid);
+      }
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(durationMs < 5, `64 summary calls took ${durationMs.toFixed(2)}ms, budget 5ms`);
+    engine.stop();
+  });
+});
+
 describe('Performance — galaxy generation', () => {
   it('large galaxy generates under 50ms', () => {
     const { generateGalaxy } = require('../../server/galaxy');

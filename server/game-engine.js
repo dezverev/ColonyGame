@@ -135,7 +135,10 @@ class GameEngine {
     this._cachedPlayerJSON = new Map(); // playerId -> cached per-player JSON string
     this._pendingEvents = []; // events to flush with next broadcast
     this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
+    this._vpBreakdownCache = new Map(); // playerId -> full VP breakdown
     this._vpCacheTick = -1;   // tick when VP cache was last computed
+    this._summaryCache = new Map(); // playerId -> summary, tick-scoped
+    this._summaryCacheTick = -1;
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._gameOver = false; // true after game ends
 
@@ -296,6 +299,7 @@ class GameEngine {
     this._dirtyPlayers.add(colony.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
+    this._summaryCacheTick = -1; // summary depends on colonies
   }
 
   // Count total districts (built + in queue)
@@ -842,15 +846,17 @@ class GameEngine {
     return result;
   }
 
-  // Calculate victory points for a player (tick-scoped cache: O(N) per broadcast instead of O(N²))
-  _calcVictoryPoints(playerId) {
-    // Return cached value if computed this tick
-    if (this._vpCacheTick === this.tickCount && this._vpCache.has(playerId)) {
-      return this._vpCache.get(playerId);
-    }
+  // Full VP breakdown for a player — single source of truth for the VP formula.
+  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP }
+  _calcVPBreakdown(playerId) {
+    const cached = this._vpBreakdownCache.get(playerId);
+    if (cached && this._vpCacheTick === this.tickCount) return cached;
 
     const state = this.playerStates.get(playerId);
-    if (!state) return 0;
+    if (!state) {
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0 };
+      return empty;
+    }
 
     // Pops × 2 + Districts × 1 (single pass)
     let totalPops = 0;
@@ -885,9 +891,25 @@ class GameEngine {
     }
 
     const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP;
+    const breakdown = {
+      vp, pops: totalPops, popsVP: totalPops * 2,
+      districts: totalDistricts, districtsVP: totalDistricts,
+      alloys: state.resources.alloys, alloysVP,
+      totalResearch, researchVP,
+      techs: (state.completedTechs || []).length, techVP,
+    };
     this._vpCacheTick = this.tickCount;
+    this._vpBreakdownCache.set(playerId, breakdown);
     this._vpCache.set(playerId, vp);
-    return vp;
+    return breakdown;
+  }
+
+  // Calculate victory points for a player (tick-scoped cache: O(N) per broadcast instead of O(N²))
+  _calcVictoryPoints(playerId) {
+    if (this._vpCacheTick === this.tickCount && this._vpCache.has(playerId)) {
+      return this._vpCache.get(playerId);
+    }
+    return this._calcVPBreakdown(playerId).vp;
   }
 
   // Process match timer countdown
@@ -928,37 +950,13 @@ class GameEngine {
 
     const scores = [];
     for (const [playerId, state] of this.playerStates) {
-      const colonyIds = this._playerColonies.get(playerId) || [];
-      let totalPops = 0, totalDistricts = 0;
-      for (const cId of colonyIds) {
-        const c = this.colonies.get(cId);
-        if (c) { totalPops += c.pops; totalDistricts += c.districts.length; }
-      }
-      const vp = this._calcVictoryPoints(playerId);
+      const breakdown = this._calcVPBreakdown(playerId);
       scores.push({
         playerId,
         name: state.name,
         color: state.color,
-        vp,
-        breakdown: {
-          pops: totalPops,
-          popsVP: totalPops * 2,
-          districts: totalDistricts,
-          districtsVP: totalDistricts,
-          alloys: state.resources.alloys,
-          alloysVP: Math.floor(state.resources.alloys / 25),
-          totalResearch: (state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0),
-          researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 50),
-          techs: (state.completedTechs || []).length,
-          techVP: (state.completedTechs || []).reduce((sum, techId) => {
-            const tech = TECH_TREE[techId];
-            if (!tech) return sum;
-            if (tech.tier === 1) return sum + 5;
-            if (tech.tier === 2) return sum + 10;
-            if (tech.tier === 3) return sum + 20;
-            return sum;
-          }, 0),
-        },
+        vp: breakdown.vp,
+        breakdown,
       });
     }
 
@@ -1348,8 +1346,16 @@ class GameEngine {
     }
   }
 
-  // Summary stats for scoreboard: colony count, total pops, net income
+  // Summary stats for scoreboard: colony count, total pops, net income (tick-scoped cache)
   _getPlayerSummary(playerId) {
+    if (this._summaryCacheTick === this.tickCount) {
+      const cached = this._summaryCache.get(playerId);
+      if (cached) return cached;
+    } else {
+      this._summaryCacheTick = this.tickCount;
+      this._summaryCache.clear();
+    }
+
     const colonyIds = this._playerColonies.get(playerId) || [];
     let totalPops = 0;
     const income = { energy: 0, minerals: 0, food: 0, alloys: 0 };
@@ -1363,7 +1369,9 @@ class GameEngine {
       income.food += production.food - consumption.food;
       income.alloys += production.alloys - consumption.alloys;
     }
-    return { colonyCount: colonyIds.length, totalPops, income };
+    const summary = { colonyCount: colonyIds.length, totalPops, income };
+    this._summaryCache.set(playerId, summary);
+    return summary;
   }
 
   getState() {
