@@ -119,6 +119,12 @@
           yourId: msg.yourId,
         };
         showScreen('game');
+        // Initialize Three.js renderer and show first colony
+        if (window.ColonyRenderer) {
+          window.ColonyRenderer.init();
+          const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
+          if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+        }
         break;
 
       case 'gameState':
@@ -126,6 +132,11 @@
           gameState.tick = msg.tick;
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
+          // Update Three.js colony view
+          if (window.ColonyRenderer) {
+            const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
+            if (myColony) window.ColonyRenderer.updateFromState(myColony);
+          }
         }
         break;
 

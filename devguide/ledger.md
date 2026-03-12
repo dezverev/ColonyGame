@@ -413,3 +413,43 @@ Each entry records an iteration of automated development.
 - No game loop in app.js anymore — Three.js renderer.js will own requestAnimationFrame in Sprint 3
 
 **Next:** CLIENT UX SPRINT 3/5 — Three.js scene + isometric colony view (OrthographicCamera, terrain grid, camera controls)
+
+---
+
+## Entry 14 — 2026-03-11 — CLIENT UX SPRINT 3/5: Three.js Scene + Isometric Colony View
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Three.js integrated via CDN (r128) in index.html
+- Created renderer.js module: Scene, OrthographicCamera at isometric angle (35.264° pitch, 45° yaw), WebGLRenderer
+- Ambient light (0x404060, 0.6) + directional light (white, 0.8) for depth
+- Colony terrain grid: BoxGeometry tiles arranged in 4-column rows based on planet.size, with 0.1 gap between tiles
+- Ground plane underneath the grid (dark 0x111122)
+- District rendering: colored 3D boxes per type — Generator=yellow, Mining=gray, Agriculture=green, Industrial=blue, Research=purple, Housing=white — with varying heights
+- Under-construction districts shown as wireframe with 50% opacity
+- Empty slots shown as dark semi-transparent tiles
+- Camera controls: scroll-wheel zoom (adjust ortho frustum, min 2 / max 20), middle-mouse drag to pan, WASD/arrow keys to pan (speed scales with zoom)
+- Dark space background color (#0a0a1a)
+- requestAnimationFrame render loop at 60fps
+- Wired into app.js: ColonyRenderer.init() on gameInit, buildColonyGrid for first colony, updateFromState on gameState updates
+- updateFromState rebuilds grid when district count or build queue changes
+
+**Files changed:**
+- `src/public/js/renderer.js` — new file (Three.js colony renderer)
+- `src/public/index.html` — added Three.js CDN, renderer.js script tag
+- `src/public/js/app.js` — wired ColonyRenderer into gameInit and gameState handlers
+- `devguide/design.md` — marked Sprint 3/5 complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (renderer is browser-only, no new server tests needed).
+
+**Key decisions:**
+- Used Three.js r128 from CDN (stable, well-documented, no bundler needed)
+- District rendering included in this sprint (ahead of Sprint 4/5 spec) since colored boxes are trivial and the grid without them would be meaningless — aligns with feedback that visuals are core, not polish
+- Grid rebuilds on district/queue count changes rather than diffing individual tiles — simple and correct, optimization can come later
+- Camera pan uses world coordinates, not screen-space — isometric angle preserved at all times
+- Exposed ColonyRenderer on window for cross-module access, consistent with GameClient pattern
+
+**Next:** CLIENT UX SPRINT 4/5 — Raycaster click interaction (click empty tile to build, click district for info/demolish), selected tile highlight
