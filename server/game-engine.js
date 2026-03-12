@@ -982,26 +982,23 @@ class GameEngine {
     const colonyIds = this._playerColonies.get(ship.ownerId) || [];
     if (colonyIds.length === 0) return; // no colonies, ship stays put
 
-    // Find nearest colony by BFS hop count
+    // Find nearest colony by BFS hop count — keep the shortest path to avoid redundant BFS
+    let nearestPath = null;
     let nearestSystemId = null;
-    let nearestDist = Infinity;
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (!colony) continue;
       const path = this._findPath(ship.systemId, colony.systemId);
-      if (path && path.length < nearestDist) {
-        nearestDist = path.length;
+      if (path && (nearestPath === null || path.length < nearestPath.length)) {
+        nearestPath = path;
         nearestSystemId = colony.systemId;
       }
     }
 
-    if (nearestSystemId != null && nearestDist > 0) {
-      const path = this._findPath(ship.systemId, nearestSystemId);
-      if (path) {
-        ship.targetSystemId = nearestSystemId;
-        ship.path = path;
-        ship.hopProgress = 0;
-      }
+    if (nearestPath && nearestPath.length > 0) {
+      ship.targetSystemId = nearestSystemId;
+      ship.path = nearestPath;
+      ship.hopProgress = 0;
     }
   }
 
@@ -1760,10 +1757,11 @@ class GameEngine {
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
     }));
-    // Surveyed systems — own player's surveyed set
+    // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
     state.surveyedSystems = {};
-    for (const [pid, sysSet] of this._surveyedSystems) {
-      state.surveyedSystems[pid] = [...sysSet];
+    const mySurveyed = this._surveyedSystems.get(playerId);
+    if (mySurveyed) {
+      state.surveyedSystems[playerId] = [...mySurveyed];
     }
 
     // Include match timer info

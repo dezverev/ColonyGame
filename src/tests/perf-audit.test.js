@@ -229,4 +229,60 @@ describe('Performance Audit', () => {
     console.log(`  Colony ships after 200 ticks: ${engine._colonyShips.length}`);
     // Ships should only exist if they're in transit — not leak
   });
+
+  it('per-player payload only includes own surveyed systems', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Simulate surveyed systems for both players
+    engine._surveyedSystems.set(1, new Set([0, 1, 2]));
+    engine._surveyedSystems.set(2, new Set([3, 4, 5, 6]));
+    engine._invalidateStateCache();
+
+    const p1State = engine.getPlayerState(1);
+    const p2State = engine.getPlayerState(2);
+
+    // Player 1 should only see their own surveyed systems
+    assert.ok(p1State.surveyedSystems[1], 'Player 1 should have own surveyed data');
+    assert.strictEqual(p1State.surveyedSystems[2], undefined, 'Player 1 should not see Player 2 surveyed data');
+    assert.deepStrictEqual(p1State.surveyedSystems[1].sort(), [0, 1, 2]);
+
+    // Player 2 should only see their own
+    assert.ok(p2State.surveyedSystems[2], 'Player 2 should have own surveyed data');
+    assert.strictEqual(p2State.surveyedSystems[1], undefined, 'Player 2 should not see Player 1 surveyed data');
+    assert.deepStrictEqual(p2State.surveyedSystems[2].sort(), [3, 4, 5, 6]);
+
+    // Verify payload size difference
+    const p1JSON = JSON.stringify(p1State);
+    const p2JSON = JSON.stringify(p2State);
+    console.log(`  P1 payload: ${p1JSON.length} bytes (3 surveyed), P2: ${p2JSON.length} bytes (4 surveyed)`);
+  });
+
+  it('science ship return pathfinding does not double-BFS', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Track BFS calls
+    let bfsCount = 0;
+    const origFindPath = engine._findPath.bind(engine);
+    engine._findPath = function (...args) {
+      bfsCount++;
+      return origFindPath(...args);
+    };
+
+    // Create a science ship at a distant system
+    const colonyIds = engine._playerColonies.get(1) || [];
+    const colony = engine.colonies.get(colonyIds[0]);
+    const ship = {
+      id: 'test-sci', ownerId: 1, systemId: 5,
+      targetSystemId: null, path: [], hopProgress: 0,
+      surveying: false, surveyProgress: 0,
+    };
+
+    bfsCount = 0;
+    engine._returnScienceShipToColony(ship);
+    const colonyCount = colonyIds.length;
+
+    // Should only BFS once per colony (to find nearest), NOT twice
+    console.log(`  BFS calls for ${colonyCount} colonies: ${bfsCount} (expected ${colonyCount})`);
+    assert.strictEqual(bfsCount, colonyCount, `Expected ${colonyCount} BFS calls, got ${bfsCount}`);
+  });
 });
