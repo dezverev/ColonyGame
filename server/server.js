@@ -203,10 +203,17 @@ function startServer(options = {}) {
         });
         games.set(room.id, engine);
 
+        // Stringify shared init payload once, inject per-player yourId
+        // (avoids re-serializing full galaxy data per player)
         const initState = engine.getInitState();
+        initState.type = 'gameInit';
+        const initBase = JSON.stringify(initState);
         for (const [pid] of result.room.players) {
           const pws = clients.get(pid);
-          if (pws) send(pws, { type: 'gameInit', ...initState, yourId: pid });
+          if (pws && pws.readyState === WebSocket.OPEN) {
+            // Insert yourId into the JSON string: replace trailing } with ,"yourId":N}
+            pws.send(initBase.slice(0, -1) + ',"yourId":' + pid + '}');
+          }
         }
 
         engine.start();

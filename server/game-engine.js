@@ -448,8 +448,11 @@ class GameEngine {
       }
 
       colony.growthProgress++;
-      // Mark owner dirty — growth progress changed, client needs updated progress bar
-      this._dirtyPlayers.add(colony.ownerId);
+      // Throttle growth-progress broadcasts to every 10 ticks (~1Hz) — progress bar
+      // doesn't need per-tick updates. Actual pop growth (below) always marks dirty.
+      if (this.tickCount % 10 === 0) {
+        this._dirtyPlayers.add(colony.ownerId);
+      }
       if (colony.growthProgress >= growthTarget) {
         colony.pops++;
         colony.growthProgress = 0;

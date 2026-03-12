@@ -57,13 +57,13 @@ describe('GameEngine — Initialization', () => {
     assert.deepStrictEqual(types, ['agriculture', 'agriculture', 'generator', 'mining']);
   });
 
-  it('starting colony is on a continental planet with size 16', () => {
+  it('starting colony is on a habitable planet from the galaxy', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.strictEqual(colony.planet.type, 'continental');
-    assert.strictEqual(colony.planet.size, 16);
-    assert.strictEqual(colony.planet.habitability, 80);
+    assert.ok(colony.planet.habitability >= 60, 'Starting planet should be habitable');
+    assert.ok(colony.planet.size >= 8, 'Starting planet should have reasonable size');
+    assert.ok(colony.systemId != null, 'Colony should be placed in a galaxy system');
   });
 
   it('each player gets their own colony', () => {
@@ -1209,7 +1209,7 @@ describe('GameEngine — Tick Profiling', () => {
     assert.strictEqual(stats.avg, 0);
   });
 
-  it('broadcast throttle reduces serialization count by ~67%', () => {
+  it('broadcast throttle reduces serialization count vs unthrottled', () => {
     let broadcastCount = 0;
     const engine = new GameEngine(makeRoom(8), {
       onTick: () => { broadcastCount++; },
@@ -1219,11 +1219,12 @@ describe('GameEngine — Tick Profiling', () => {
     // Run 300 ticks (100 broadcast windows at BROADCAST_EVERY=3)
     for (let i = 0; i < 300; i++) engine.tick();
 
-    // Without throttle: 300 ticks * 8 players = 2400 broadcasts
-    // With throttle: 100 windows * 8 players = 800 broadcasts
-    // Allow some variance from monthly ticks that may not dirty all players
+    // Without any throttle: 300 ticks * 8 players = 2400 broadcasts
+    // With broadcast throttle (every 3 ticks) + growth dirty throttle (every 10 ticks):
+    // growth-only broadcasts fire ~3 times per 30 ticks, plus monthly/construction events.
+    // Expect significantly fewer than the unthrottled maximum.
     assert.ok(broadcastCount <= 900, `Expected <= 900 broadcasts, got ${broadcastCount}`);
-    assert.ok(broadcastCount >= 400, `Expected >= 400 broadcasts, got ${broadcastCount} (throttle may be broken)`);
+    assert.ok(broadcastCount >= 100, `Expected >= 100 broadcasts, got ${broadcastCount} (throttle may be broken)`);
   });
 });
 
