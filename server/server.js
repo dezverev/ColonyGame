@@ -116,6 +116,7 @@ function startServer(options = {}) {
         const room = rooms.createRoom(name, clientId, ws.displayName, {
           maxPlayers: msg.maxPlayers,
           map: msg.map,
+          practiceMode: msg.practiceMode,
         });
         send(ws, { type: 'roomJoined', room: rooms.serializeRoom(room) });
         broadcastRoomList();

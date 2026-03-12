@@ -120,4 +120,46 @@ describe('RoomManager', () => {
     assert.ok(list.some(r => r.name === 'A'));
     assert.ok(list.some(r => r.name === 'B'));
   });
+
+  it('practice mode creates room with maxPlayers 1', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    assert.strictEqual(room.practiceMode, true);
+    assert.strictEqual(room.maxPlayers, 1);
+  });
+
+  it('practice mode canLaunch with solo host', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    assert.ok(rm.canLaunch(room.id));
+  });
+
+  it('practice mode launches with solo host', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    const result = rm.launchGame(room.id, 1);
+    assert.ok(!result.error);
+    assert.strictEqual(result.room.status, 'playing');
+  });
+
+  it('practice mode rejects second player joining', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    const result = rm.joinRoom(room.id, 2, 'Bob');
+    assert.strictEqual(result.error, 'Room is full');
+  });
+
+  it('practice mode appears in room list with practiceMode flag', () => {
+    const rm = new RoomManager();
+    rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    const list = rm.listRooms();
+    assert.strictEqual(list[0].practiceMode, true);
+  });
+
+  it('non-practice room still requires 2 players', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Normal', 1, 'Alice');
+    assert.strictEqual(room.practiceMode, false);
+    assert.ok(!rm.canLaunch(room.id));
+  });
 });

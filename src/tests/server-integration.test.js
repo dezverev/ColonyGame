@@ -223,6 +223,30 @@ describe('Server Integration', () => {
     assert.ok(welcome.clientId, 'Server still accepts connections after game cleanup');
   });
 
+  it('practice mode: solo player can launch game', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Solo' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    // Create practice room
+    send(ws, { type: 'createRoom', name: 'Practice', practiceMode: true });
+    const joined = await waitForMessage(ws, m => m.type === 'roomJoined');
+    assert.strictEqual(joined.room.practiceMode, true);
+    assert.strictEqual(joined.room.maxPlayers, 1);
+
+    // Launch solo — no need for second player or ready check
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+    assert.ok(init.colonies.length >= 1);
+    assert.ok(init.yourId);
+  });
+
   it('chat works within a room', async (t) => {
     const srv = await startServer({ port: 0, log: false });
     t.after(() => srv.close());

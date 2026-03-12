@@ -8,12 +8,14 @@ class RoomManager {
 
   createRoom(name, hostId, hostName, options = {}) {
     const id = crypto.randomBytes(4).toString('hex');
+    const practiceMode = !!options.practiceMode;
     const room = {
       id,
       name: name.slice(0, 30),
       hostId,
-      maxPlayers: Math.min(Math.max(options.maxPlayers || 4, 2), 8),
+      maxPlayers: practiceMode ? 1 : Math.min(Math.max(options.maxPlayers || 4, 2), 8),
       map: options.map || 'default',
+      practiceMode,
       status: 'waiting', // waiting | playing | finished
       players: new Map(),
       createdAt: Date.now(),
@@ -73,6 +75,7 @@ class RoomManager {
   canLaunch(roomId) {
     const room = this.rooms.get(roomId);
     if (!room || room.status !== 'waiting') return false;
+    if (room.practiceMode) return room.players.size === 1;
     if (room.players.size < 2) return false;
     for (const [id, p] of room.players) {
       if (id !== room.hostId && !p.ready) return false;
@@ -108,6 +111,7 @@ class RoomManager {
         playerCount: room.players.size,
         maxPlayers: room.maxPlayers,
         map: room.map,
+        practiceMode: room.practiceMode,
         status: room.status,
       });
     }
@@ -121,6 +125,7 @@ class RoomManager {
       hostId: room.hostId,
       maxPlayers: room.maxPlayers,
       map: room.map,
+      practiceMode: room.practiceMode,
       status: room.status,
       players: Array.from(room.players.values()),
     };

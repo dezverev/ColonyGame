@@ -283,3 +283,34 @@ Each entry records an iteration of automated development.
 - Clear tier separation: 100 minerals (basic) vs 200 minerals (advanced) makes progression intuitive
 
 **Next:** Variable build times (Housing 200, basic 300, advanced 400), then colony idle event notifications
+
+---
+
+## Entry 10 — 2026-03-11 — Client UX Sprint 1/3: Single-Player Practice Mode
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Practice mode for solo game launch without requiring a second player
+- `createRoom` accepts `practiceMode: true` option, sets `maxPlayers` to 1
+- `canLaunch` returns true for practice rooms with a single host (no ready check needed)
+- Practice mode flag exposed in room list and room serialization
+- Non-practice rooms unaffected — still require 2+ players with ready checks
+
+**Files changed:**
+- `server/room-manager.js` — practiceMode option in createRoom, canLaunch bypass, serialization
+- `server/server.js` — pass practiceMode through from createRoom message
+- `src/tests/room-manager.test.js` — 6 new practice mode unit tests
+- `src/tests/server-integration.test.js` — 1 new practice mode integration test
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 96 total (68 game-engine + 18 room-manager + 7 integration + 3 performance). All passing.
+
+**Key decisions:**
+- Practice mode forces maxPlayers=1 rather than just relaxing the canLaunch check — prevents accidental joins
+- Host doesn't need to toggle ready in practice mode — canLaunch returns true immediately
+- practiceMode flag stored on room object and exposed in serialization so client can show "Practice" badge
+
+**Next:** CLIENT UX SPRINT 2/5 — Stale client cleanup (strip RTS rendering, add colony 4X containers)
