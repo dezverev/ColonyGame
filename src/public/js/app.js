@@ -206,28 +206,29 @@
     const originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
     const opts = { originX, originY };
 
-    // Draw grid
+    // Draw grid — batched into a single path for fewer draw calls
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.lineWidth = 1;
+    const zoomOffX = W / 2 * (1 - camera.zoom);
+    const zoomOffY = H / 2 * (1 - camera.zoom);
+    ctx.beginPath();
     for (let x = 0; x <= mapWidth; x++) {
       const a = P.worldToScreen(x, 0, 0, opts);
       const b = P.worldToScreen(x, mapHeight, 0, opts);
-      ctx.beginPath();
-      ctx.moveTo(a.x * camera.zoom + W / 2 * (1 - camera.zoom), a.y * camera.zoom + H / 2 * (1 - camera.zoom));
-      ctx.lineTo(b.x * camera.zoom + W / 2 * (1 - camera.zoom), b.y * camera.zoom + H / 2 * (1 - camera.zoom));
-      ctx.stroke();
+      ctx.moveTo(a.x * camera.zoom + zoomOffX, a.y * camera.zoom + zoomOffY);
+      ctx.lineTo(b.x * camera.zoom + zoomOffX, b.y * camera.zoom + zoomOffY);
     }
     for (let y = 0; y <= mapHeight; y++) {
       const a = P.worldToScreen(0, y, 0, opts);
       const b = P.worldToScreen(mapWidth, y, 0, opts);
-      ctx.beginPath();
-      ctx.moveTo(a.x * camera.zoom + W / 2 * (1 - camera.zoom), a.y * camera.zoom + H / 2 * (1 - camera.zoom));
-      ctx.lineTo(b.x * camera.zoom + W / 2 * (1 - camera.zoom), b.y * camera.zoom + H / 2 * (1 - camera.zoom));
-      ctx.stroke();
+      ctx.moveTo(a.x * camera.zoom + zoomOffX, a.y * camera.zoom + zoomOffY);
+      ctx.lineTo(b.x * camera.zoom + zoomOffX, b.y * camera.zoom + zoomOffY);
     }
+    ctx.stroke();
 
     const playerMap = Object.create(null);
     for (const p of players) playerMap[p.id] = p;
+    const selectedSet = new Set(selectedUnits);
 
     // Apply zoom transform
     ctx.save();
@@ -262,7 +263,7 @@
       const s = P.worldToScreen(u.x, u.y, 0, opts);
       const owner = playerMap[u.ownerId];
       const color = owner ? owner.color : '#888';
-      const isSelected = selectedUnits.includes(u.id);
+      const isSelected = selectedSet.has(u.id);
 
       // Selection ring
       if (isSelected) {

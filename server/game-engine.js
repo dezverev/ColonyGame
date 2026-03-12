@@ -435,11 +435,12 @@ class GameEngine {
     return state;
   }
 
-  // Pre-stringified gameState payload for broadcast — avoids spread + re-stringify
+  // Pre-stringified gameState payload for broadcast — no intermediate object
   getStateJSON() {
     if (this._cachedStateJSON) return this._cachedStateJSON;
     const state = this.getState();
-    this._cachedStateJSON = JSON.stringify({ type: 'gameState', ...state });
+    state.type = 'gameState';
+    this._cachedStateJSON = JSON.stringify(state);
     return this._cachedStateJSON;
   }
 
