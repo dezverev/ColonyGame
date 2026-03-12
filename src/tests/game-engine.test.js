@@ -1782,4 +1782,106 @@ describe('GameEngine — Energy Deficit', () => {
     const hasDisableEvent = events.some(e => e.eventType === 'districtDisabled');
     assert.ok(hasDisableEvent, 'energy deficit should trigger district disable during monthly tick');
   });
+
+  it('generators are not disabled (they produce energy, not consume)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Starting setup: generator, mining, 2x agriculture
+    // Add an industrial (consumes 3 energy) to create deficit
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    state.resources.energy = -10;
+    engine._processEnergyDeficit();
+
+    // Generator should NOT be disabled — it has no energy consumption
+    const gen = colony.districts.find(d => d.type === 'generator');
+    assert.ok(!gen.disabled, 'generator should never be disabled by energy deficit');
+    // Industrial should be disabled instead
+    const ind = colony.districts.find(d => d.type === 'industrial');
+    assert.strictEqual(ind.disabled, true, 'industrial should be disabled');
+  });
+
+  it('handles multi-colony energy deficit across all player colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Create a second colony for the same player
+    const colony2 = engine._createColony(1, 'Colony 2', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony2, 'research'); // consumes 4 energy
+    engine._addBuiltDistrict(colony2, 'research'); // consumes 4 energy
+    colony2.pops = 10;
+    engine._invalidateColonyCache(colony2);
+
+    // Colony 1 has generator (+6), Colony 2 has 2 research (-8) → net = -2
+    state.resources.energy = -5;
+    engine._processEnergyDeficit();
+
+    // Should disable research district(s) on colony2 to fix deficit
+    const disabledOnC2 = colony2.districts.filter(d => d.disabled);
+    assert.ok(disabledOnC2.length > 0, 'should disable districts on second colony');
+    assert.ok(state.resources.energy >= 0, 'energy should be non-negative after multi-colony deficit fix');
+  });
+
+  it('_calcPlayerNetEnergy sums across all colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony1 = Array.from(engine.colonies.values())[0];
+
+    // Colony1 starting: generator (+6), no energy consumers
+    const net1 = engine._calcPlayerNetEnergy(1);
+    assert.strictEqual(net1, 6, 'single colony with generator should have +6 net energy');
+
+    // Add industrial (consumes 3)
+    engine._addBuiltDistrict(colony1, 'industrial');
+    colony1.pops = 10;
+    engine._invalidateColonyCache(colony1);
+
+    const net2 = engine._calcPlayerNetEnergy(1);
+    assert.strictEqual(net2, 3, 'generator(+6) - industrial(-3) = +3 net');
+  });
+
+  it('disabled district can still be demolished', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    const ind = colony.districts.find(d => d.id === districtId);
+    ind.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const countBefore = colony.districts.length;
+    const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id, districtId });
+    assert.strictEqual(result.ok, true, 'should be able to demolish disabled district');
+    assert.strictEqual(colony.districts.length, countBefore - 1, 'district count should decrease');
+  });
+
+  it('serialized colony includes disabled flag on districts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    const ind = colony.districts.find(d => d.id === districtId);
+    ind.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const state = engine.getState();
+    const serializedColony = state.colonies[0];
+    const serializedDistrict = serializedColony.districts.find(d => d.id === districtId);
+    assert.strictEqual(serializedDistrict.disabled, true, 'serialized district should have disabled flag');
+  });
+
+  it('no districts disabled when energy stays non-negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    state.resources.energy = 500; // plenty
+    engine._processEnergyDeficit();
+
+    const disabledCount = colony.districts.filter(d => d.disabled).length;
+    assert.strictEqual(disabledCount, 0, 'no districts should be disabled when energy is positive');
+  });
 });
