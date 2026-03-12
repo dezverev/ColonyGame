@@ -507,3 +507,314 @@ describe('Colony ship toast formatting', () => {
     assert.ok(text.includes('Colony cap'));
   });
 });
+
+// ===== Additional coverage for edge cases, race conditions, and validation =====
+
+describe('buildColonyShip — food resource rejection', () => {
+  it('should reject if not enough food', () => {
+    const engine = makeEngine();
+    giveShipResources(engine, 1);
+    const state = engine.playerStates.get(1);
+    state.resources.food = 10;
+    const colony = getFirstColony(engine, 1);
+    const result = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.ok(result.error.includes('food'));
+  });
+});
+
+describe('buildColonyShip — build queue includes colony ships in queue count', () => {
+  it('should count colony ships in build queue toward queue limit', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+
+    // Fill queue with 3 colony ships
+    for (let i = 0; i < 3; i++) {
+      giveShipResources(engine, 1);
+      engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    }
+    assert.strictEqual(colony.buildQueue.length, 3);
+
+    // 4th should be rejected
+    giveShipResources(engine, 1);
+    const result = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.ok(result.error.includes('queue'));
+  });
+});
+
+describe('Colony ship — colony cap reached during transit', () => {
+  it('should emit colonyShipFailed when cap reached during transit', () => {
+    const engine = makeEngine();
+    giveShipResources(engine, 1);
+
+    const colony = getFirstColony(engine, 1);
+    engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+
+    const ship = engine._colonyShips[0];
+    // Find habitable target
+    let targetSysId = null;
+    for (const [a, b] of engine.galaxy.hyperlanes) {
+      let neighborId = (a === ship.systemId) ? b : (b === ship.systemId) ? a : null;
+      if (neighborId == null) continue;
+      const sys = engine.galaxy.systems[neighborId];
+      if (sys.planets && sys.planets.some(p => p.habitability >= 20 && !p.colonized)) {
+        targetSysId = neighborId; break;
+      }
+    }
+    if (targetSysId == null) return; // skip if no valid target
+
+    engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: targetSysId });
+
+    // While ship is in transit, artificially fill colony cap
+    for (let i = 0; i < 4; i++) {
+      engine._createColony(1, `Extra ${i}`, { size: 10, type: 'continental', habitability: 80 }, 0);
+    }
+    // Now player has 5+ colonies — ship should fail on arrival
+
+    let events = [];
+    engine.onEvent = (evts) => { events = events.concat(evts); };
+
+    const totalTicks = ship.path.length * COLONY_SHIP_HOP_TICKS;
+    for (let i = 0; i < totalTicks + 5; i++) engine.tick();
+
+    // Ship should be removed without founding a colony
+    assert.strictEqual(engine._colonyShips.length, 0, 'Ship should be consumed');
+    const failEvent = events.find(e => e.eventType === 'colonyShipFailed' && e.reason === 'Colony cap reached');
+    assert.ok(failEvent, 'Should emit colonyShipFailed event');
+  });
+});
+
+describe('Colony ship — planet colonized by another during transit', () => {
+  it('should emit colonyShipFailed when target planet already colonized on arrival', () => {
+    const engine = makeEngine({
+      room: {
+        id: 'test-room',
+        players: new Map([[1, { name: 'Alice' }], [2, { name: 'Bob' }]]),
+        hostId: 1,
+        galaxySize: 'small',
+        matchTimer: 0,
+      },
+    });
+    giveShipResources(engine, 1);
+
+    const colony = getFirstColony(engine, 1);
+    engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+
+    const ship = engine._colonyShips[0];
+    // Find habitable target
+    let targetSysId = null;
+    for (const sys of engine.galaxy.systems) {
+      if (sys.id === ship.systemId) continue;
+      const hasPlanet = sys.planets && sys.planets.some(p => p.habitability >= 20 && !p.colonized);
+      if (hasPlanet) { targetSysId = sys.id; break; }
+    }
+    if (targetSysId == null) return;
+
+    engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: targetSysId });
+
+    // While in transit, mark that planet as colonized (simulating another player colonizing it)
+    const targetSystem = engine.galaxy.systems[targetSysId];
+    const planet = targetSystem.planets.find(p => p.habitability >= 20);
+    planet.colonized = true;
+    planet.colonyOwner = 2;
+
+    let events = [];
+    engine.onEvent = (evts) => { events = events.concat(evts); };
+
+    const totalTicks = ship.path.length * COLONY_SHIP_HOP_TICKS;
+    for (let i = 0; i < totalTicks + 5; i++) engine.tick();
+
+    assert.strictEqual(engine._colonyShips.length, 0, 'Ship should be consumed');
+    const failEvent = events.find(e => e.eventType === 'colonyShipFailed' && e.reason === 'Planet already colonized');
+    assert.ok(failEvent, 'Should emit colonyShipFailed for already-colonized planet');
+  });
+});
+
+describe('sendColonyShip — validation edge cases', () => {
+  let engine, ship;
+
+  beforeEach(() => {
+    engine = makeEngine();
+    giveShipResources(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+    ship = engine._colonyShips[0];
+  });
+
+  it('should reject missing shipId', () => {
+    const result = engine.handleCommand(1, { type: 'sendColonyShip', targetSystemId: 0 });
+    assert.ok(result.error);
+  });
+
+  it('should reject missing targetSystemId', () => {
+    const result = engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id });
+    assert.ok(result.error);
+  });
+
+  it('should reject NaN targetSystemId', () => {
+    const result = engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: 'abc' });
+    assert.ok(result.error);
+  });
+
+  it('should reject out-of-range targetSystemId', () => {
+    const result = engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: 99999 });
+    assert.ok(result.error);
+  });
+
+  it('should reject if another player tries to send your ship', () => {
+    const result = engine.handleCommand(999, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: 0 });
+    assert.ok(result.error);
+  });
+
+  it('should reject send to same system (own colonized planet)', () => {
+    const colony = getFirstColony(engine, 1);
+    const result = engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: colony.systemId });
+    assert.ok(result.error);
+  });
+});
+
+describe('Colony ship intermediate movement', () => {
+  it('should update ship systemId at each hop', () => {
+    const engine = makeEngine();
+    giveShipResources(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+
+    const ship = engine._colonyShips[0];
+    const startSysId = ship.systemId;
+
+    // Find a 2+ hop target
+    let hop1 = null;
+    for (const [a, b] of engine.galaxy.hyperlanes) {
+      if (a === startSysId) { hop1 = b; break; }
+      if (b === startSysId) { hop1 = a; break; }
+    }
+    let hop2 = null;
+    if (hop1 != null) {
+      for (const [a, b] of engine.galaxy.hyperlanes) {
+        const neighbor = (a === hop1 && b !== startSysId) ? b : (b === hop1 && a !== startSysId) ? a : null;
+        if (neighbor != null) {
+          const sys = engine.galaxy.systems[neighbor];
+          if (sys.planets && sys.planets.some(p => p.habitability >= 20 && !p.colonized)) {
+            hop2 = neighbor; break;
+          }
+        }
+      }
+    }
+    if (hop2 == null) return; // skip if no 2-hop target
+
+    engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: hop2 });
+    assert.ok(ship.path.length >= 2, 'Path should be 2+ hops');
+
+    const firstHopTarget = ship.path[0];
+
+    // After first hop completes, ship.systemId should update
+    for (let i = 0; i < COLONY_SHIP_HOP_TICKS; i++) engine.tick();
+
+    assert.strictEqual(ship.systemId, firstHopTarget, 'Ship should be at first hop system');
+    assert.ok(ship.path.length >= 1, 'Path should have remaining hops');
+    assert.strictEqual(ship.hopProgress, 0, 'Hop progress should reset');
+  });
+});
+
+describe('Multiple concurrent colony ships', () => {
+  it('should handle two colony ships building at different colonies', () => {
+    const engine = makeEngine();
+
+    // Give player a second colony
+    engine._createColony(1, 'Colony 2', { size: 12, type: 'continental', habitability: 80 }, 1);
+    const colonyIds = engine._playerColonies.get(1);
+    assert.strictEqual(colonyIds.length, 2);
+
+    const colony1 = engine.colonies.get(colonyIds[0]);
+    const colony2 = engine.colonies.get(colonyIds[1]);
+
+    // Build colony ship at each
+    giveShipResources(engine, 1);
+    const r1 = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony1.id });
+    assert.ok(r1.ok);
+
+    giveShipResources(engine, 1);
+    const r2 = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony2.id });
+    assert.ok(r2.ok);
+
+    // Both should complete after build time
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+    assert.strictEqual(engine._colonyShips.length, 2, 'Should have 2 ships');
+    assert.strictEqual(engine._colonyShips[0].ownerId, 1);
+    assert.strictEqual(engine._colonyShips[1].ownerId, 1);
+  });
+
+  it('should cap checks count ships building in queue', () => {
+    const engine = makeEngine();
+    // Give player 3 extra colonies (total 4)
+    for (let i = 0; i < 3; i++) {
+      engine._createColony(1, `Colony ${i + 2}`, { size: 12, type: 'continental', habitability: 80 }, 0);
+    }
+    // 4 colonies, no ships yet — can build 1 ship
+    giveShipResources(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    const r1 = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    assert.ok(r1.ok, '4 colonies + 0 ships = under cap');
+
+    // Complete it so it enters _colonyShips
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+    assert.strictEqual(engine._colonyShips.length, 1);
+
+    // Now 4 colonies + 1 in-flight ship = 5 = cap
+    giveShipResources(engine, 1);
+    const r2 = engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    assert.ok(r2.error, '4 colonies + 1 ship = at cap');
+  });
+});
+
+describe('Colony ship — new colony properties', () => {
+  it('should create colony with correct initial state', () => {
+    const engine = makeEngine();
+    giveShipResources(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
+    for (let i = 0; i < COLONY_SHIP_BUILD_TIME; i++) engine.tick();
+
+    const ship = engine._colonyShips[0];
+    let targetSysId = null;
+    for (const [a, b] of engine.galaxy.hyperlanes) {
+      const neighborId = (a === ship.systemId) ? b : (b === ship.systemId) ? a : null;
+      if (neighborId == null) continue;
+      const sys = engine.galaxy.systems[neighborId];
+      if (sys.planets && sys.planets.some(p => p.habitability >= 20 && !p.colonized)) {
+        targetSysId = neighborId; break;
+      }
+    }
+    if (targetSysId == null) return;
+
+    engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: targetSysId });
+    const totalTicks = ship.path.length * COLONY_SHIP_HOP_TICKS;
+    for (let i = 0; i < totalTicks + 5; i++) engine.tick();
+
+    // Verify new colony properties
+    const colonyIds = engine._playerColonies.get(1);
+    const newColony = engine.colonies.get(colonyIds[colonyIds.length - 1]);
+    assert.ok(newColony);
+    assert.strictEqual(newColony.pops, COLONY_SHIP_STARTING_POPS);
+    assert.strictEqual(newColony.isStartingColony, false);
+    assert.strictEqual(newColony.ownerId, 1);
+    assert.deepStrictEqual(newColony.districts, []);
+    assert.deepStrictEqual(newColony.buildQueue, []);
+    assert.strictEqual(newColony.growthProgress, 0);
+
+    // Planet should be marked as colonized
+    const targetSystem = engine.galaxy.systems[targetSysId];
+    const planet = targetSystem.planets.find(p => p.colonyOwner === 1);
+    assert.ok(planet, 'Planet should be marked as colonized');
+    assert.strictEqual(planet.colonized, true);
+
+    // System should be owned
+    assert.strictEqual(targetSystem.owner, 1);
+  });
+});
