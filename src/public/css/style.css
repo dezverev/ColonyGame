@@ -334,6 +334,42 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 #game-over-lobby-btn:hover { background: #c73652; }
 
+/* ── View Indicator (bottom-left) ── */
+#view-indicator {
+  pointer-events: auto;
+  position: absolute; bottom: 1rem; left: 1rem;
+  padding: 0.3rem 0.8rem;
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e; border-radius: 6px;
+  font-family: monospace; font-size: 0.85rem; color: #ccc;
+  z-index: 10;
+}
+#view-indicator-label { color: #00ffaa; font-weight: bold; }
+.view-hint { color: #555; font-size: 0.7rem; }
+
+/* ── System Panel (galaxy view, right side) ── */
+#system-panel {
+  top: 50px; right: 0.8rem; width: 240px;
+}
+#system-panel-body { font-size: 0.85rem; }
+.system-star-type { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
+.system-star-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.system-owner { margin-bottom: 0.4rem; font-size: 0.8rem; }
+.system-planet-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.3rem; }
+.system-planet-table th { text-align: left; color: #888; padding: 0.2rem 0.3rem; border-bottom: 1px solid #2a2a4e; font-weight: normal; }
+.system-planet-table td { padding: 0.2rem 0.3rem; border-bottom: 1px solid rgba(42,42,78,0.4); }
+.system-planet-table .hab-high { color: #2ecc71; }
+.system-planet-table .hab-med { color: #f1c40f; }
+.system-planet-table .hab-none { color: #666; }
+.system-colony-btn {
+  display: block; width: 100%; margin-top: 0.5rem;
+  padding: 0.4rem; background: #0f3460; color: #fff;
+  border: 1px solid #3498db; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.system-colony-btn:hover { background: #3498db; }
+
 /* ── Match Warning Banner ── */
 #match-warning {
   position: absolute; top: 80px; left: 50%; transform: translateX(-50%);

@@ -119,10 +119,14 @@
           yourId: msg.yourId,
           matchTimerEnabled: msg.matchTimerEnabled || false,
           matchTicksRemaining: msg.matchTicksRemaining || 0,
+          galaxy: msg.galaxy || null,
         };
         // Reset game-over state
         if (gameOverOverlay) gameOverOverlay.classList.add('hidden');
         showScreen('game');
+        // Start in colony view
+        currentView = 'colony';
+        galaxyViewInitialized = false;
         // Initialize Three.js renderer and wire tile selection
         if (window.ColonyRenderer) {
           window.ColonyRenderer.init();
@@ -130,6 +134,7 @@
           const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
           if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
         }
+        _updateViewUI();
         // Start 2Hz HUD refresh
         if (_uiInterval) clearInterval(_uiInterval);
         _uiInterval = setInterval(_updateHUD, 500);
@@ -144,9 +149,13 @@
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           // Update Three.js colony view
-          if (window.ColonyRenderer) {
+          if (currentView === 'colony' && window.ColonyRenderer) {
             const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
             if (myColony) window.ColonyRenderer.updateFromState(myColony);
+          }
+          // Update galaxy ownership rings
+          if (currentView === 'galaxy' && window.GalaxyView) {
+            window.GalaxyView.updateOwnership(msg.colonies, msg.players);
           }
         }
         break;
@@ -275,6 +284,18 @@
 
   // ── Room dialog refs ──
   const roomMatchTimer = document.getElementById('room-match-timer');
+
+  // ── View management ──
+  let currentView = 'colony'; // 'colony' | 'galaxy'
+  let galaxyViewInitialized = false;
+  let galaxyAnimFrame = null;
+
+  // ── Galaxy view refs ──
+  const viewIndicator = document.getElementById('view-indicator-label');
+  const systemPanel = document.getElementById('system-panel');
+  const systemPanelTitle = document.getElementById('system-panel-title');
+  const systemPanelBody = document.getElementById('system-panel-body');
+  const systemPanelClose = document.getElementById('system-panel-close');
 
   let _selectedTileData = null;
   let _uiInterval = null;
@@ -606,6 +627,144 @@
     }
   }
 
+  // ── View toggle (G key) ──
+
+  function _toggleView() {
+    if (!gameState) return;
+    if (currentView === 'colony') {
+      _switchToGalaxy();
+    } else {
+      _switchToColony();
+    }
+  }
+
+  function _switchToGalaxy() {
+    currentView = 'galaxy';
+    _hideAllPanels();
+
+    // Hide colony UI elements
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.add('hidden');
+
+    // Destroy colony renderer canvas (we'll re-init on switch back)
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+
+    // Init galaxy view
+    if (window.GalaxyView && gameState.galaxy) {
+      window.GalaxyView.init(renderContainer);
+      window.GalaxyView.buildGalaxy(gameState.galaxy);
+      window.GalaxyView.updateOwnership(gameState.colonies, gameState.players);
+      window.GalaxyView.setOnSystemSelect(_onSystemSelect);
+      galaxyViewInitialized = true;
+
+      // Start galaxy render loop
+      if (galaxyAnimFrame) cancelAnimationFrame(galaxyAnimFrame);
+      _galaxyAnimate();
+    }
+
+    _updateViewUI();
+  }
+
+  function _switchToColony() {
+    currentView = 'colony';
+
+    // Hide galaxy panels
+    if (systemPanel) systemPanel.classList.add('hidden');
+
+    // Stop galaxy render loop and destroy galaxy view
+    if (galaxyAnimFrame) {
+      cancelAnimationFrame(galaxyAnimFrame);
+      galaxyAnimFrame = null;
+    }
+    if (window.GalaxyView) window.GalaxyView.destroy();
+    galaxyViewInitialized = false;
+
+    // Re-init colony renderer
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+    if (window.ColonyRenderer) {
+      window.ColonyRenderer.init();
+      window.ColonyRenderer.setOnTileSelect(_onTileSelect);
+      const myColony = _getMyColony();
+      if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+    }
+
+    // Show colony panel
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.remove('hidden');
+
+    _updateViewUI();
+  }
+
+  function _galaxyAnimate() {
+    galaxyAnimFrame = requestAnimationFrame(_galaxyAnimate);
+    if (window.GalaxyView) window.GalaxyView.render();
+  }
+
+  function _updateViewUI() {
+    if (viewIndicator) {
+      viewIndicator.textContent = currentView === 'colony' ? 'Colony' : 'Galaxy';
+    }
+  }
+
+  // ── System selection panel (galaxy view) ──
+
+  function _onSystemSelect(system) {
+    if (!systemPanel) return;
+    if (!system) {
+      systemPanel.classList.add('hidden');
+      return;
+    }
+
+    systemPanelTitle.textContent = system.name;
+
+    // Star type
+    const starLabel = {
+      yellow: 'Yellow Star', red: 'Red Dwarf', blue: 'Blue Giant',
+      white: 'White Star', orange: 'Orange Star',
+    };
+
+    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${system.starColor}"></span>${starLabel[system.starType] || system.starType}</div>`;
+
+    // Owner
+    if (system.owner) {
+      const ownerPlayer = gameState.players.find(p => p.id === system.owner);
+      if (ownerPlayer) {
+        html += `<div class="system-owner">Owner: <span style="color:${ownerPlayer.color}">${ownerPlayer.name}</span></div>`;
+      }
+    }
+
+    // Planets table
+    if (system.planets && system.planets.length > 0) {
+      html += '<table class="system-planet-table"><tr><th>#</th><th>Type</th><th>Size</th><th>Hab</th></tr>';
+      for (const p of system.planets) {
+        const habClass = p.habitability >= 60 ? 'hab-high' : p.habitability > 0 ? 'hab-med' : 'hab-none';
+        const typeLabel = p.type.charAt(0).toUpperCase() + p.type.slice(1);
+        html += `<tr><td>${p.orbit}</td><td>${typeLabel}</td><td>${p.size}</td><td class="${habClass}">${p.habitability}%</td></tr>`;
+      }
+      html += '</table>';
+    }
+
+    // Colony link button
+    const colony = gameState.colonies.find(c => c.systemId === system.id);
+    if (colony && colony.ownerId === gameState.yourId) {
+      html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
+    }
+
+    systemPanelBody.innerHTML = html;
+
+    // Wire colony button
+    const colBtn = systemPanelBody.querySelector('.system-colony-btn');
+    if (colBtn) {
+      colBtn.addEventListener('click', () => {
+        _switchToColony();
+      });
+    }
+
+    systemPanel.classList.remove('hidden');
+  }
+
   function _setNet(el, value) {
     if (!el) return;
     if (value > 0) {
@@ -704,12 +863,19 @@
   if (scoreboardClose) scoreboardClose.addEventListener('click', () => {
     scoreboard.classList.add('hidden');
   });
+  if (systemPanelClose) systemPanelClose.addEventListener('click', () => {
+    systemPanel.classList.add('hidden');
+    if (window.GalaxyView) window.GalaxyView.setOnSystemSelect(_onSystemSelect); // keep callback, just hide
+  });
 
   // Keyboard shortcuts (only during game)
   document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (!gameState) return;
 
+    if (e.key === 'g' || e.key === 'G') {
+      _toggleView();
+    }
     if (e.key === 'r' || e.key === 'R') {
       _toggleResearchPanel();
     }
@@ -723,6 +889,9 @@
       }
       if (scoreboard && !scoreboard.classList.contains('hidden')) {
         scoreboard.classList.add('hidden');
+      }
+      if (systemPanel && !systemPanel.classList.contains('hidden')) {
+        systemPanel.classList.add('hidden');
       }
     }
   });

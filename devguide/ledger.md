@@ -696,3 +696,43 @@ Each entry records an iteration of automated development.
 - Galaxy data sent once on init (not every tick) — clients cache it locally
 
 **Next:** Galaxy map view (Three.js) — PerspectiveCamera rendering star systems and hyperlanes
+
+---
+
+## Entry 21 — 2026-03-12 — Galaxy Map View + System Panel + View Toggle
+
+**Phase:** 3 (Galaxy & Exploration) + Phase 1 (view toggle)
+**Status:** Complete
+
+**What was built:**
+- `galaxy-view.js` — full Three.js galaxy map renderer with PerspectiveCamera, orbit camera controls (left-drag rotate, scroll zoom, middle-drag pan)
+- Star systems rendered as emissive SphereGeometry meshes, sized by star type (blue=3.0, orange=2.2, yellow=2.0, white=1.8, red=1.5), colored by STAR_TYPES
+- Hyperlanes rendered as a single LineSegments object with BufferGeometry for efficiency (one draw call for all lanes)
+- Player-owned systems get colored RingGeometry halos matching player color
+- System name labels on hover (DOM overlay positioned relative to mouse)
+- Click system to select (green highlight ring) — triggers system info panel
+- System selection panel (right-side game-panel): star type with color dot, owner name, planet table (orbit, type, size, habitability%), "View Colony" button for owned colonies
+- G key toggles between colony view (isometric) and galaxy view (3D perspective)
+- View indicator (bottom-left) shows current view with [G] toggle hint
+- Camera auto-fits to galaxy bounds on init (~36° from top-down)
+- Colony renderer destroyed on switch to galaxy, re-initialized on switch back (clean WebGL context management)
+
+**Files changed:**
+- `src/public/js/galaxy-view.js` — new file (galaxy map Three.js renderer)
+- `src/public/js/app.js` — view toggle (G key), galaxy data storage in gameState, system panel rendering, view management functions, system panel close/escape handlers
+- `src/public/index.html` — galaxy-view.js script tag, view indicator, system panel HTML
+- `src/public/css/style.css` — view indicator, system panel, planet table, colony button styles
+- `devguide/design.md` — marked 4 tasks complete (galaxy map view, system panel, view toggle, priority order)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 261 total. All passing (no new server tests needed — all changes are client-side Three.js rendering).
+
+**Key decisions:**
+- Separate Three.js scenes for colony and galaxy (destroy one when switching to other) rather than showing/hiding — cleaner WebGL context, no conflicting cameras
+- Galaxy view uses MeshBasicMaterial for stars (not MeshStandard) — emissive glow effect, unaffected by lighting for consistent star brightness
+- Orbit camera implemented from scratch rather than importing OrbitControls — avoids CDN dependency for a single class, keeps it simple
+- System selection panel reuses game-panel CSS class — consistent visual language with colony panels
+- Hyperlane positions offset -0.5 Y below star positions to prevent z-fighting
+- Planet habitability color-coded in table: green (60%+), yellow (1-59%), gray (0%) — instant visual parsing
+
+**Next:** Alloy VP fix + industrial output bump (game-designer R17-2, R17-3), then event toast HUD

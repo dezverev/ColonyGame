@@ -140,6 +140,15 @@
       <!-- Match warning banner -->
       <div id="match-warning" class="hidden"></div>
 
+      <!-- View indicator (bottom-left) -->
+      <div id="view-indicator"><span id="view-indicator-label">Colony</span> <span class="view-hint">[G] toggle</span></div>
+
+      <!-- System info panel (galaxy view, right side) -->
+      <div id="system-panel" class="game-panel hidden">
+        <div class="panel-header"><span id="system-panel-title">System</span><button id="system-panel-close" class="panel-close">&times;</button></div>
+        <div id="system-panel-body"></div>
+      </div>
+
       <!-- Build menu — appears when empty tile clicked -->
       <div id="build-menu" class="game-panel hidden">
         <div class="panel-header">Build District<button id="build-menu-close" class="panel-close">&times;</button></div>
@@ -158,6 +167,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="js/lobby.js"></script>
   <script src="js/renderer.js"></script>
+  <script src="js/galaxy-view.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
