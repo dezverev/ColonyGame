@@ -184,6 +184,7 @@ class GameEngine {
       }
 
       const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
+      colony.isStartingColony = true;
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
       this._addBuiltDistrict(colony, 'mining');
@@ -206,6 +207,8 @@ class GameEngine {
       },
       districts: [],               // built districts: { id, type }
       buildQueue: [],              // { id, type, ticksRemaining }
+      isStartingColony: false,     // true for initial colonies, no build discount
+      playerBuiltDistricts: 0,    // count of districts player has built (not pre-built)
       pops: 8,                     // starting population
       growthProgress: 0,           // ticks accumulated toward next pop
       _cachedHousing: null,        // cached derived values
@@ -882,12 +885,13 @@ class GameEngine {
           state.resources[resource] -= amount;
         }
 
-        // Determine build time — first 3 districts build at 50% time
+        // Determine build time — first 3 player-built districts on non-starting colonies build at 50% time
         let buildTime = def.buildTime;
-        if (colony.districts.length + colony.buildQueue.length < 3) {
+        if (!colony.isStartingColony && colony.playerBuiltDistricts < 3) {
           buildTime = Math.floor(buildTime * 0.5);
         }
 
+        colony.playerBuiltDistricts++;
         const id = this._nextId();
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
         this._dirtyPlayers.add(playerId);
@@ -1076,6 +1080,7 @@ class GameEngine {
     }
     return {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
+      isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,

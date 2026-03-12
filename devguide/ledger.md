@@ -802,3 +802,31 @@ Each entry records an iteration of automated development.
 - All event types already had the required detail fields (colonyName, districtType, etc.) from earlier event work
 
 **Next:** Planet type signature bonuses (game-designer R19 priority #2)
+
+---
+
+## Entry 24 — 2026-03-12 — Balance Fix: Dead Code — First-3-Districts Build Discount
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Fixed the first-3-districts 50% build time discount which never fired because starting colonies have 4 pre-built districts
+- Added `isStartingColony` flag to colony objects — `true` for initial colonies created at game start
+- Added `playerBuiltDistricts` counter that increments each time a player queues a district
+- Discount now applies to first 3 player-built districts on non-starting (newly colonized) planets only
+- Both new fields included in `getState()` serialization for client visibility
+
+**Files changed:**
+- `server/game-engine.js` — added `isStartingColony` and `playerBuiltDistricts` fields to `_createColony`, set flag on starting colonies, updated discount logic, incremented counter on build, added fields to `getState()`
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 313 total (0 new — all existing tests pass with updated logic). All passing.
+
+**Key decisions:**
+- Discount tracked by `playerBuiltDistricts` counter rather than re-counting districts, avoiding O(n) recounts
+- Starting colonies explicitly flagged rather than checking pre-built district count — cleaner, future-proof for when colonize command is implemented
+- Counter incremented at queue time (not completion time) so the 4th queued district gets full build time even if earlier ones haven't finished
+
+**Next:** Planet type signature bonuses
