@@ -8,6 +8,7 @@ Isometric multiplayer space colony 4X game. Players found colonies on alien worl
 - **WebSocket game server** (port 4001): `server/server.js` — room management, game state, tick loop
 - **Client**: Vanilla JS + Three.js — isometric colony view (primary), 3D galaxy map, system view
 - **Rendering**: Three.js OrthographicCamera for isometric, PerspectiveCamera for galaxy/system views
+- **Performance escape hatch**: If server-side computation becomes a bottleneck (galaxy generation, large fleet combat resolution, pathfinding), extract hot paths into Rust compiled to WASM and call from Node.js. Keeps the Node.js server for networking/game loop while offloading heavy math to near-native speed. No need until profiling shows a real bottleneck
 
 ## Phases
 
