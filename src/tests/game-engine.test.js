@@ -1672,17 +1672,16 @@ describe('GameEngine — Energy Deficit', () => {
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
-    // Add an industrial district (consumes 3 energy) and a research district (consumes 4 energy)
+    // Add multiple energy consumers to guarantee deficit regardless of planet bonuses
     engine._addBuiltDistrict(colony, 'industrial');
     engine._addBuiltDistrict(colony, 'research');
-    // Add pops so they can work the new districts
-    colony.pops = 10;
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 12;
     engine._invalidateColonyCache(colony);
 
-    // Set energy to a level that will go negative after monthly processing
-    // Generator produces 6, industrial consumes 3, research consumes 4 → net = -1/month
-    // (no housing district built — base capital housing doesn't consume energy)
-    state.resources.energy = 0; // will become -1 after monthly processing
+    // Net energy before planet bonuses: 6 (gen) - 3 (industrial) - 4 (research) - 4 (research) = -5/month
+    // Even with arid bonus (+1 energy on gen), net = -4 — always negative
+    state.resources.energy = 0;
 
     engine._processMonthlyResources();
     assert.ok(state.resources.energy < 0, 'energy should be negative before deficit processing');
@@ -1690,8 +1689,8 @@ describe('GameEngine — Energy Deficit', () => {
     engine._processEnergyDeficit();
 
     // Research district (4 energy) should be disabled first (highest consumer)
-    const researchDistrict = colony.districts.find(d => d.type === 'research');
-    assert.strictEqual(researchDistrict.disabled, true, 'research district should be disabled');
+    const researchDistrict = colony.districts.find(d => d.type === 'research' && d.disabled);
+    assert.ok(researchDistrict, 'at least one research district should be disabled');
   });
 
   it('disabled districts produce nothing and consume nothing', () => {
@@ -2823,14 +2822,16 @@ describe('GameEngine — Tech Modifier Production', () => {
   it('industrial produces 4 alloys per month in actual production calc', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
-    const state = engine.playerStates.get(1);
+    const pb = calcPlanetBonus(colony);
 
     engine._addBuiltDistrict(colony, 'industrial');
     colony.pops = 10; // enough to work all districts
     engine._invalidateColonyCache(colony);
 
+    // Recalc bonus after adding industrial
+    const pbAfter = calcPlanetBonus(colony);
     const prod = engine._calcProduction(colony);
-    assert.strictEqual(prod.production.alloys, 4, 'Industrial should produce 4 alloys');
+    assert.strictEqual(prod.production.alloys, 4 + pbAfter.alloys, 'Industrial should produce 4 alloys + planet bonus');
   });
 
   it('research district produces 4/4/4 per month in actual production calc', () => {
@@ -2969,6 +2970,69 @@ describe('GameEngine — Planet Type Bonuses', () => {
     // Tropical: +2 food per agriculture, 2 agriculture = +4 bonus
     // Net food: 16 - 8 = 8
     assert.strictEqual(serializedColony.netProduction.food, 8);
+  });
+
+  it('non-matching districts receive no planet bonus', () => {
+    const { engine, colony } = makeEngineWithPlanet('continental');
+    // Continental only grants +1 food per agriculture — generator and mining should be unaffected
+    const prod = engine._calcProduction(colony);
+    assert.strictEqual(prod.production.energy, 6, 'Generator should produce base 6 energy with no continental bonus');
+    assert.strictEqual(prod.production.minerals, 6, 'Mining should produce base 6 minerals with no continental bonus');
+  });
+
+  it('bonus scales linearly with multiple matching districts', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    // Desert: +2 minerals per mining. Start has 1 mining, add 2 more
+    engine._addBuiltDistrict(colony, 'mining');
+    engine._addBuiltDistrict(colony, 'mining');
+    colony.pops = 10; // enough pops for all districts
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 3 mining districts: 3 × (6 + 2) = 24 minerals
+    assert.strictEqual(prod.production.minerals, 24, 'Each mining district should get +2 desert bonus');
+  });
+
+  it('pop-limited colony only gives bonus to working districts', () => {
+    const { engine, colony } = makeEngineWithPlanet('tropical');
+    // Tropical: +2 food per agriculture. Starting: 1 gen, 1 mining, 2 agriculture
+    // With only 2 pops, only gen + mining get staffed (they come first in order)
+    colony.pops = 2;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 2 pops → gen (6 energy) + mining (6 minerals), agriculture districts unstaffed
+    assert.strictEqual(prod.production.food, 0, 'Unstaffed agriculture should produce no food or bonus');
+    assert.strictEqual(prod.production.energy, 6);
+    assert.strictEqual(prod.production.minerals, 6);
+  });
+
+  it('housing districts never receive planet bonuses', () => {
+    const { engine, colony } = makeEngineWithPlanet('arid');
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Housing has 0 jobs, no production — planet bonus should not apply
+    // Arid bonuses: +1 energy/gen, +1 alloy/industrial — housing is neither
+    assert.strictEqual(prod.production.energy, 7, 'Only generator should get arid +1 energy bonus');
+  });
+
+  it('unknown planet type produces no bonuses', () => {
+    const { engine, colony } = makeEngineWithPlanet('barren');
+    const prod = engine._calcProduction(colony);
+    // Barren has no entry in PLANET_BONUSES — all output should be base
+    assert.strictEqual(prod.production.food, 12, 'Base agriculture: 2 × 6 = 12 food');
+    assert.strictEqual(prod.production.energy, 6, 'Base generator: 6 energy');
+    assert.strictEqual(prod.production.minerals, 6, 'Base mining: 6 minerals');
+  });
+
+  it('planet bonuses included in getPlayerState serialization', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    const playerState = engine.getPlayerState(1);
+    const serializedColony = playerState.colonies.find(c => c.id === colony.id);
+    // Desert: +2 minerals per mining, 1 mining = 8 minerals, consumption 0
+    assert.strictEqual(serializedColony.netProduction.minerals, 8, 'getPlayerState should include desert mining bonus');
   });
 });
 
