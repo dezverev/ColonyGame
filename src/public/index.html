@@ -144,11 +144,20 @@
       <!-- Match warning banner -->
       <div id="match-warning" class="hidden"></div>
 
+      <!-- Event ticker (top, scrolling) -->
+      <div id="event-ticker"></div>
+
       <!-- Toast notification container -->
       <div id="toast-container"></div>
 
       <!-- Colony list sidebar (left) — appears with 2+ colonies -->
       <div id="colony-list-sidebar" class="hidden"></div>
+
+      <!-- In-game chat (bottom-left, collapsible) -->
+      <div id="game-chat">
+        <div id="game-chat-messages"></div>
+        <input type="text" id="game-chat-input" placeholder="Press Enter to chat..." maxlength="200" autocomplete="off">
+      </div>
 
       <!-- View indicator (bottom-left) -->
       <div id="view-indicator"><span id="view-indicator-label">Colony</span> <span class="view-hint">[G] toggle</span></div>

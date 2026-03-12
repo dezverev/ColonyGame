@@ -34,6 +34,9 @@
   const launchBtn = document.getElementById('launch-btn');
   const chatMessages = document.getElementById('chat-messages');
   const chatInput = document.getElementById('chat-input');
+  const gameChatPanel = document.getElementById('game-chat');
+  const gameChatMessages = document.getElementById('game-chat-messages');
+  const gameChatInput = document.getElementById('game-chat-input');
 
   // ── Screen management ──
   function showScreen(name) {
@@ -104,6 +107,9 @@
       case 'chat':
         if (currentRoom) {
           Lobby.addChatMessage(chatMessages, msg.from, msg.text);
+        }
+        if (gameState && gameChatMessages) {
+          _addGameChatMessage(msg.from, msg.text);
         }
         break;
 
@@ -181,12 +187,17 @@
         } else if (msg.eventType === 'finalCountdown') {
           _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
         }
-        // Show toast for game events
-        {
+        // Show toast for game events (own events only)
+        if (msg.playerId === (gameState && gameState.yourId)) {
           const toastText = _formatGameEvent(msg);
           if (toastText) {
             _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
           }
+        }
+        // Show event ticker for broadcast events (all players)
+        if (msg.broadcast) {
+          const tickerHtml = _formatTickerEvent(msg);
+          if (tickerHtml) _addTickerEvent(tickerHtml);
         }
         break;
 
@@ -346,6 +357,42 @@
   const systemPanelTitle = document.getElementById('system-panel-title');
   const systemPanelBody = document.getElementById('system-panel-body');
   const systemPanelClose = document.getElementById('system-panel-close');
+
+  // ── Event Ticker ──
+  const eventTicker = document.getElementById('event-ticker');
+  const TICKER_MAX = 5;
+
+  function _addTickerEvent(html) {
+    if (!eventTicker) return;
+    const el = document.createElement('div');
+    el.className = 'ticker-item';
+    el.innerHTML = html;
+    eventTicker.appendChild(el);
+    // Enforce max visible
+    while (eventTicker.children.length > TICKER_MAX) {
+      eventTicker.removeChild(eventTicker.firstChild);
+    }
+    // Auto-remove after animation
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 6000);
+  }
+
+  function _formatTickerEvent(msg) {
+    const pn = msg.playerName || '';
+    const player = pn ? `<span class="ticker-player">${pn}</span>` : '';
+    switch (msg.eventType) {
+      case 'constructionComplete':
+        if (msg.districtType === 'colonyShip') return `${player} built a Colony Ship`;
+        return `${player} built a ${msg.districtType} district on ${msg.colonyName || 'colony'}`;
+      case 'popMilestone':
+        return `${player}'s ${msg.colonyName || 'colony'} reached ${msg.pops} pops`;
+      case 'colonyFounded':
+        return `${player} founded a colony in ${msg.systemName || 'a system'}`;
+      case 'researchComplete':
+        return `${player} researched ${msg.techName || 'a technology'}`;
+      default:
+        return null;
+    }
+  }
 
   // ── Toast notifications ──
   const toastContainer = document.getElementById('toast-container');
@@ -1058,11 +1105,23 @@
     // Sort by VP descending
     players.sort((a, b) => (b.vp || 0) - (a.vp || 0));
 
-    let html = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th></tr>';
+    const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
+    let html = `<div class="scoreboard-month">Month ${month}</div>`;
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
-      html += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td><td>${p.vp || 0}</td></tr>`;
+      const inc = p.income || {};
+      const fmtInc = (v) => { const n = v || 0; return n >= 0 ? `+${n}` : `${n}`; };
+      html += `<tr${cls}><td>${i + 1}</td>` +
+        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td>` +
+        `<td><strong>${p.vp || 0}</strong></td>` +
+        `<td>${p.colonyCount || 0}</td>` +
+        `<td>${p.totalPops || 0}</td>` +
+        `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
+        `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
+        `<td class="${(inc.food || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.food)}</td>` +
+        `<td class="${(inc.alloys || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.alloys)}</td></tr>`;
     });
     html += '</table>';
     scoreboardBody.innerHTML = html;
@@ -1095,6 +1154,47 @@
 
     gameOverOverlay.classList.remove('hidden');
   }
+
+  // ── In-Game Chat ──
+  const _MAX_GAME_CHAT = 30;
+  let _gameChatCount = 0;
+
+  function _getPlayerColor(name) {
+    if (!gameState || !gameState.players) return '#e94560';
+    const p = gameState.players.find(pl => pl.name === name);
+    return p && p.color ? p.color : '#e94560';
+  }
+
+  function _addGameChatMessage(from, text) {
+    if (!gameChatMessages) return;
+    const div = document.createElement('div');
+    div.className = 'msg';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'msg-name';
+    nameSpan.style.color = _getPlayerColor(from);
+    nameSpan.textContent = from + ':';
+    div.appendChild(nameSpan);
+    div.appendChild(document.createTextNode(' ' + text));
+    gameChatMessages.appendChild(div);
+    _gameChatCount++;
+    // Trim old messages
+    while (_gameChatCount > _MAX_GAME_CHAT && gameChatMessages.firstChild) {
+      gameChatMessages.removeChild(gameChatMessages.firstChild);
+      _gameChatCount--;
+    }
+    gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+    // Auto-expand briefly if collapsed
+    if (gameChatPanel && !gameChatPanel.classList.contains('expanded')) {
+      gameChatPanel.classList.add('expanded');
+      clearTimeout(_gameChatAutoHide);
+      _gameChatAutoHide = setTimeout(() => {
+        if (document.activeElement !== gameChatInput) {
+          gameChatPanel.classList.remove('expanded');
+        }
+      }, 4000);
+    }
+  }
+  let _gameChatAutoHide = null;
 
   // ── Match Warning Banner ──
   function _showMatchWarning(text) {
@@ -1178,6 +1278,10 @@
       e.preventDefault();
       send({ type: 'togglePause' });
     }
+    // Enter key focuses game chat input
+    if (e.key === 'Enter' && gameChatInput) {
+      gameChatInput.focus();
+    }
   });
 
   // ── Button wiring ──
@@ -1233,6 +1337,35 @@
       chatInput.value = '';
     }
   });
+
+  // In-game chat input
+  if (gameChatInput) {
+    gameChatInput.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // Prevent game shortcuts while typing
+      if (e.key === 'Enter') {
+        if (gameChatInput.value.trim()) {
+          send({ type: 'chat', text: gameChatInput.value.trim() });
+          gameChatInput.value = '';
+        }
+        gameChatInput.blur();
+      }
+      if (e.key === 'Escape') {
+        gameChatInput.blur();
+      }
+    });
+    gameChatInput.addEventListener('focus', () => {
+      if (gameChatPanel) gameChatPanel.classList.add('expanded');
+      clearTimeout(_gameChatAutoHide);
+    });
+    gameChatInput.addEventListener('blur', () => {
+      // Collapse after a short delay (allow clicking messages)
+      _gameChatAutoHide = setTimeout(() => {
+        if (document.activeElement !== gameChatInput && gameChatPanel) {
+          gameChatPanel.classList.remove('expanded');
+        }
+      }, 300);
+    });
+  }
 
   // Expose send and gameState for future modules (renderer, UI)
   if (typeof window !== 'undefined') {

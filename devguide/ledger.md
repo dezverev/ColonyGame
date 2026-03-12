@@ -995,3 +995,38 @@ Each entry records an iteration of automated development.
 - Hyperlane rebuild on each fog update creates 2-3 LineSegments objects max — negligible memory cost vs maintaining a single object with per-line opacity
 
 **Next:** Base capital housing reduction 10→8 (R25 priority #4), or in-game chat panel (R25 priority #5)
+
+---
+
+## Entry 29 — 2026-03-12 — Multiplayer Awareness Bundle (Chat + Scoreboard + Event Ticker)
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- **In-game chat panel:** Collapsible chat overlay at bottom-left of game screen. Reuses existing WebSocket `chat` message routing. Player names colored by their player color from gameState. Enter key focuses chat input, Escape unfocuses. Auto-expands when new messages arrive, collapses after 4 seconds. Max 30 messages displayed. `e.stopPropagation()` prevents game shortcuts while typing.
+- **Enhanced scoreboard overlay (Tab key):** Expanded from VP-only to show: rank, player name (colored), VP, colony count, total pops, and net income rates for energy/minerals/food/alloys. Month counter shown at top. Server-side `_getPlayerSummary(playerId)` computes per-player stats from colony production data. Income data included in `getPlayerState` for both own player and other players.
+- **Event ticker:** Scrolling ticker at top-center of game screen showing significant player actions across all players. Events auto-dismiss after 6 seconds with fade animation. Max 5 visible. Broadcasts: `constructionComplete`, `popMilestone`, `colonyFounded`, `researchComplete`. Each broadcast event includes `playerName` field and `broadcast: true` flag. Server routes broadcast events to all players in room instead of just the originating player.
+- **Broadcast event system:** Added `broadcast` parameter to `_emitEvent()`. Server `onEvent` handler now checks `event.broadcast` to route to all room players vs single player. Non-broadcast events (foodDeficit, housingFull, etc.) remain private. Simplified colonyFounded from N per-player events to 1 broadcast event.
+
+**Files changed:**
+- `server/game-engine.js` — `_emitEvent` broadcast flag, `_getPlayerSummary` method, playerName in broadcast events, colonyFounded simplified to single broadcast, summary in getPlayerState
+- `server/server.js` — broadcast routing in onEvent handler
+- `src/public/js/app.js` — game chat DOM refs, `_addGameChatMessage`, `_getPlayerColor`, game chat input wiring (Enter/Escape/focus/blur), event ticker (`_addTickerEvent`, `_formatTickerEvent`), enhanced `_renderScoreboard` with colonies/pops/income, toast now only shows for own events
+- `src/public/index.html` — `#game-chat` panel, `#event-ticker` div
+- `src/public/css/style.css` — game chat styles (collapsible, expanded state), event ticker styles (fade in/out animations), enhanced scoreboard styles (wider, income colors), `.inc-pos`/`.inc-neg` classes
+- `src/tests/multiplayer-awareness.test.js` — **new** 17 tests
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 455 total (17 new: player summary × 5, getPlayerState summary × 4, broadcast events × 6, chat protocol × 2). All passing.
+
+**Key decisions:**
+- Chat auto-collapses after 4 seconds to avoid obscuring the game view, but stays expanded while input is focused
+- Broadcast events are a lightweight extension to the existing `_emitEvent` system — just a boolean flag, no architectural changes
+- Toasts remain private (only show for own events) while the ticker shows all-player broadcasts — avoids duplicating notifications for your own actions
+- colonyFounded simplified from N manual per-player events to 1 broadcast event — cleaner and consistent with the new system
+- Scoreboard income data computed server-side via `_getPlayerSummary` to keep all game state authoritative on the server
+- Event ticker positioned below status bar at top-center, separate from toasts (right side) — two distinct notification channels
+
+**Next:** Base capital housing reduction 10→8 (R25 priority #4), or starting planet variety, or colony personality system (R28 priority #2)

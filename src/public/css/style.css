@@ -318,12 +318,17 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .demolish-btn.hidden { display: none; }
 
 /* ── Scoreboard ── */
-#scoreboard { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 320px; max-width: 500px; z-index: 25; }
-.scoreboard-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-.scoreboard-table th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a2a4e; color: #aaa; font-weight: normal; }
-.scoreboard-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #1a1a2e; }
+#scoreboard { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 420px; max-width: 600px; z-index: 25; }
+.scoreboard-month { text-align: center; font-family: monospace; color: #aaa; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.scoreboard-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-family: monospace; }
+.scoreboard-table th { text-align: center; padding: 0.3rem 0.4rem; border-bottom: 1px solid #2a2a4e; color: #aaa; font-weight: normal; }
+.scoreboard-table th:nth-child(2) { text-align: left; }
+.scoreboard-table td { padding: 0.3rem 0.4rem; border-bottom: 1px solid #1a1a2e; text-align: center; }
+.scoreboard-table td:nth-child(2) { text-align: left; }
 .scoreboard-table tr.scoreboard-me td { color: #f1c40f; font-weight: bold; }
 .scoreboard-color { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.inc-pos { color: #2ecc71; }
+.inc-neg { color: #e74c3c; }
 
 /* ── VP in status bar ── */
 #status-vp { font-family: monospace; color: #f1c40f; font-weight: bold; }
@@ -349,6 +354,40 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   background: #e94560; color: #fff; border: none; border-radius: 6px; cursor: pointer;
 }
 #game-over-lobby-btn:hover { background: #c73652; }
+
+/* ── In-Game Chat (bottom-left, collapsible) ── */
+#game-chat {
+  pointer-events: auto;
+  position: absolute; bottom: 2.8rem; left: 0.8rem;
+  width: 280px;
+  display: flex; flex-direction: column;
+  z-index: 10;
+}
+#game-chat-messages {
+  max-height: 0; overflow-y: auto;
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e; border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0; font-size: 0.82rem;
+  transition: max-height 0.2s ease, padding 0.2s ease;
+  scrollbar-width: thin; scrollbar-color: #2a2a4e transparent;
+}
+#game-chat.expanded #game-chat-messages {
+  max-height: 180px;
+  padding: 0.4rem 0.5rem;
+}
+#game-chat-messages .msg { margin-bottom: 0.15rem; word-wrap: break-word; }
+#game-chat-messages .msg-name { font-weight: bold; }
+#game-chat-input {
+  padding: 0.4rem 0.5rem;
+  background: rgba(22, 33, 62, 0.9);
+  color: #fff; border: 1px solid #2a2a4e;
+  border-radius: 0 0 6px 6px;
+  font-size: 0.82rem; font-family: monospace;
+  outline: none;
+}
+#game-chat-input:focus { border-color: #00ffaa; }
 
 /* ── View Indicator (bottom-left) ── */
 #view-indicator {
@@ -386,6 +425,25 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   cursor: pointer; font-size: 0.8rem; text-align: center;
 }
 .system-colony-btn:hover { background: #3498db; }
+
+/* ── Event Ticker (top, scrolling) ── */
+#event-ticker {
+  pointer-events: none;
+  position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  z-index: 12; max-width: 500px; width: 100%;
+}
+.ticker-item {
+  font-family: monospace; font-size: 0.75rem; color: #ccc;
+  padding: 0.15rem 0.6rem;
+  background: rgba(26, 26, 46, 0.75);
+  border-radius: 3px; margin-bottom: 0.1rem;
+  animation: tickerFadeIn 0.3s ease, tickerFadeOut 0.5s ease 5.5s forwards;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.ticker-item .ticker-player { color: #f1c40f; font-weight: bold; }
+@keyframes tickerFadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tickerFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 /* ── Toast Notifications ── */
 #toast-container {

@@ -272,8 +272,8 @@ class GameEngine {
     return id;
   }
 
-  _emitEvent(eventType, playerId, details) {
-    this._pendingEvents.push({ eventType, playerId, ...details });
+  _emitEvent(eventType, playerId, details, broadcast = false) {
+    this._pendingEvents.push({ eventType, playerId, broadcast, ...details });
   }
 
   _flushEvents() {
@@ -456,19 +456,23 @@ class GameEngine {
             path: [],
             hopProgress: 0,
           });
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
             districtType: 'colonyShip',
             shipId,
-          });
+            playerName: ownerName,
+          }, true);
         } else {
           this._addBuiltDistrict(colony, item.type);
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
             districtType: item.type,
-          });
+            playerName: ownerName,
+          }, true);
         }
 
         if (colony.buildQueue.length === 0) {
@@ -537,11 +541,13 @@ class GameEngine {
 
         // Pop milestone: fire on multiples of 5
         if (colony.pops % 5 === 0) {
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('popMilestone', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
             pops: colony.pops,
-          });
+            playerName: ownerName,
+          }, true);
         }
 
         // Housing full: fire when pops reach housing cap
@@ -790,24 +796,15 @@ class GameEngine {
     // Remove ship
     this._removeColonyShip(ship);
 
-    // Emit colony founded event
+    // Emit colony founded event (broadcast to all players)
     const playerState = this.playerStates.get(ship.ownerId);
     this._emitEvent('colonyFounded', ship.ownerId, {
       colonyId: colony.id,
       colonyName: colony.name,
       systemName: system.name,
       planetType: planet.type,
-    });
-
-    // Broadcast to all other players
-    for (const [pid] of this.playerStates) {
-      if (pid === ship.ownerId) continue;
-      this._emitEvent('colonyFounded', pid, {
-        playerName: playerState ? playerState.name : 'Unknown',
-        systemName: system.name,
-        planetType: planet.type,
-      });
-    }
+      playerName: playerState ? playerState.name : 'Unknown',
+    }, true);
 
     this._invalidateStateCache();
     this._vpCacheTick = -1;
@@ -995,11 +992,13 @@ class GameEngine {
             if (colony) this._invalidateColonyCache(colony);
           }
 
+          const rPlayerName = (this.playerStates.get(playerId) || {}).name || 'Unknown';
           this._emitEvent('researchComplete', playerId, {
             techId,
             techName: tech.name,
             track,
-          });
+            playerName: rPlayerName,
+          }, true);
         }
       }
     }
@@ -1329,6 +1328,24 @@ class GameEngine {
     }
   }
 
+  // Summary stats for scoreboard: colony count, total pops, net income
+  _getPlayerSummary(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    let totalPops = 0;
+    const income = { energy: 0, minerals: 0, food: 0, alloys: 0 };
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      totalPops += colony.pops;
+      const { production, consumption } = this._calcProduction(colony);
+      income.energy += production.energy - consumption.energy;
+      income.minerals += production.minerals - consumption.minerals;
+      income.food += production.food - consumption.food;
+      income.alloys += production.alloys - consumption.alloys;
+    }
+    return { colonyCount: colonyIds.length, totalPops, income };
+  }
+
   getState() {
     if (this._cachedState) return this._cachedState;
     const playersArr = [];
@@ -1376,19 +1393,22 @@ class GameEngine {
     const player = this.playerStates.get(playerId);
     if (!player) return this.getState(); // fallback
 
-    // Own resources + research state + VP
+    // Own resources + research state + VP + summary
+    const mySummary = this._getPlayerSummary(playerId);
     const me = {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
       vp: this._calcVictoryPoints(playerId),
+      ...mySummary,
     };
 
     // Other players: name/color + VP for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
-      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id) });
+      const summary = this._getPlayerSummary(p.id);
+      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id), ...summary });
     }
 
     // Own colonies (full detail)
