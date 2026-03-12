@@ -178,6 +178,12 @@ function startServer(options = {}) {
             // Pre-stringified by engine — just broadcast the string directly
             broadcastToRoom(room.id, stateJSON);
           },
+          onEvent: (events) => {
+            for (const event of events) {
+              const ws = clients.get(event.playerId);
+              if (ws) send(ws, { type: 'gameEvent', ...event });
+            }
+          },
         });
         games.set(room.id, engine);
 

@@ -42,9 +42,11 @@ class GameEngine {
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this.onTick = options.onTick || null;
+    this.onEvent = options.onEvent || null;
     this._dirty = true; // tracks whether state changed since last broadcast
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
+    this._pendingEvents = []; // events to flush with next broadcast
 
     this._initPlayerStates();
     this._initStartingColonies();
@@ -122,6 +124,17 @@ class GameEngine {
     colony.districts.push({ id, type });
     this._invalidateColonyCache(colony);
     return id;
+  }
+
+  _emitEvent(eventType, playerId, details) {
+    this._pendingEvents.push({ eventType, playerId, ...details });
+  }
+
+  _flushEvents() {
+    if (this._pendingEvents.length === 0) return null;
+    const events = this._pendingEvents;
+    this._pendingEvents = [];
+    return events;
   }
 
   _invalidateColonyCache(colony) {
@@ -236,6 +249,13 @@ class GameEngine {
         state.resources.food -= consumption.food;
         state.resources.alloys -= consumption.alloys;
       }
+
+      // Emit foodDeficit event after all colony processing for this player
+      if (state.resources.food < 0) {
+        this._emitEvent('foodDeficit', playerId, {
+          food: state.resources.food,
+        });
+      }
     }
     this._dirty = true;
     this._cachedState = null;
@@ -251,7 +271,17 @@ class GameEngine {
       if (item.ticksRemaining <= 0) {
         colony.buildQueue.shift();
         this._addBuiltDistrict(colony, item.type);
-        // _addBuiltDistrict already sets _dirty
+        this._emitEvent('constructionComplete', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: item.type,
+        });
+        if (colony.buildQueue.length === 0) {
+          this._emitEvent('queueEmpty', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+          });
+        }
       }
     }
   }
@@ -298,6 +328,25 @@ class GameEngine {
         colony.pops++;
         colony.growthProgress = 0;
         this._invalidateColonyCache(colony); // production depends on pops
+
+        // Pop milestone: fire on multiples of 5
+        if (colony.pops % 5 === 0) {
+          this._emitEvent('popMilestone', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            pops: colony.pops,
+          });
+        }
+
+        // Housing full: fire when pops reach housing cap
+        if (colony.pops >= this._calcHousing(colony)) {
+          this._emitEvent('housingFull', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            pops: colony.pops,
+            housing: this._calcHousing(colony),
+          });
+        }
       }
     }
   }
@@ -326,6 +375,12 @@ class GameEngine {
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
       this._processPopStarvation();
+    }
+
+    // Flush events — send per-player event messages
+    const events = this._flushEvents();
+    if (events && this.onEvent) {
+      this.onEvent(events);
     }
 
     // Only broadcast when state has changed

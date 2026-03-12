@@ -343,3 +343,35 @@ Each entry records an iteration of automated development.
 - Three clear tiers: fast (200), standard (300), slow (400) — intuitive progression
 
 **Next:** Colony idle event notifications, then energy deficit consequences
+
+---
+
+## Entry 12 — 2026-03-11 — Colony Idle Event Notifications
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Server-side event notification system with `_pendingEvents[]` array and `_emitEvent()` method
+- 5 event types: `constructionComplete`, `queueEmpty`, `popMilestone`, `housingFull`, `foodDeficit`
+- Events flushed each tick via `onEvent` callback, sent per-player through WebSocket
+- `popMilestone` rate-limited to fire only on multiples of 5 pops
+- `foodDeficit` fires once per monthly processing when player food goes negative
+- Server.js wired to deliver `gameEvent` messages to the relevant player
+
+**Files changed:**
+- `server/game-engine.js` — `_emitEvent`, `_flushEvents`, event emissions in `_processConstruction`, `_processPopGrowth`, `_processMonthlyResources`, `onEvent` callback in tick loop
+- `server/server.js` — `onEvent` handler in engine creation to send per-player `gameEvent` messages
+- `src/tests/game-engine.test.js` — 8 new event notification tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 109 total (81 game-engine + 18 room-manager + 7 integration + 3 performance). All passing.
+
+**Key decisions:**
+- Events are per-player (not broadcast to all) since they're notifications about your own colonies
+- Events flushed via separate `onEvent` callback rather than embedding in gameState — keeps the periodic state broadcast lean and avoids bloating the cached JSON
+- `popMilestone` uses modulo-5 check for simple rate limiting
+- `housingFull` fires on the exact tick pops reach housing cap, giving immediate feedback
+
+**Next:** Energy deficit consequences (auto-disable districts when energy negative)

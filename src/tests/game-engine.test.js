@@ -710,6 +710,191 @@ describe('Variable build times', () => {
   });
 });
 
+describe('GameEngine — Event Notifications', () => {
+  it('emits constructionComplete when a build queue item finishes', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    engine.playerStates.get(1).resources.minerals = 10000;
+
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    const colony = engine.colonies.get(colonyId);
+    const buildTime = colony.buildQueue[0].ticksRemaining;
+
+    for (let i = 0; i < buildTime; i++) {
+      engine.tick();
+    }
+
+    const events = engine._pendingEvents.length === 0
+      ? [] // already flushed by tick
+      : engine._pendingEvents;
+    // Events are flushed each tick, so collect them via onEvent
+    // Re-test with event collector
+    const engine2 = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId2 = engine2.getState().colonies[0].id;
+    engine2.playerStates.get(1).resources.minerals = 10000;
+    engine2.handleCommand(1, { type: 'buildDistrict', colonyId: colonyId2, districtType: 'mining' });
+    const colony2 = engine2.colonies.get(colonyId2);
+    const bt = colony2.buildQueue[0].ticksRemaining;
+
+    const collected = [];
+    engine2.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < bt; i++) {
+      engine2.tick();
+    }
+
+    const ccEvents = collected.filter(e => e.eventType === 'constructionComplete');
+    assert.strictEqual(ccEvents.length, 1);
+    assert.strictEqual(ccEvents[0].districtType, 'mining');
+    assert.strictEqual(ccEvents[0].colonyId, colonyId2);
+    assert.strictEqual(ccEvents[0].playerId, 1);
+  });
+
+  it('emits queueEmpty when last build queue item completes', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    engine.playerStates.get(1).resources.minerals = 10000;
+
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    const colony = engine.colonies.get(colonyId);
+    const bt = colony.buildQueue[0].ticksRemaining;
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < bt; i++) {
+      engine.tick();
+    }
+
+    const qeEvents = collected.filter(e => e.eventType === 'queueEmpty');
+    assert.strictEqual(qeEvents.length, 1);
+    assert.strictEqual(qeEvents[0].colonyId, colonyId);
+  });
+
+  it('does not emit queueEmpty when queue still has items', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    engine.playerStates.get(1).resources.minerals = 10000;
+
+    // Queue 2 items — first completes but queue is not empty
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    const colony = engine.colonies.get(colonyId);
+    const bt = colony.buildQueue[0].ticksRemaining;
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < bt; i++) {
+      engine.tick();
+    }
+
+    const ccEvents = collected.filter(e => e.eventType === 'constructionComplete');
+    assert.strictEqual(ccEvents.length, 1);
+    const qeEvents = collected.filter(e => e.eventType === 'queueEmpty');
+    assert.strictEqual(qeEvents.length, 0, 'Should not emit queueEmpty when queue still has items');
+  });
+
+  it('emits popMilestone at multiples of 5 pops', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Set pops to 9 so next growth hits 10 (multiple of 5)
+    colony.pops = 9;
+    // Add housing so cap doesn't block
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._invalidateColonyCache(colony);
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 10);
+    const pmEvents = collected.filter(e => e.eventType === 'popMilestone');
+    assert.strictEqual(pmEvents.length, 1);
+    assert.strictEqual(pmEvents[0].pops, 10);
+  });
+
+  it('does not emit popMilestone at non-multiples of 5', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Starting at 8, grows to 9 — not a multiple of 5
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 9);
+    const pmEvents = collected.filter(e => e.eventType === 'popMilestone');
+    assert.strictEqual(pmEvents.length, 0);
+  });
+
+  it('emits housingFull when pops reach housing cap', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Set pops to 9, housing is 10 (base) — next growth fills it
+    colony.pops = 9;
+    engine._invalidateColonyCache(colony);
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 10);
+    const hfEvents = collected.filter(e => e.eventType === 'housingFull');
+    assert.strictEqual(hfEvents.length, 1);
+    assert.strictEqual(hfEvents[0].pops, 10);
+    assert.strictEqual(hfEvents[0].housing, 10);
+  });
+
+  it('emits foodDeficit when food goes negative after monthly processing', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Remove all agriculture to cause food deficit
+    colony.districts = colony.districts.filter(d => d.type !== 'agriculture');
+    engine._invalidateColonyCache(colony);
+    // Set food low enough that it goes negative after monthly consumption
+    engine.playerStates.get(1).resources.food = 5;
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < MONTH_TICKS; i++) {
+      engine.tick();
+    }
+
+    // No agriculture = 0 food production, 8 pops consume 8 food. 5 - 8 = -3
+    assert.ok(engine.playerStates.get(1).resources.food < 0);
+    const fdEvents = collected.filter(e => e.eventType === 'foodDeficit');
+    assert.strictEqual(fdEvents.length, 1);
+    assert.ok(fdEvents[0].food < 0);
+  });
+
+  it('does not emit foodDeficit when food is non-negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+
+    const collected = [];
+    engine.onEvent = (evts) => collected.push(...evts);
+
+    for (let i = 0; i < MONTH_TICKS; i++) {
+      engine.tick();
+    }
+
+    // Starting setup has food surplus (+4/month)
+    assert.ok(engine.playerStates.get(1).resources.food >= 0);
+    const fdEvents = collected.filter(e => e.eventType === 'foodDeficit');
+    assert.strictEqual(fdEvents.length, 0);
+  });
+});
+
 describe('PLANET_TYPES', () => {
   it('has habitability values for all types', () => {
     const expected = ['continental', 'ocean', 'tropical', 'arctic', 'desert', 'arid', 'barren', 'molten', 'gasGiant'];
