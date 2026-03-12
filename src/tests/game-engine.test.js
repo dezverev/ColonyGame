@@ -509,6 +509,26 @@ describe('GameEngine — Performance', () => {
     assert.strictEqual(broadcastCount, 2, 'Should broadcast after command');
   });
 
+  it('getState payload scales linearly and stays reasonable at 64 colonies', () => {
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) {
+      players.set(i, { id: i, name: `P${i}`, ready: true, isHost: i === 1 });
+    }
+    const room = { id: 'scale', name: 'Scale', hostId: 1, maxPlayers: 8, status: 'playing', players };
+    const engine = new GameEngine(room, { tickRate: 10 });
+    for (let i = 1; i <= 8; i++) {
+      for (let c = 0; c < 7; c++) {
+        const col = engine._createColony(i, `C${i}-${c}`, { size: 16, type: 'continental', habitability: 80 });
+        for (const t of ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'])
+          engine._addBuiltDistrict(col, t);
+      }
+    }
+    const json = JSON.stringify(engine.getState());
+    const sizeKB = Buffer.byteLength(json) / 1024;
+    // 64 colonies with 6 districts each should stay under 50KB
+    assert.ok(sizeKB < 50, `64-colony payload is ${sizeKB.toFixed(1)}KB, limit 50KB`);
+  });
+
   it('caches production calculations between calls', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];

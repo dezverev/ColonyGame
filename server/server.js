@@ -21,17 +21,21 @@ function startServer(options = {}) {
 
   function send(ws, msg) {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+      ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   }
 
   function broadcastToRoom(roomId, msg, excludeId) {
     const room = rooms.getRoom(roomId);
     if (!room) return;
+    // Stringify once, reuse for all players
+    const data = typeof msg === 'string' ? msg : JSON.stringify(msg);
     for (const [pid] of room.players) {
       if (pid !== excludeId) {
         const ws = clients.get(pid);
-        if (ws) send(ws, msg);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
       }
     }
   }
@@ -151,7 +155,8 @@ function startServer(options = {}) {
         const engine = new GameEngine(result.room, {
           tickRate: config.TICK_RATE,
           onTick: (state) => {
-            broadcastToRoom(room.id, { type: 'gameState', ...state });
+            // Stringify once, reuse for all players instead of per-player serialization
+            broadcastToRoom(room.id, JSON.stringify({ type: 'gameState', ...state }));
           },
         });
         games.set(room.id, engine);
