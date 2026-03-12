@@ -1,0 +1,16 @@
+{
+  "name": "rtsgame",
+  "version": "0.1.0",
+  "description": "Isometric multiplayer RTS game built on IsometricJS rendering foundation",
+  "scripts": {
+    "dev": "concurrently \"node src/dev-client-server.js\" \"node --watch server/server.js\"",
+    "start": "node server/server.js",
+    "test": "node --test src/tests/**/*.test.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

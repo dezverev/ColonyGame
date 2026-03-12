@@ -1,0 +1,22 @@
+{
+  "directionMode": "8",
+  "size": { "w": 1.5, "h": 2 },
+  "anchor": { "x": 0.5, "y": 0.88 },
+  "depthBias": 0.2,
+  "directionAxis": "screen",
+  "flipOnMove": true,
+  "defaultFacing": "s",
+  "attackDurationMs": 1000,
+  "animations": {
+    "idle": {
+      "frameSize": { "w": 56, "h": 56 },
+      "frames": 4,
+      "fps": 6
+    },
+    "run": {
+      "frameSize": { "w": 56, "h": 56 },
+      "frames": 6,
+      "fps": 10
+    }
+  }
+}

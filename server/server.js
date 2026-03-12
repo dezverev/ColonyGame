@@ -1,0 +1,214 @@
+const { WebSocketServer, WebSocket } = require('ws');
+const http = require('http');
+const { RoomManager } = require('./room-manager');
+const { GameEngine } = require('./game-engine');
+const config = require('./config');
+
+function startServer(options = {}) {
+  const port = options.port ?? config.GAME_PORT;
+  const log = options.log !== false;
+
+  const httpServer = http.createServer((req, res) => {
+    if (req.url === '/health') { res.writeHead(200); res.end('ok'); return; }
+    res.writeHead(404); res.end();
+  });
+
+  const wss = new WebSocketServer({ server: httpServer });
+  const rooms = new RoomManager();
+  const games = new Map(); // roomId -> GameEngine
+  const clients = new Map(); // clientId -> ws
+  let nextClientId = 1;
+
+  function send(ws, msg) {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
+    }
+  }
+
+  function broadcastToRoom(roomId, msg, excludeId) {
+    const room = rooms.getRoom(roomId);
+    if (!room) return;
+    for (const [pid] of room.players) {
+      if (pid !== excludeId) {
+        const ws = clients.get(pid);
+        if (ws) send(ws, msg);
+      }
+    }
+  }
+
+  function broadcastRoomList() {
+    const list = rooms.listRooms();
+    for (const [, ws] of clients) {
+      if (!rooms.getRoomForPlayer(ws.clientId)) {
+        send(ws, { type: 'roomList', rooms: list });
+      }
+    }
+  }
+
+  function sendRoomUpdate(roomId) {
+    const room = rooms.getRoom(roomId);
+    if (!room) return;
+    const data = rooms.serializeRoom(room);
+    for (const [pid] of room.players) {
+      const ws = clients.get(pid);
+      if (ws) send(ws, { type: 'roomUpdate', room: data });
+    }
+  }
+
+  wss.on('connection', (ws) => {
+    const clientId = nextClientId++;
+    ws.clientId = clientId;
+    ws.displayName = `Player${clientId}`;
+    clients.set(clientId, ws);
+
+    send(ws, { type: 'welcome', clientId, displayName: ws.displayName });
+    send(ws, { type: 'roomList', rooms: rooms.listRooms() });
+
+    if (log) console.log(`[connect] Player${clientId}`);
+
+    ws.on('message', (data) => {
+      let msg;
+      try { msg = JSON.parse(data); } catch { return; }
+      handleMessage(ws, msg);
+    });
+
+    ws.on('close', () => {
+      if (log) console.log(`[disconnect] Player${clientId}`);
+      const result = rooms.removePlayer(clientId);
+      if (result && result.room) sendRoomUpdate(result.room.id);
+      clients.delete(clientId);
+      broadcastRoomList();
+    });
+  });
+
+  function handleMessage(ws, msg) {
+    const clientId = ws.clientId;
+
+    switch (msg.type) {
+      case 'setName': {
+        const name = String(msg.name || '').trim().slice(0, 20);
+        if (name.length < 1) return;
+        ws.displayName = name;
+        send(ws, { type: 'nameSet', displayName: name });
+        break;
+      }
+
+      case 'createRoom': {
+        if (rooms.getRoomForPlayer(clientId)) {
+          send(ws, { type: 'error', message: 'Already in a room' });
+          return;
+        }
+        const name = String(msg.name || '').trim().slice(0, 30) || `Room ${clientId}`;
+        const room = rooms.createRoom(name, clientId, ws.displayName, {
+          maxPlayers: msg.maxPlayers,
+          map: msg.map,
+        });
+        send(ws, { type: 'roomJoined', room: rooms.serializeRoom(room) });
+        broadcastRoomList();
+        if (log) console.log(`[room] ${ws.displayName} created "${room.name}"`);
+        break;
+      }
+
+      case 'joinRoom': {
+        const result = rooms.joinRoom(msg.roomId, clientId, ws.displayName);
+        if (result.error) {
+          send(ws, { type: 'error', message: result.error });
+          return;
+        }
+        send(ws, { type: 'roomJoined', room: rooms.serializeRoom(result.room) });
+        sendRoomUpdate(result.room.id);
+        broadcastRoomList();
+        if (log) console.log(`[room] ${ws.displayName} joined "${result.room.name}"`);
+        break;
+      }
+
+      case 'leaveRoom': {
+        const result = rooms.leaveRoom(clientId);
+        if (!result) return;
+        send(ws, { type: 'roomLeft' });
+        send(ws, { type: 'roomList', rooms: rooms.listRooms() });
+        if (result.room) sendRoomUpdate(result.room.id);
+        broadcastRoomList();
+        break;
+      }
+
+      case 'toggleReady': {
+        const result = rooms.toggleReady(clientId);
+        if (!result) return;
+        sendRoomUpdate(result.room.id);
+        break;
+      }
+
+      case 'launchGame': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const result = rooms.launchGame(room.id, clientId);
+        if (result.error) {
+          send(ws, { type: 'error', message: result.error });
+          return;
+        }
+
+        const engine = new GameEngine(result.room, {
+          tickRate: config.TICK_RATE,
+          onTick: (state) => {
+            broadcastToRoom(room.id, { type: 'gameState', ...state });
+          },
+        });
+        games.set(room.id, engine);
+
+        const initState = engine.getInitState();
+        for (const [pid] of result.room.players) {
+          const pws = clients.get(pid);
+          if (pws) send(pws, { type: 'gameInit', ...initState, yourId: pid });
+        }
+
+        engine.start();
+        broadcastRoomList();
+        if (log) console.log(`[game] "${room.name}" launched with ${room.players.size} players`);
+        break;
+      }
+
+      case 'gameCommand': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const engine = games.get(room.id);
+        if (!engine) return;
+        engine.handleCommand(clientId, msg.command);
+        break;
+      }
+
+      case 'chat': {
+        const room = rooms.getRoomForPlayer(clientId);
+        const chatMsg = { type: 'chat', from: ws.displayName, text: String(msg.text || '').slice(0, 200) };
+        if (room) {
+          // Broadcast to all in room including sender
+          for (const [pid] of room.players) {
+            const pws = clients.get(pid);
+            if (pws) send(pws, chatMsg);
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  return new Promise((resolve) => {
+    httpServer.listen(port, () => {
+      if (log) console.log(`[server] RTS game server on port ${port}`);
+      resolve({
+        port: httpServer.address().port,
+        close: () => {
+          for (const [, engine] of games) engine.stop();
+          wss.close();
+          httpServer.close();
+        },
+      });
+    });
+  });
+}
+
+if (require.main === module) {
+  startServer();
+}
+
+module.exports = { startServer };

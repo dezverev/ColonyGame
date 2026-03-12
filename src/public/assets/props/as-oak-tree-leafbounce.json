@@ -1,0 +1,14 @@
+{
+  "name": "Oak Tree",
+  "type": "tree",
+  "collidable": true,
+  "description": "Decorative tree for neutral/forest environments.",
+  "size": { "w": 256, "h": 256 },
+  "anchor": { "x": 0.5, "y": 0.85 },
+  "worldOffset": { "x": 0.5, "y": 0.5, "z": -1 },
+  "depthBias": 0.75,
+  "frameSize": { "w": 256, "h": 256 },
+  "frames": 25,
+  "fps": 8,
+  "loopDelay": [0, 0]
+}

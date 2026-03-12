@@ -1,0 +1,54 @@
+{
+  "directionMode": "8",
+  "size": { "w": 1.25, "h": 2 },
+  "anchor": { "x": 0.5, "y": 0.88 },
+  "depthBias": 0.2,
+  "directionAxis": "screen",
+  "flipOnMove": true,
+  "defaultFacing": "s",
+  "attackDurationMs": 1000,
+  "animations": {
+    "idle": {
+      "frameSize": { "w": 56, "h": 56 },
+      "frames": 4,
+      "fps": 6
+    },
+    "run": {
+      "frameSize": { "w": 56, "h": 56 },
+      "frames": 6,
+      "fps": 10
+    },
+    "attack": {
+      "frameSize": { "w": 64, "h": 64 },
+      "anchorOverride": { "x": 0.5, "y": 0.84 },
+      "frames": 16,
+      "fps": 16,
+      "scaleX": 1.1,
+      "scaleY": 1.1
+    },
+    "fireball": {
+      "frameSize": { "w": 64, "h": 64 },
+      "anchorOverride": { "x": 0.5, "y": 0.84 },
+      "frames": 16,
+      "fps": 16,
+      "scaleX": 1.1,
+      "scaleY": 1.1
+    },
+    "heal": {
+      "frameSize": { "w": 64, "h": 64 },
+      "anchorOverride": { "x": 0.5, "y": 0.84 },
+      "frames": 16,
+      "fps": 16,
+      "scaleX": 1.1,
+      "scaleY": 1.1
+    },
+    "powerstrike": {
+      "frameSize": { "w": 64, "h": 64 },
+      "anchorOverride": { "x": 0.5, "y": 0.84 },
+      "frames": 16,
+      "fps": 16,
+      "scaleX": 1.1,
+      "scaleY": 1.1
+    }
+  }
+}
