@@ -112,6 +112,7 @@ The static file server falls back to `../IsometricJS/src/public/assets/` when a 
 |-------|-----------|---------|
 | `rts-develop` | `/rts-develop [focus]` | Pick next task from design.md, implement it, test, commit, update ledger |
 | `rts-status` | `/rts-status` | Report current project state, what's done, what's next |
+| `game-designer` | `/game-designer [focus]` | Analyze game from a design/playstyle perspective, recommend improvements |
 
 ## Key Constants
 

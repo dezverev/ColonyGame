@@ -1,17 +1,17 @@
 # ══════════════════════════════════════════════════════════════
 # autopilot-rts.ps1 — Iterative RTS game development automation
 #
-# Each iteration:
-#   1. Reads the design roadmap and development ledger
-#   2. Picks the next unfinished task
-#   3. Implements it with tests
-#   4. Commits and updates the ledger
+# Each iteration runs a 3-phase pipeline:
+#   1. /rts-status      → assess current project state
+#   2. /game-designer   → analyze gameplay, recommend improvements,
+#                         add work items to design.md
+#   3. /rts-develop     → pick next task, implement, test, commit
 #
 # Usage:
 #   .\autopilot-rts.ps1                    # run 1 iteration
 #   .\autopilot-rts.ps1 -n 3              # run 3 iterations
-#   .\autopilot-rts.ps1 -DryRun           # analyze only, don't implement
-#   .\autopilot-rts.ps1 -Focus rendering  # focus on rendering tasks
+#   .\autopilot-rts.ps1 -DryRun           # phases 1+2 only, skip implementation
+#   .\autopilot-rts.ps1 -Focus rendering  # focus game-designer + rts-develop
 # ══════════════════════════════════════════════════════════════
 
 param(
@@ -31,46 +31,59 @@ function Log($msg) {
     Write-Host ""
 }
 
-$prevResult = ""
-
 for ($i = 1; $i -le $n; $i++) {
 
     if ($n -gt 1) {
         Log "Iteration $i of $n"
     }
 
+    # ── Phase 1: /rts-status ──────────────────────────────────
+    Log "Phase 1: Project status..."
+    try {
+        $status = claude --dangerously-skip-permissions -p "/rts-status" 2>&1 | Out-String
+        Write-Host $status
+    } catch {
+        Write-Warning "Phase 1 failed: $_"
+        $status = "ERROR: $_"
+    }
+
+    # ── Phase 2: /game-designer ───────────────────────────────
+    Log "Phase 2: Game design analysis..."
+    $designPrompt = @"
+/game-designer $Focus
+
+Current project status for context:
+$status
+"@
+    try {
+        $design = claude --dangerously-skip-permissions -p $designPrompt 2>&1 | Out-String
+        Write-Host $design
+    } catch {
+        Write-Warning "Phase 2 failed: $_"
+        $design = "ERROR: $_"
+    }
+
     if ($DryRun) {
-        Log "DRY RUN: Analyzing project state..."
-        claude --dangerously-skip-permissions -p "/rts-status"
-        Log "Dry run complete."
+        Log "Dry run complete - skipping implementation."
         continue
     }
 
-    # Build context from previous iteration
-    if ([string]::IsNullOrEmpty($prevResult)) {
-        $fullPrompt = "/rts-develop $Focus"
-    } else {
-        $fullPrompt = @"
+    # ── Phase 3: /rts-develop ─────────────────────────────────
+    Log "Phase 3: Implementing next task..."
+    $devPrompt = @"
 /rts-develop $Focus
 
-Previous iteration output (use for context):
-$prevResult
+Game designer output (use for context on priorities):
+$design
 "@
-    }
-
-    Log "Running /rts-develop..."
-
     try {
-        $prevResult = claude --dangerously-skip-permissions -p $fullPrompt 2>&1 | Out-String
-        Write-Host $prevResult
+        $result = claude --dangerously-skip-permissions -p $devPrompt 2>&1 | Out-String
+        Write-Host $result
     } catch {
-        Write-Warning "Iteration $i failed: $_"
-        $prevResult = "ERROR: $_"
+        Write-Warning "Phase 3 failed: $_"
     }
 
     Log "Iteration $i complete."
 }
 
 Log "All $n iteration(s) done."
-Write-Host ""
-Write-Host "Run .\autopilot-rts.ps1 -DryRun to see current status."

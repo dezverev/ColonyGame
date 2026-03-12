@@ -55,74 +55,30 @@ Built on the rendering foundation and shared assets from IsometricJS.
   - Double-click to select all of same type on screen
 
 ### Phase 3: Units & Combat
-- [ ] Unit type definitions with stats (worker, soldier, archer, cavalry)
-  - HP, attack damage, attack speed, armor, move speed, attack range
-  - Production cost (gold, wood, time)
-  - Supply cost
-- [ ] Attack command (right-click enemy unit)
-  - Server-side damage calculation
-  - Attack cooldown
-  - Range checking (melee vs ranged)
-- [ ] Auto-attack nearby enemies
-  - Aggro radius per unit type
-  - Priority targeting (closest, lowest HP)
-- [ ] Unit death
-  - Death animation/fade
-  - Remove from game state
-  - Notify all players
-- [ ] Formation movement
-  - Units spread out around target point
-  - Avoid stacking on same tile
-- [ ] Line of sight / fog of war
-  - Per-player visibility map
-  - Revealed/fog/hidden states
-  - Only send visible units to each player
+- [x] Expanded unit definitions with full stats in game-engine.js: worker (30 HP, 3 atk, 0 armor, 2.0 speed, 1 range, 1.5s cooldown, 50g 20w, 1 supply), soldier (60 HP, 10 atk, 2 armor, 1.5 speed, 1 range, 1.0s cooldown, 60g 20w, 1 supply), archer (40 HP, 8 atk, 0 armor, 1.8 speed, 5 range, 1.2s cooldown, 40g 50w, 1 supply), cavalry (70 HP, 12 atk, 1 armor, 3.5 speed, 1 range, 1.3s cooldown, 80g 30w, 2 supply). Add `armor`, `range`, `cooldown`, `cost`, `supplyCost`, `bonusVs` fields to unit defs
+- [ ] Unit counter system: add `bonusVs` multipliers — soldiers deal 1.5x to archers, archers deal 1.5x to cavalry, cavalry deal 1.5x to soldiers, workers deal 0.5x to all military. Apply multiplier in damage calc as `max(1, (atk * bonusMultiplier) - target.armor)`
+- [ ] Attack command: right-click enemy unit sends `attackUnit` command with `unitIds` and `targetUnitId`. Server validates ownership, sets unit state to 'attacking', unit moves toward target until within `range` tiles, then deals damage every `cooldown` seconds. If target moves out of range, pursue. If target dies, go idle
+- [ ] Auto-attack nearby enemies: idle units scan for enemies within 6-tile aggro radius each tick. Acquire nearest enemy (prefer lowest HP if tied on distance). Set state to 'attacking' and engage. Units already attacking don't switch targets unless current target dies
+- [ ] Unit death and removal: when HP <= 0, remove unit from game state Map, broadcast removal in next tick. Client shows 0.5s fade-out at last position. Award kill credit to attacking player for post-game stats
+- [ ] Formation movement: when multiple units are given a move command, spread them in a grid pattern around the target point (1.2 tile spacing). Prevent stacking by offsetting each unit's final position. Closest units get closest positions
+- [ ] Line of sight / fog of war: per-player visibility grid (50x50 booleans). Sight ranges: workers 7, soldiers 5, archers 8, cavalry 9, buildings 8, towers 10. Three states: visible (in LOS), revealed (previously seen — show terrain/buildings but not units), hidden (never seen — black). Server only includes units in `gameState` that are within the receiving player's vision. Client renders semi-transparent black overlay for revealed, opaque black for hidden
 
 ### Phase 4: Resources & Economy
-- [ ] Resource node world objects (gold mines, trees, stone quarries)
-  - Placed on map at game init
-  - Finite resource amounts
-  - Visual depletion states
-- [ ] Worker gathering
-  - Assign worker to resource node
-  - Gathering animation and timer
-  - Auto-return to nearest town hall / drop-off
-  - Resource increment on delivery
-- [ ] Building construction
-  - Building placement UI (ghost building, valid/invalid placement)
-  - Construction progress bar
-  - Worker required for construction
-  - Cost deducted on placement start
-- [ ] Building types
-  - Town Hall: drop-off point, produces workers
-  - Barracks: produces soldiers, archers
-  - Farm: increases supply cap
-  - Tower: static defense, ranged attack
-  - Wall: blocking terrain piece
-- [ ] Unit production
-  - Queue system per building
-  - Production timer
-  - Supply check before queuing
-  - Rally point for produced units
+- [ ] Resource node world objects on map: gold mines (1500 gold each, rendered as yellow squares), tree clusters (10 trees per cluster, 50 wood each tree, rendered as green circles), stone quarries (800 stone each, rendered as gray squares). Each player spawn gets 1 gold mine, 1 forest cluster, 1 stone quarry nearby. Map center gets 1 rich gold mine (3000 gold). Map edges get 2 extra stone quarries and 2 extra forest clusters. Store as `resourceNodes` Map in game-engine with `{id, type, x, y, amount, maxAmount}`
+- [ ] Worker gathering: right-click resource node sends `gatherResource` command with `unitIds` and `nodeId`. Worker walks to node, gathers for 2 seconds (state: 'gathering'), picks up cargo (8 gold, 10 wood, or 5 stone per trip), walks to nearest town hall (state: 'returning'), deposits cargo (add to player resources), then auto-walks back to same node. If node depleted (amount <= 0), worker goes idle. Workers carry one resource type at a time
+- [ ] Resource node depletion: subtract gathered amount from node on each pickup. When amount <= 0, remove node from map. Client shows visual depletion stages (full/half/quarter/empty) based on amount/maxAmount ratio. Depleted gold mines leave a "depleted mine" marker (cannot be gathered)
+- [ ] Building construction: client sends `placeBuilding` command with `type`, `x`, `y`, `workerId`. Server validates: worker owned by player, sufficient resources, no collision with existing buildings/units. Deduct cost immediately. Create building with `progress: 0.0`. Assigned worker walks to site, increments progress each tick. Construction times: Town Hall 30s, Barracks 20s, Farm 10s, Tower 15s, Stable 20s, Wall 5s. When progress reaches 1.0, building becomes functional. Client shows ghost building during placement (green=valid, red=invalid), progress bar during construction
+- [ ] Building types with costs: Town Hall (300g 200w, drop-off point, produces workers, +10 supply cap), Barracks (150g 100w, produces soldiers and archers), Stable (200g 150w, produces cavalry), Farm (50g 30w, +5 supply cap), Tower (100g 75s, static defense — 8 atk, 7 range, 2s cooldown, auto-attacks enemies), Wall (25g 25s, blocking terrain piece, 200 HP, 1x1 size)
+- [ ] Unit production queue: click building to select it, show production panel with available unit buttons. Click unit button sends `produceUnit` command with `buildingId` and `unitType`. Server validates: building owned by player, building type can produce that unit, sufficient resources, supply available. Deduct cost, add to building's queue (max 5). Each tick decrements production timer. When timer hits 0, spawn unit at rally point (default: 2 tiles south of building). Rally point settable by right-clicking ground while building selected
 
 ### Phase 5: Multiplayer Polish
-- [ ] Server-authoritative command validation
-  - Verify unit ownership on every command
-  - Verify building ownership
-  - Verify resource sufficiency
-  - Rate limiting per player
-- [ ] Player disconnect handling
-  - Grace period for reconnection
-  - AI takeover option
-  - Surrender on timeout
-- [ ] Spectator mode
-  - Join a running game as observer
-  - Full map visibility
-  - No commands allowed
-- [ ] Game result recording
-  - Win/loss/draw determination
-  - Post-game stats (units killed, resources gathered, buildings built)
-  - Return to lobby after game ends
+- [ ] Win condition — Annihilation: player is eliminated when they have zero buildings. Server checks each tick after a building is destroyed. Last player standing wins. On elimination: remove all remaining units for that player, send `playerEliminated` message to all. When only 1 player remains, send `gameOver` with `{winnerId, stats}`. Stats include: units killed, units lost, resources gathered, buildings built, buildings destroyed, game duration in ticks
+- [ ] Post-game screen: on `gameOver` message, client shows overlay with winner name, per-player stats table, "Return to Lobby" button. Server sets room status to 'finished', cleans up GameEngine. Clicking return sends `leaveRoom`, returns to lobby
+- [ ] Server-authoritative command validation: verify unit ownership on moveUnits/attackUnit/gatherResource, verify building ownership on produceUnit/setRallyPoint, verify resource sufficiency on placeBuilding/produceUnit, verify supply cap on produceUnit. Reject invalid commands silently (send error message to player). Rate limit: max 30 commands/second per player, drop excess
+- [ ] Player disconnect handling: on WebSocket close, start 30-second grace period. If player reconnects within grace period, restore their session (resend gameInit + current gameState). If timeout expires, remove all player units/buildings (elimination). Send `playerDisconnected`/`playerReconnected` messages to room
+- [ ] Spectator mode: join a running game as observer via `spectateGame` command. Spectators see full map (no fog), receive all gameState ticks, cannot send gameCommands. Spectator count shown in room list. Spectators auto-return to lobby on game end
+- [ ] Move confirmation visual: on right-click move command, client draws a green circle at target position that fades out over 1 second. On attack command, draw red circle. Add "ping" effect on minimap at command location
+- [ ] Under-attack alert: server sends `underAttack` event when a player's unit/building first takes damage from a new attacker. Client flashes minimap at attack location (red pulse), shows "Under attack!" text alert that fades after 3 seconds. Throttle to max 1 alert per 5 seconds per player
 
 ### Phase 6: Maps & Variety
 - [ ] Map definitions (multiple maps)
@@ -139,19 +95,10 @@ Built on the rendering foundation and shared assets from IsometricJS.
   - Hills (elevation, defense bonus)
 
 ### Phase 7: Advanced Features
-- [ ] Tech tree / upgrades
-  - Research at buildings
-  - Unlock advanced units and abilities
-  - Stat upgrades (attack, armor, speed)
-- [ ] Special abilities per unit type
-  - Charge (cavalry)
-  - Heal (priest)
-  - Siege (catapult)
-- [ ] Win condition options
-  - Annihilation (destroy all enemy buildings)
-  - Regicide (kill enemy king unit)
-  - Score-based with time limit
-  - Custom objectives
+- [ ] Tech tree / upgrades: Town Hall researches Improved Gathering (+25% gather speed, 100g 100w, 30s), Barracks researches Forged Blades (+2 atk for soldiers/cavalry, 150g 75s, 25s) and Leather Armor (+1 armor for archers, 100g 50w, 20s), Stable researches Swift Steeds (+0.5 speed for cavalry, 100g 100w, 25s). Research uses production queue slot. Only one research per building at a time
+- [ ] Special abilities per unit type: Cavalry Charge — active ability, 30s cooldown, unit dashes 4 tiles toward target dealing 2x damage on arrival. Priest (new unit, 60 HP, 1 atk, 0 armor, 1.5 speed, produced at Town Hall, 80g 60w): auto-heals nearest friendly unit within 5 tiles for 3 HP/sec, cannot attack. Catapult (new unit, 80 HP, 25 atk, 0 armor, 0.8 speed, 8 range, 3s cooldown, produced at Siege Workshop — new building 200g 150s): deals splash damage in 2-tile radius, 1.5x damage vs buildings, minimum range 3 tiles
+- [ ] Win condition options selectable in room settings: Annihilation (destroy all enemy buildings — default), Regicide (each player gets a King unit at start, 150 HP, 5 atk, 3 armor — kill enemy King to eliminate them), Timed (15-minute match, score = units killed × 10 + buildings destroyed × 50 + resources gathered, highest score wins)
+- [ ] Commander abilities: pre-match, each player picks 1 of 3 commanders. Each grants 3 abilities on cooldowns. Commander A "Warlord": Rally Cry (selected units +30% speed 10s, 90s CD), Forced March (selected units ignore terrain penalties 15s, 120s CD), War Horn (all military units +3 atk 8s, 180s CD). Commander B "Economist": Supply Drop (+150 gold instantly, 90s CD), Overtime (all workers +50% gather speed 20s, 120s CD), Emergency Reserves (+200 of each resource, 180s CD). Commander C "Fortifier": Quick Walls (place 5 free walls instantly, 90s CD), Garrison (selected building gains 2x HP 20s, 120s CD), Watchtower Network (all towers +5 range 15s, 180s CD)
 
 ## Conventions
 
