@@ -21,17 +21,21 @@ function startServer(options = {}) {
 
   function send(ws, msg) {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+      ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg));
     }
   }
 
   function broadcastToRoom(roomId, msg, excludeId) {
     const room = rooms.getRoom(roomId);
     if (!room) return;
+    // Stringify once, reuse for all players
+    const data = typeof msg === 'string' ? msg : JSON.stringify(msg);
     for (const [pid] of room.players) {
       if (pid !== excludeId) {
         const ws = clients.get(pid);
-        if (ws) send(ws, msg);
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
       }
     }
   }
@@ -75,7 +79,17 @@ function startServer(options = {}) {
     ws.on('close', () => {
       if (log) console.log(`[disconnect] Player${clientId}`);
       const result = rooms.removePlayer(clientId);
-      if (result && result.room) sendRoomUpdate(result.room.id);
+      if (result && result.removed) {
+        // Room was deleted (last player left) — stop and clean up the game engine
+        const engine = games.get(result.roomId);
+        if (engine) {
+          engine.stop();
+          games.delete(result.roomId);
+          if (log) console.log(`[game] Cleaned up engine for removed room ${result.roomId}`);
+        }
+      } else if (result && result.room) {
+        sendRoomUpdate(result.room.id);
+      }
       clients.delete(clientId);
       broadcastRoomList();
     });
@@ -102,6 +116,7 @@ function startServer(options = {}) {
         const room = rooms.createRoom(name, clientId, ws.displayName, {
           maxPlayers: msg.maxPlayers,
           map: msg.map,
+          practiceMode: msg.practiceMode,
         });
         send(ws, { type: 'roomJoined', room: rooms.serializeRoom(room) });
         broadcastRoomList();
@@ -127,7 +142,16 @@ function startServer(options = {}) {
         if (!result) return;
         send(ws, { type: 'roomLeft' });
         send(ws, { type: 'roomList', rooms: rooms.listRooms() });
-        if (result.room) sendRoomUpdate(result.room.id);
+        if (result.removed) {
+          const engine = games.get(result.roomId);
+          if (engine) {
+            engine.stop();
+            games.delete(result.roomId);
+            if (log) console.log(`[game] Cleaned up engine for removed room ${result.roomId}`);
+          }
+        } else if (result.room) {
+          sendRoomUpdate(result.room.id);
+        }
         broadcastRoomList();
         break;
       }
@@ -150,8 +174,15 @@ function startServer(options = {}) {
 
         const engine = new GameEngine(result.room, {
           tickRate: config.TICK_RATE,
-          onTick: (state) => {
-            broadcastToRoom(room.id, { type: 'gameState', ...state });
+          onTick: (stateJSON) => {
+            // Pre-stringified by engine — just broadcast the string directly
+            broadcastToRoom(room.id, stateJSON);
+          },
+          onEvent: (events) => {
+            for (const event of events) {
+              const ws = clients.get(event.playerId);
+              if (ws) send(ws, { type: 'gameEvent', ...event });
+            }
           },
         });
         games.set(room.id, engine);
@@ -168,12 +199,16 @@ function startServer(options = {}) {
         break;
       }
 
-      case 'gameCommand': {
+      case 'buildDistrict':
+      case 'demolish': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);
         if (!engine) return;
-        engine.handleCommand(clientId, msg.command);
+        const result = engine.handleCommand(clientId, msg);
+        if (result && result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
         break;
       }
 
@@ -194,7 +229,7 @@ function startServer(options = {}) {
 
   return new Promise((resolve) => {
     httpServer.listen(port, () => {
-      if (log) console.log(`[server] RTS game server on port ${port}`);
+      if (log) console.log(`[server] Colony 4X game server on port ${port}`);
       resolve({
         port: httpServer.address().port,
         close: () => {
