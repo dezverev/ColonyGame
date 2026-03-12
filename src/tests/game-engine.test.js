@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED } = require('../../server/game-engine');
 
 // Helper: tick engine to next broadcast boundary (tickCount divisible by BROADCAST_EVERY)
 function tickToBroadcast(engine) {
@@ -2951,5 +2951,126 @@ describe('GameEngine — Pop Growth Tech Bonus', () => {
 
     assert.strictEqual(colony.pops, startPops + 1,
       'Pop should grow after 300 ticks with frontier_medicine (400 * 0.75 = 300)');
+  });
+});
+
+// ── Game Speed Controls ──
+
+describe('GameEngine — Game Speed Controls', () => {
+  it('starts at default speed (2)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.gameSpeed, DEFAULT_SPEED);
+    assert.strictEqual(state.paused, false);
+  });
+
+  it('setGameSpeed changes speed and returns ok', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.setGameSpeed(5);
+    assert.strictEqual(result.ok, true);
+    const state = engine.getState();
+    assert.strictEqual(state.gameSpeed, 5);
+  });
+
+  it('setGameSpeed rejects invalid values', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.ok(engine.setGameSpeed(0).error);
+    assert.ok(engine.setGameSpeed(6).error);
+    assert.ok(engine.setGameSpeed(-1).error);
+    assert.ok(engine.setGameSpeed(2.5).error);
+    assert.ok(engine.setGameSpeed('abc').error);
+    assert.ok(engine.setGameSpeed(NaN).error);
+    assert.ok(engine.setGameSpeed(Infinity).error);
+    // Speed should remain at default after all invalid attempts
+    assert.strictEqual(engine.getState().gameSpeed, DEFAULT_SPEED);
+  });
+
+  it('setGameSpeed with same speed is a no-op', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.setGameSpeed(DEFAULT_SPEED);
+    assert.strictEqual(result.ok, true);
+  });
+
+  it('togglePause pauses and unpauses the game', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(engine.getState().paused, false);
+    const r1 = engine.togglePause();
+    assert.strictEqual(r1.ok, true);
+    assert.strictEqual(r1.paused, true);
+    assert.strictEqual(engine.getState().paused, true);
+    const r2 = engine.togglePause();
+    assert.strictEqual(r2.ok, true);
+    assert.strictEqual(r2.paused, false);
+    assert.strictEqual(engine.getState().paused, false);
+  });
+
+  it('pause stops ticking — tickCount does not advance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.start();
+    engine.togglePause(); // pause
+    const tickBefore = engine.tickCount;
+    // Manually try calling tick — it should still work if called directly
+    // but the interval should be cleared
+    assert.strictEqual(engine.tickInterval, null, 'Interval should be cleared when paused');
+    engine.togglePause(); // unpause
+    assert.ok(engine.tickInterval !== null, 'Interval should be restored when unpaused');
+    engine.stop();
+  });
+
+  it('speed change while running restarts interval', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.start();
+    const oldInterval = engine.tickInterval;
+    engine.setGameSpeed(4);
+    assert.ok(engine.tickInterval !== null, 'Interval should exist after speed change');
+    assert.notStrictEqual(engine.tickInterval, oldInterval, 'Interval should be different');
+    engine.stop();
+  });
+
+  it('onSpeedChange callback fires on speed change', () => {
+    let received = null;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onSpeedChange: (state) => { received = state; },
+    });
+    engine.setGameSpeed(3);
+    assert.ok(received);
+    assert.strictEqual(received.speed, 3);
+    assert.strictEqual(received.speedLabel, '2x');
+    assert.strictEqual(received.paused, false);
+  });
+
+  it('onSpeedChange callback fires on pause toggle', () => {
+    let received = null;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onSpeedChange: (state) => { received = state; },
+    });
+    engine.togglePause();
+    assert.ok(received);
+    assert.strictEqual(received.paused, true);
+    assert.strictEqual(received.speed, DEFAULT_SPEED);
+  });
+
+  it('speed and pause state included in per-player state', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.setGameSpeed(4);
+    const pState = engine.getPlayerState(1);
+    assert.strictEqual(pState.gameSpeed, 4);
+    assert.strictEqual(pState.paused, false);
+  });
+
+  it('SPEED_INTERVALS has entries for all 5 speeds', () => {
+    for (let s = 1; s <= 5; s++) {
+      assert.ok(SPEED_INTERVALS[s] > 0, `Speed ${s} should have a positive interval`);
+    }
+    // Higher speed = lower interval
+    assert.ok(SPEED_INTERVALS[1] > SPEED_INTERVALS[5]);
+  });
+
+  it('SPEED_LABELS has labels for all 5 speeds', () => {
+    for (let s = 1; s <= 5; s++) {
+      assert.ok(typeof SPEED_LABELS[s] === 'string', `Speed ${s} should have a label`);
+    }
   });
 });

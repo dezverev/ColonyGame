@@ -189,6 +189,13 @@ function startServer(options = {}) {
               if (ws) send(ws, { type: 'gameEvent', ...event });
             }
           },
+          onSpeedChange: (speedState) => {
+            const msg = { type: 'speedChanged', ...speedState };
+            for (const [pid] of result.room.players) {
+              const pws = clients.get(pid);
+              if (pws) send(pws, msg);
+            }
+          },
           onGameOver: (data) => {
             const msg = { type: 'gameOver', ...data };
             for (const [pid] of result.room.players) {
@@ -231,6 +238,40 @@ function startServer(options = {}) {
         if (!engine) return;
         const result = engine.handleCommand(clientId, msg);
         if (result && result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
+        break;
+      }
+
+      case 'setGameSpeed': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const engine = games.get(room.id);
+        if (!engine) return;
+        // Host-only in multiplayer; any player in single-player (practice mode)
+        if (!room.practiceMode && room.hostId !== clientId) {
+          send(ws, { type: 'error', message: 'Only the host can change game speed' });
+          return;
+        }
+        const result = engine.setGameSpeed(msg.speed);
+        if (result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
+        break;
+      }
+
+      case 'togglePause': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const engine = games.get(room.id);
+        if (!engine) return;
+        // Host-only in multiplayer; any player in single-player (practice mode)
+        if (!room.practiceMode && room.hostId !== clientId) {
+          send(ws, { type: 'error', message: 'Only the host can pause the game' });
+          return;
+        }
+        const result = engine.togglePause();
+        if (result.error) {
           send(ws, { type: 'error', message: result.error });
         }
         break;

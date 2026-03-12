@@ -29,6 +29,18 @@ const PLANET_TYPES = {
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
+// Game speed: tick interval in ms per speed level (1-5)
+// Speed 1 = 0.5x, Speed 2 = 1x (default), Speed 3 = 2x, Speed 4 = 3x, Speed 5 = 5x
+const SPEED_INTERVALS = {
+  1: 200,  // 5 Hz — half speed
+  2: 100,  // 10 Hz — normal
+  3: 50,   // 20 Hz — double
+  4: 33,   // ~30 Hz — triple
+  5: 20,   // 50 Hz — 5x
+};
+const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
+const DEFAULT_SPEED = 2;
+
 // Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
   improved_power_plants: {
@@ -107,6 +119,11 @@ class GameEngine {
     this._vpCacheTick = -1;   // tick when VP cache was last computed
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._gameOver = false; // true after game ends
+
+    // Game speed & pause
+    this._gameSpeed = DEFAULT_SPEED;
+    this._paused = false;
+    this.onSpeedChange = options.onSpeedChange || null;
 
     // Match timer: minutes from room settings, 0 = unlimited
     const matchMinutes = Number(room.matchTimer) || 0;
@@ -776,13 +793,57 @@ class GameEngine {
   }
 
   start() {
-    this.tickInterval = setInterval(() => this.tick(), 1000 / this.tickRate);
+    this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[this._gameSpeed]);
   }
 
   stop() {
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
+    }
+  }
+
+  setGameSpeed(speed) {
+    const s = Number(speed);
+    if (!Number.isFinite(s) || s < 1 || s > 5 || Math.floor(s) !== s) {
+      return { error: 'Invalid speed (1-5)' };
+    }
+    if (s === this._gameSpeed) return { ok: true };
+    this._gameSpeed = s;
+    // Restart tick interval at new rate
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[s]);
+    }
+    this._broadcastSpeedState();
+    return { ok: true };
+  }
+
+  togglePause() {
+    this._paused = !this._paused;
+    if (this._paused) {
+      if (this.tickInterval) {
+        clearInterval(this.tickInterval);
+        this.tickInterval = null;
+      }
+    } else {
+      if (!this.tickInterval) {
+        this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[this._gameSpeed]);
+      }
+    }
+    this._broadcastSpeedState();
+    return { ok: true, paused: this._paused };
+  }
+
+  _broadcastSpeedState() {
+    this._cachedState = null;
+    this._cachedStateJSON = null;
+    if (this.onSpeedChange) {
+      this.onSpeedChange({
+        speed: this._gameSpeed,
+        speedLabel: SPEED_LABELS[this._gameSpeed],
+        paused: this._paused,
+      });
     }
   }
 
@@ -995,6 +1056,8 @@ class GameEngine {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
     }
+    state.gameSpeed = this._gameSpeed;
+    state.paused = this._paused;
     this._cachedState = state;
     return state;
   }
@@ -1044,6 +1107,8 @@ class GameEngine {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
     }
+    state.gameSpeed = this._gameSpeed;
+    state.paused = this._paused;
 
     return state;
   }
@@ -1117,4 +1182,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, generateGalaxy, assignStartingSystems };

@@ -271,4 +271,75 @@ describe('Server Integration', () => {
     assert.strictEqual(chatMsg.text, 'Hello!');
     assert.strictEqual(chatMsg.from, 'Alice');
   });
+
+  it('game speed controls via protocol', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+    await waitForMessage(ws, m => m.type === 'welcome');
+
+    // Create practice room (single-player) and launch
+    send(ws, { type: 'createRoom', name: 'Speed Test', practiceMode: true });
+    await waitForMessage(ws, m => m.type === 'roomJoined');
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+    assert.strictEqual(init.gameSpeed, 2, 'Default speed should be 2');
+    assert.strictEqual(init.paused, false);
+
+    // Change speed
+    send(ws, { type: 'setGameSpeed', speed: 4 });
+    const speedMsg = await waitForMessage(ws, m => m.type === 'speedChanged');
+    assert.strictEqual(speedMsg.speed, 4);
+    assert.strictEqual(speedMsg.speedLabel, '3x');
+    assert.strictEqual(speedMsg.paused, false);
+
+    // Pause
+    send(ws, { type: 'togglePause' });
+    const pauseMsg = await waitForMessage(ws, m => m.type === 'speedChanged');
+    assert.strictEqual(pauseMsg.paused, true);
+    assert.strictEqual(pauseMsg.speed, 4);
+
+    // Unpause
+    send(ws, { type: 'togglePause' });
+    const unpauseMsg = await waitForMessage(ws, m => m.type === 'speedChanged');
+    assert.strictEqual(unpauseMsg.paused, false);
+  });
+
+  it('non-host cannot change speed in multiplayer', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws1 = await connectWs(srv.port);
+    const ws2 = await connectWs(srv.port);
+    t.after(() => { ws1.close(); ws2.close(); });
+    await waitForMessage(ws1, m => m.type === 'welcome');
+    await waitForMessage(ws2, m => m.type === 'welcome');
+
+    // Host creates room (not practice mode)
+    send(ws1, { type: 'createRoom', name: 'MP Speed' });
+    const joined = await waitForMessage(ws1, m => m.type === 'roomJoined');
+    const roomId = joined.room.id;
+
+    send(ws2, { type: 'joinRoom', roomId });
+    await waitForMessage(ws2, m => m.type === 'roomJoined');
+
+    // Both ready and launch
+    send(ws2, { type: 'toggleReady' });
+    await waitForMessage(ws1, m => m.type === 'roomUpdate');
+    send(ws1, { type: 'launchGame' });
+    await waitForMessage(ws1, m => m.type === 'gameInit');
+    await waitForMessage(ws2, m => m.type === 'gameInit');
+
+    // Non-host tries to change speed — should get error
+    send(ws2, { type: 'setGameSpeed', speed: 5 });
+    const errMsg = await waitForMessage(ws2, m => m.type === 'error');
+    assert.ok(errMsg.message.includes('host'));
+
+    // Non-host tries to pause — should get error
+    send(ws2, { type: 'togglePause' });
+    const errMsg2 = await waitForMessage(ws2, m => m.type === 'error');
+    assert.ok(errMsg2.message.includes('host'));
+  });
 });

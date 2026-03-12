@@ -120,6 +120,8 @@
           matchTimerEnabled: msg.matchTimerEnabled || false,
           matchTicksRemaining: msg.matchTicksRemaining || 0,
           galaxy: msg.galaxy || null,
+          gameSpeed: msg.gameSpeed || 2,
+          paused: msg.paused || false,
         };
         _refreshPlayerCache();
         // Reset game-over state
@@ -135,6 +137,7 @@
           if (_cachedMyColony) window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _updateViewUI();
+        _updateSpeedDisplay();
         // Start 2Hz HUD refresh
         if (_uiInterval) clearInterval(_uiInterval);
         _uiInterval = setInterval(_updateHUD, 500);
@@ -148,6 +151,8 @@
           gameState.colonies = msg.colonies;
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
+          if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
+          if (msg.paused !== undefined) gameState.paused = msg.paused;
           _refreshPlayerCache();
           // Update Three.js colony view
           if (currentView === 'colony' && window.ColonyRenderer) {
@@ -177,6 +182,14 @@
           if (toastText) {
             _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
           }
+        }
+        break;
+
+      case 'speedChanged':
+        if (gameState) {
+          gameState.gameSpeed = msg.speed;
+          gameState.paused = msg.paused;
+          _updateSpeedDisplay();
         }
         break;
 
@@ -242,6 +255,8 @@
     researchNet: document.getElementById('res-research-net'),
     influence: document.getElementById('res-influence'),
   };
+  const statusSpeed = document.getElementById('status-speed');
+  const pauseOverlay = document.getElementById('pause-overlay');
   const statusMonth = document.getElementById('status-month');
   const statusPops = document.getElementById('status-pops');
   const statusGrowth = document.getElementById('status-growth');
@@ -518,6 +533,18 @@
     if (!gameState) { _cachedMyPlayer = null; _cachedMyColony = null; return; }
     _cachedMyPlayer = gameState.players.find(p => p.id === gameState.yourId) || null;
     _cachedMyColony = gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
+  const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
+
+  function _updateSpeedDisplay() {
+    if (!gameState) return;
+    const label = SPEED_LABELS[gameState.gameSpeed] || '1x';
+    if (statusSpeed) statusSpeed.textContent = label;
+    if (pauseOverlay) {
+      if (gameState.paused) pauseOverlay.classList.remove('hidden');
+      else pauseOverlay.classList.add('hidden');
+    }
   }
 
   function _getMyPlayer() {
@@ -947,6 +974,19 @@
       if (systemPanel && !systemPanel.classList.contains('hidden')) {
         systemPanel.classList.add('hidden');
       }
+    }
+    // Speed controls: +/= to speed up, - to slow down, Space to pause
+    if (e.key === '+' || e.key === '=') {
+      const cur = (gameState && gameState.gameSpeed) || 2;
+      if (cur < 5) send({ type: 'setGameSpeed', speed: cur + 1 });
+    }
+    if (e.key === '-') {
+      const cur = (gameState && gameState.gameSpeed) || 2;
+      if (cur > 1) send({ type: 'setGameSpeed', speed: cur - 1 });
+    }
+    if (e.key === ' ') {
+      e.preventDefault();
+      send({ type: 'togglePause' });
     }
   });
 

@@ -830,3 +830,42 @@ Each entry records an iteration of automated development.
 - Counter incremented at queue time (not completion time) so the 4th queued district gets full build time even if earlier ones haven't finished
 
 **Next:** Planet type signature bonuses
+
+---
+
+## Entry 25 — 2026-03-12 — Game Speed Controls
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- 5-speed game speed system (0.5x, 1x, 2x, 3x, 5x) with pause/unpause toggle
+- Server: `setGameSpeed(speed)` and `togglePause()` methods on GameEngine that dynamically change the tick interval
+- Server: `SPEED_INTERVALS` lookup (speed 1=200ms, 2=100ms, 3=50ms, 4=33ms, 5=20ms) and `SPEED_LABELS` for display
+- Server: `onSpeedChange` callback broadcasts `speedChanged` messages to all room players
+- Protocol: `setGameSpeed` and `togglePause` commands with host-only enforcement in multiplayer (any player in practice mode)
+- Client: Speed indicator in status bar showing current speed label (e.g., "2x")
+- Client: "PAUSED" overlay centered on screen when game is paused
+- Client: Keyboard shortcuts — +/= to speed up, - to slow down, Space to toggle pause
+- Speed and pause state included in `gameInit`, `gameState`, and `getPlayerState` payloads
+
+**Files changed:**
+- `server/game-engine.js` — added SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED constants; added _gameSpeed, _paused, onSpeedChange to constructor; added setGameSpeed(), togglePause(), _broadcastSpeedState() methods; updated start() to use speed-based interval; added speed/pause to getState() and getPlayerState(); updated exports
+- `server/server.js` — added setGameSpeed and togglePause message handlers with host-only validation; wired onSpeedChange callback to broadcast speedChanged to room
+- `src/public/index.html` — added speed indicator span in status bar; added pause overlay div
+- `src/public/css/style.css` — added #status-speed and #pause-overlay styles
+- `src/public/js/app.js` — added speedChanged message handler; stored speed/pause in gameState; added _updateSpeedDisplay(); added keyboard shortcuts (+/-/Space); added SPEED_LABELS client-side lookup
+- `src/tests/game-engine.test.js` — 12 new unit tests for speed controls
+- `src/tests/server-integration.test.js` — 2 new integration tests (protocol speed controls, host-only enforcement)
+- `devguide/design.md` — marked game speed control tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 347 total (14 new — 12 unit + 2 integration). All passing.
+
+**Key decisions:**
+- Speed changes tick interval rather than MONTH_TICKS — simpler implementation, all game systems (construction, growth, resources) scale uniformly
+- Default speed is 2 (1x/100ms) matching the original 10Hz tick rate — no behavioral change for existing games
+- Cache invalidation on speed/pause change prevents stale state reads
+- Host-only control in multiplayer but any player can control in practice mode — solo players need full control for playtesting
+
+**Next:** Planet type signature bonuses (R21 priority #2)
