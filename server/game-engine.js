@@ -867,13 +867,24 @@ class GameEngine {
     // Alloys stockpiled / 25
     const alloysVP = Math.floor(state.resources.alloys / 25);
 
-    // Total research / 100
+    // Total research / 50
     const totalResearch = (state.resources.research.physics || 0)
       + (state.resources.research.society || 0)
       + (state.resources.research.engineering || 0);
-    const researchVP = Math.floor(totalResearch / 100);
+    const researchVP = Math.floor(totalResearch / 50);
 
-    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP;
+    // Per-tech VP bonuses: +5 per T1 tech, +10 per T2 tech, +20 per T3 tech
+    let techVP = 0;
+    for (const techId of (state.completedTechs || [])) {
+      const tech = TECH_TREE[techId];
+      if (tech) {
+        if (tech.tier === 1) techVP += 5;
+        else if (tech.tier === 2) techVP += 10;
+        else if (tech.tier === 3) techVP += 20;
+      }
+    }
+
+    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP;
     this._vpCacheTick = this.tickCount;
     this._vpCache.set(playerId, vp);
     return vp;
@@ -937,7 +948,16 @@ class GameEngine {
           alloys: state.resources.alloys,
           alloysVP: Math.floor(state.resources.alloys / 25),
           totalResearch: (state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0),
-          researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 100),
+          researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 50),
+          techs: (state.completedTechs || []).length,
+          techVP: (state.completedTechs || []).reduce((sum, techId) => {
+            const tech = TECH_TREE[techId];
+            if (!tech) return sum;
+            if (tech.tier === 1) return sum + 5;
+            if (tech.tier === 2) return sum + 10;
+            if (tech.tier === 3) return sum + 20;
+            return sum;
+          }, 0),
         },
       });
     }

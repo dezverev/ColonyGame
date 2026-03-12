@@ -2013,14 +2013,14 @@ describe('GameEngine — Victory Points', () => {
     assert.strictEqual(vp, 16 + 4 + 10 + 0);
   });
 
-  it('VP includes total research divided by 100', () => {
+  it('VP includes total research divided by 50', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.playerStates.get(1);
     state.resources.alloys = 0;
     state.resources.research = { physics: 100, society: 100, engineering: 100 };
     const vp = engine._calcVictoryPoints(1);
-    // 8*2=16, 4 districts, 0 alloys, 300/100=3
-    assert.strictEqual(vp, 16 + 4 + 0 + 3);
+    // 8*2=16, 4 districts, 0 alloys, 300/50=6
+    assert.strictEqual(vp, 16 + 4 + 0 + 6);
   });
 
   it('VP is 0 for unknown player', () => {
@@ -2337,11 +2337,11 @@ describe('GameEngine — VP Edge Cases', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.playerStates.get(1);
     state.resources.alloys = 99;  // 99/25 = 3.96 → floor = 3
-    state.resources.research = { physics: 33, society: 33, engineering: 33 }; // 99/100 = 0.99 → floor = 0
+    state.resources.research = { physics: 33, society: 33, engineering: 33 }; // 99/50 = 1.98 → floor = 1
 
     const vp = engine._calcVictoryPoints(1);
-    // 8*2=16, 4 districts, 3 alloyVP, 0 researchVP
-    assert.strictEqual(vp, 16 + 4 + 3 + 0);
+    // 8*2=16, 4 districts, 3 alloyVP, 1 researchVP
+    assert.strictEqual(vp, 16 + 4 + 3 + 1);
   });
 
   it('VP handles zero alloys correctly', () => {
@@ -2382,6 +2382,83 @@ describe('GameEngine — VP Edge Cases', () => {
     const vp = engine._calcVictoryPoints(1);
     // 8*2=16, 4 districts, 75/25=3
     assert.strictEqual(vp, 16 + 4 + 3 + 0);
+  });
+
+  it('VP research weight uses divisor of 50 (not 100)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.resources.research = { physics: 50, society: 0, engineering: 0 };
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 50/50=1 researchVP
+    assert.strictEqual(vp, 16 + 4 + 0 + 1);
+  });
+
+  it('VP includes +5 per completed T1 tech', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.completedTechs = ['improved_power_plants'];
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research, 1 T1 tech = +5
+    assert.strictEqual(vp, 16 + 4 + 0 + 0 + 5);
+  });
+
+  it('VP includes +10 per completed T2 tech', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.completedTechs = ['advanced_reactors'];
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research, 1 T2 tech = +10
+    assert.strictEqual(vp, 16 + 4 + 0 + 0 + 10);
+  });
+
+  it('VP sums tech bonuses across multiple completed techs', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.completedTechs = ['improved_power_plants', 'frontier_medicine', 'advanced_reactors'];
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research, 2 T1 (10) + 1 T2 (10) = +20
+    assert.strictEqual(vp, 16 + 4 + 0 + 0 + 20);
+  });
+
+  it('VP tech bonus is 0 when no techs completed', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.completedTechs = [];
+    const vp = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp, 16 + 4 + 0 + 0);
+  });
+
+  it('gameOver breakdown includes techs and techVP fields', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    engine.playerStates.get(1).completedTechs = ['improved_power_plants', 'advanced_reactors'];
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    const breakdown = gameOverData.scores[0].breakdown;
+    assert.strictEqual(breakdown.techs, 2);
+    assert.strictEqual(breakdown.techVP, 15); // 1 T1 (+5) + 1 T2 (+10) = 15
+  });
+
+  it('all 6 current techs give +30 total VP (3×T1 + 3×T2)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.completedTechs = [
+      'improved_power_plants', 'frontier_medicine', 'improved_mining',
+      'advanced_reactors', 'gene_crops', 'deep_mining'
+    ];
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research, 3×5 + 3×10 = 45
+    assert.strictEqual(vp, 16 + 4 + 0 + 0 + 45);
   });
 });
 

@@ -1152,14 +1152,15 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
         `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
         `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
         `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
-        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td></tr>`;
+        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
+        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;

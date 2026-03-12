@@ -1030,3 +1030,34 @@ Each entry records an iteration of automated development.
 - Event ticker positioned below status bar at top-center, separate from toasts (right side) — two distinct notification channels
 
 **Next:** Base capital housing reduction 10→8 (R25 priority #4), or starting planet variety, or colony personality system (R28 priority #2)
+
+---
+
+## Entry 30 — 2026-03-12 — Balance Fix: Research VP Rebalance + Per-Tech VP Bonuses
+
+**Phase:** 4 (Technology & Research)
+**Status:** Complete
+
+**What was built:**
+- Doubled research VP contribution: changed VP formula from `totalResearch/100` to `totalResearch/50` in `_calcVictoryPoints` and `_triggerGameOver` breakdown
+- Added per-tech VP bonuses: +5 VP per completed T1 tech, +10 VP per T2 tech, +20 VP per T3 tech (when T3 exists)
+- Updated game-over breakdown to include `techs` (count) and `techVP` (bonus VP from completed techs) fields
+- Updated client post-game scoreboard table to show Techs column with count and VP contribution
+- A player who researches all 6 current techs gets +45 VP bonus (3×5 + 3×10) plus doubled research stockpile VP — makes "tech rush" a viable strategy
+
+**Files changed:**
+- `server/game-engine.js` — `_calcVictoryPoints` research divisor 100→50, techVP loop over completedTechs; `_triggerGameOver` breakdown with techs/techVP fields
+- `src/public/js/app.js` — game-over scoreboard Techs column
+- `src/tests/game-engine.test.js` — updated 2 existing VP tests (research divisor, fractional values), added 7 new tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 502 total (7 new: research divisor=50, T1 tech +5 VP, T2 tech +10 VP, multi-tech sum, zero techs, gameOver breakdown techs/techVP, all 6 techs = +45 VP). All passing.
+
+**Key decisions:**
+- Per-tech VP bonuses are flat (+5/+10/+20 by tier) rather than percentage-based — predictable, easy to reason about during play
+- techVP computed in a loop over completedTechs using TECH_TREE tier lookup — future T3 techs at +20 VP each will automatically work
+- Research divisor change from 100→50 means 1 Research district (producing 12 research/month across 3 tracks) generates ~0.24 VP/month from stockpile alone, plus tech completion bonuses
+- Game-over breakdown shows both tech count and tech VP separately for clarity
+
+**Next:** Science ships (game-designer R29 priority #1) or colony crisis events (R29 priority #2)
