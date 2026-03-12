@@ -119,9 +119,10 @@
           yourId: msg.yourId,
         };
         showScreen('game');
-        // Initialize Three.js renderer and show first colony
+        // Initialize Three.js renderer and wire tile selection
         if (window.ColonyRenderer) {
           window.ColonyRenderer.init();
+          window.ColonyRenderer.setOnTileSelect(_onTileSelect);
           const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
           if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
         }
@@ -167,6 +168,133 @@
       launchBtn.classList.add('hidden');
     }
   }
+
+  // ── District definitions (client-side mirror for UI) ──
+  const DISTRICT_UI = {
+    housing:     { label: 'Housing',     color: '#ecf0f1', cost: { minerals: 100 }, produces: '+5 Housing', consumes: '-1 Energy' },
+    generator:   { label: 'Generator',   color: '#f1c40f', cost: { minerals: 100 }, produces: '+6 Energy', consumes: '' },
+    mining:      { label: 'Mining',      color: '#95a5a6', cost: { minerals: 100 }, produces: '+6 Minerals', consumes: '' },
+    agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
+    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+3 Alloys', consumes: '-3 Energy' },
+    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
+  };
+
+  // ── Tile selection UI ──
+  const buildMenu = document.getElementById('build-menu');
+  const buildMenuOptions = document.getElementById('build-menu-options');
+  const buildMenuClose = document.getElementById('build-menu-close');
+  const districtInfo = document.getElementById('district-info');
+  const districtInfoTitle = document.getElementById('district-info-title');
+  const districtInfoBody = document.getElementById('district-info-body');
+  const districtInfoClose = document.getElementById('district-info-close');
+  const districtDemolishBtn = document.getElementById('district-demolish-btn');
+
+  let _selectedTileData = null;
+
+  function _onTileSelect(tileData) {
+    _hideAllPanels();
+    _selectedTileData = tileData;
+    if (!tileData) return;
+
+    if (tileData.empty) {
+      _showBuildMenu(tileData);
+    } else if (tileData.district) {
+      _showDistrictInfo(tileData);
+    }
+    // construction tiles: no panel (just highlight)
+  }
+
+  function _hideAllPanels() {
+    buildMenu.classList.add('hidden');
+    districtInfo.classList.add('hidden');
+  }
+
+  function _showBuildMenu(tileData) {
+    buildMenuOptions.innerHTML = '';
+    const myPlayer = _getMyPlayer();
+    const myColony = _getMyColony();
+    const slotsUsed = myColony ? myColony.districts.length + myColony.buildQueue.length : 0;
+    const slotsFull = myColony ? slotsUsed >= myColony.planet.size : true;
+    const queueFull = myColony ? myColony.buildQueue.length >= 3 : true;
+
+    for (const [type, ui] of Object.entries(DISTRICT_UI)) {
+      const btn = document.createElement('div');
+      btn.className = 'build-option';
+
+      let canAfford = true;
+      const costParts = [];
+      for (const [res, amt] of Object.entries(ui.cost)) {
+        costParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAfford = false;
+      }
+
+      if (!canAfford || slotsFull || queueFull) {
+        btn.classList.add('disabled');
+      }
+
+      btn.innerHTML =
+        `<div class="build-option-swatch" style="background:${ui.color}"></div>` +
+        `<div class="build-option-name">${ui.label}</div>` +
+        `<div class="build-option-prod">${ui.produces}</div>` +
+        `<div class="build-option-cost">${costParts.join(', ')}</div>`;
+
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildDistrict', colonyId: myColony.id, districtType: type });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(btn);
+    }
+
+    buildMenu.classList.remove('hidden');
+  }
+
+  function _showDistrictInfo(tileData) {
+    const d = tileData.district;
+    const ui = DISTRICT_UI[d.type];
+    if (!ui) return;
+
+    districtInfoTitle.textContent = ui.label + ' District';
+    districtInfoBody.innerHTML =
+      `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${ui.label}</span></div>` +
+      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:#2ecc71">${ui.produces}</span></div>` : '') +
+      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:#e74c3c">${ui.consumes}</span></div>` : '');
+
+    // Show demolish button (hide for capital buildings if needed)
+    districtDemolishBtn.classList.remove('hidden');
+    districtDemolishBtn.onclick = () => {
+      const myColony = _getMyColony();
+      if (!myColony || !d.id) return;
+      send({ type: 'demolish', colonyId: myColony.id, districtId: d.id });
+      _hideAllPanels();
+      if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+    };
+
+    districtInfo.classList.remove('hidden');
+  }
+
+  function _getMyPlayer() {
+    if (!gameState) return null;
+    return gameState.players.find(p => p.id === gameState.yourId) || null;
+  }
+
+  function _getMyColony() {
+    if (!gameState) return null;
+    return gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
+  // Panel close buttons
+  if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
+    _hideAllPanels();
+    if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+  });
+  if (districtInfoClose) districtInfoClose.addEventListener('click', () => {
+    _hideAllPanels();
+    if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+  });
 
   // ── Button wiring ──
   nameSubmit.addEventListener('click', () => {

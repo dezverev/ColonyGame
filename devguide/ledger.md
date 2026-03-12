@@ -453,3 +453,38 @@ Each entry records an iteration of automated development.
 - Exposed ColonyRenderer on window for cross-module access, consistent with GameClient pattern
 
 **Next:** CLIENT UX SPRINT 4/5 — Raycaster click interaction (click empty tile to build, click district for info/demolish), selected tile highlight
+
+---
+
+## Entry 15 — 2026-03-11 — CLIENT UX SPRINT 4/5: Click Interaction + Build/Demolish UI
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Three.js Raycaster click detection on colony grid tiles — left-click any tile to select it
+- Selected tile highlight: glowing green ring (emissive MeshStandardMaterial) appears under selected tile
+- Build menu (HTML overlay, bottom-center): appears on empty tile click, shows all 6 district types with color swatch, name, production preview, and cost. Grayed out if unaffordable, slots full, or queue full. Click to send `buildDistrict` command
+- District info panel (HTML overlay, right side): appears on built district click, shows type, output, upkeep. Demolish button sends `demolish` command
+- Escape key and X buttons deselect tile and close panels
+- Client-side DISTRICT_UI mirror for rendering costs/production without server round-trip
+- Wired renderer → app.js via `setOnTileSelect` callback pattern
+
+**Files changed:**
+- `src/public/js/renderer.js` — raycaster, mouse vector, click handler, tile selection/deselection, highlight mesh, public API (setOnTileSelect, deselectTile, getSelectedTile, getCurrentColony)
+- `src/public/js/app.js` — DISTRICT_UI data, _onTileSelect handler, _showBuildMenu, _showDistrictInfo, _hideAllPanels, panel close wiring, gameInit wires setOnTileSelect
+- `src/public/index.html` — build-menu and district-info panel HTML inside colony-ui
+- `src/public/css/style.css` — game-panel, build-menu, build-option, district-info, demolish-btn styles
+- `devguide/design.md` — marked Sprint 4/5 complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (client-side UI — no new server tests needed).
+
+**Key decisions:**
+- Used callback pattern (setOnTileSelect) rather than events for renderer→app communication — simple, direct, no event system needed
+- Build menu shows all 6 types in a 2-column grid with affordability checks against current player resources
+- District info panel on right side keeps it out of the way of the colony grid
+- No server changes needed — existing buildDistrict and demolish commands handle all the logic
+- Highlight uses emissive green (#00ffaa) material for visibility against dark space theme
+
+**Next:** CLIENT UX SPRINT 5/5 — HTML overlay UI (resource bar, status bar, colony info panel with production breakdown)

@@ -121,3 +121,59 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 #game-screen { position: relative; background: #0a0a1a; }
 #render-container { position: absolute; inset: 0; }
 #colony-ui { position: absolute; inset: 0; pointer-events: none; }
+
+/* ── Game Panels ── */
+.game-panel {
+  pointer-events: auto;
+  position: absolute;
+  background: rgba(26, 26, 46, 0.9);
+  backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e;
+  border-radius: 8px;
+  padding: 0.8rem;
+  color: #e0e0e0;
+  font-size: 0.9rem;
+  min-width: 220px;
+}
+.panel-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-weight: bold; font-size: 1rem; margin-bottom: 0.6rem;
+  border-bottom: 1px solid #2a2a4e; padding-bottom: 0.4rem;
+}
+.panel-close {
+  background: none; border: none; color: #888; font-size: 1.2rem;
+  cursor: pointer; line-height: 1; padding: 0 0.2rem;
+}
+.panel-close:hover { color: #e94560; }
+
+/* Build menu — bottom center */
+#build-menu { bottom: 2rem; left: 50%; transform: translateX(-50%); min-width: 360px; }
+#build-menu-options { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+.build-option {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0.6rem 0.4rem; border: 1px solid #2a2a4e; border-radius: 6px;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+  background: rgba(10, 10, 26, 0.6);
+}
+.build-option:hover { border-color: #00ffaa; background: rgba(0, 255, 170, 0.08); }
+.build-option.disabled { opacity: 0.4; cursor: not-allowed; }
+.build-option.disabled:hover { border-color: #2a2a4e; background: rgba(10, 10, 26, 0.6); }
+.build-option-name { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.2rem; }
+.build-option-cost { font-size: 0.75rem; color: #aaa; font-family: monospace; }
+.build-option-prod { font-size: 0.75rem; color: #2ecc71; font-family: monospace; }
+.build-option-swatch {
+  width: 14px; height: 14px; border-radius: 3px; margin-bottom: 0.3rem; border: 1px solid rgba(255,255,255,0.2);
+}
+
+/* District info — right side */
+#district-info { top: 50%; right: 2rem; transform: translateY(-50%); min-width: 200px; }
+#district-info-body { margin-bottom: 0.6rem; line-height: 1.6; }
+#district-info-body .info-row { display: flex; justify-content: space-between; }
+#district-info-body .info-label { color: #aaa; }
+#district-info-body .info-value { font-family: monospace; }
+.demolish-btn {
+  width: 100%; padding: 0.5rem; background: #c0392b; color: #fff;
+  border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
+}
+.demolish-btn:hover { background: #e74c3c; }
+.demolish-btn.hidden { display: none; }

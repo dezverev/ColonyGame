@@ -9,6 +9,13 @@
   let gridGroup = null; // holds terrain tile meshes
   let currentColony = null; // colony data currently being rendered
 
+  // Raycaster for click detection
+  const raycaster = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
+  const mouse = typeof THREE !== 'undefined' ? new THREE.Vector2() : null;
+  let selectedTileIndex = -1; // currently selected tile (-1 = none)
+  let highlightMesh = null;   // glowing outline on selected tile
+  let onTileSelect = null;    // callback: (tileIndex, tileData) => void
+
   // Shared geometry/material pools — created once in init(), reused across rebuilds
   const _geoCache = {};   // key -> BufferGeometry
   const _matCache = {};   // key -> MeshStandardMaterial
@@ -90,6 +97,7 @@
     window.addEventListener('resize', _onResize);
     renderer.domElement.addEventListener('wheel', _onWheel, { passive: false });
     renderer.domElement.addEventListener('mousedown', _onMouseDown);
+    renderer.domElement.addEventListener('click', _onClick);
     window.addEventListener('mousemove', _onMouseMove);
     window.addEventListener('mouseup', _onMouseUp);
     window.addEventListener('keydown', _onKeyDown);
@@ -137,6 +145,13 @@
       _matCache[type] = new THREE.MeshStandardMaterial({ color });
       _matCache[type + '_wire'] = new THREE.MeshStandardMaterial({ color, wireframe: true, opacity: 0.5, transparent: true });
     }
+
+    // Highlight ring for selected tile
+    _geoCache.highlight = new THREE.BoxGeometry(TILE_SIZE, 0.02, TILE_SIZE);
+    _matCache.highlight = new THREE.MeshStandardMaterial({
+      color: 0x00ffaa, emissive: 0x00ffaa, emissiveIntensity: 0.8,
+      opacity: 0.7, transparent: true,
+    });
 
     // Ground — geometry depends on colony size, so we create it on demand (cheap, one-time per layout)
     _matCache.ground = new THREE.MeshStandardMaterial({ color: 0x111122 });
@@ -313,10 +328,76 @@
 
   function _onKeyDown(e) {
     keysDown.add(e.key);
+    if (e.key === 'Escape') _deselectTile();
   }
 
   function _onKeyUp(e) {
     keysDown.delete(e.key);
+  }
+
+  function _onClick(e) {
+    if (e.button !== 0 || !gridGroup || !raycaster) return;
+    // Skip if middle-mouse was dragging
+    if (isDragging) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(gridGroup.children, false);
+
+    for (const hit of intersects) {
+      const idx = hit.object.userData.tileIndex;
+      if (idx !== undefined) {
+        _selectTile(idx);
+        return;
+      }
+    }
+    // Clicked empty space — deselect
+    _deselectTile();
+  }
+
+  function _selectTile(tileIndex) {
+    if (!gridGroup || !currentColony) return;
+    selectedTileIndex = tileIndex;
+
+    // Remove old highlight
+    if (highlightMesh) {
+      gridGroup.remove(highlightMesh);
+      highlightMesh = null;
+    }
+
+    // Find the mesh for this tile (children[0] is ground)
+    const tileMesh = gridGroup.children.find(c => c.userData.tileIndex === tileIndex);
+    if (!tileMesh) return;
+
+    // Add highlight ring at tile position
+    highlightMesh = new THREE.Mesh(_geoCache.highlight, _matCache.highlight);
+    highlightMesh.position.set(tileMesh.position.x, 0.01, tileMesh.position.z);
+    gridGroup.add(highlightMesh);
+
+    // Build tile data for callback
+    const district = currentColony.districts[tileIndex] || null;
+    const queueItem = _findQueueItem(currentColony, tileIndex);
+    const tileData = {
+      index: tileIndex,
+      empty: !district && !queueItem,
+      district: district,
+      construction: queueItem,
+      colonyId: currentColony.id,
+    };
+
+    if (onTileSelect) onTileSelect(tileData);
+  }
+
+  function _deselectTile() {
+    selectedTileIndex = -1;
+    if (highlightMesh && gridGroup) {
+      gridGroup.remove(highlightMesh);
+      highlightMesh = null;
+    }
+    if (onTileSelect) onTileSelect(null);
   }
 
   function _processKeys() {
@@ -364,6 +445,10 @@
     init,
     buildColonyGrid,
     updateFromState,
+    deselectTile: _deselectTile,
+    getSelectedTile: () => selectedTileIndex,
+    getCurrentColony: () => currentColony,
+    setOnTileSelect: (cb) => { onTileSelect = cb; },
   };
 
   if (typeof window !== 'undefined') {

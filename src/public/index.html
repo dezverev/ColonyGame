@@ -68,7 +68,19 @@
   <!-- Game View -->
   <div id="game-screen" class="screen">
     <div id="render-container"></div>
-    <div id="colony-ui"></div>
+    <div id="colony-ui">
+      <!-- Build menu — appears when empty tile clicked -->
+      <div id="build-menu" class="game-panel hidden">
+        <div class="panel-header">Build District<button id="build-menu-close" class="panel-close">&times;</button></div>
+        <div id="build-menu-options"></div>
+      </div>
+      <!-- District info — appears when built district clicked -->
+      <div id="district-info" class="game-panel hidden">
+        <div class="panel-header"><span id="district-info-title">District</span><button id="district-info-close" class="panel-close">&times;</button></div>
+        <div id="district-info-body"></div>
+        <button id="district-demolish-btn" class="demolish-btn">Demolish</button>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
