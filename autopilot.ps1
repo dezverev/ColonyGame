@@ -1,11 +1,12 @@
 # ══════════════════════════════════════════════════════════════
 # autopilot.ps1 — Iterative ColonyGame development automation
 #
-# Each iteration runs a 3-phase pipeline:
+# Each iteration runs a 4-phase pipeline:
 #   1. /status           → assess current project state
 #   2. /game-designer    → analyze gameplay, recommend improvements,
 #                          add work items to design.md
 #   3. /develop          → pick next task, implement, test, commit
+#   4. /perf             → performance audit and fix
 #
 # Usage:
 #   .\autopilot.ps1                      # run 1 iteration
@@ -81,6 +82,21 @@ $design
         Write-Host $result
     } catch {
         Write-Warning "Phase 3 failed: $_"
+    }
+
+    # ── Phase 4: /perf ────────────────────────────────────
+    Log "Phase 4: Performance audit..."
+    $perfPrompt = @"
+/perf
+
+Development output (for context on what changed):
+$result
+"@
+    try {
+        $perf = claude --dangerously-skip-permissions -p $perfPrompt 2>&1 | Out-String
+        Write-Host $perf
+    } catch {
+        Write-Warning "Phase 4 failed: $_"
     }
 
     Log "Iteration $i complete."
