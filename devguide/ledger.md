@@ -198,3 +198,32 @@ Each entry records an iteration of automated development.
 - Starvation resets growth progress to create meaningful penalty for food deficits
 
 **Next:** Early mineral pacing (Mining output 4→6, starting minerals 200→300, Mining cost 150→100)
+
+---
+
+## Entry 7 — 2026-03-11 — Balance Fix: Early Mineral Pacing
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Increased Mining district output from 4 to 6 minerals/month
+- Reduced Mining district build cost from 150 to 100 minerals (now matches agriculture/housing)
+- Increased starting minerals from 200 to 300, enabling 3 immediate district builds
+- Updated Phase 2 district spec to match new Mining values
+- Added 5 new mineral pacing balance tests
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS.mining values, starting minerals
+- `src/tests/game-engine.test.js` — updated 4 existing tests, added 5 new mineral balance tests
+- `devguide/design.md` — marked task complete, updated Phase 2 mining spec
+- `devguide/ledger.md` — this entry
+
+**Tests:** 84 total (63 game-engine + 12 room-manager + 6 integration + 3 performance). All passing.
+
+**Key decisions:**
+- Mining cost aligned with agriculture/housing at 100 minerals — uniform early-game costs simplify player decisions
+- Time to fund a mining district from mining income drops from 37.5 months (150/4) to 16.7 months (100/6), a ~2.2x improvement
+- Starting minerals of 300 allows exactly 3 district builds at 100 each, giving players meaningful opening choices
+
+**Next:** Dead code fix (first-3-districts discount for newly colonized planets), or stale client cleanup + HTML colony UI
