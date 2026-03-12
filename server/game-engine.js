@@ -101,6 +101,8 @@ class GameEngine {
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._pendingEvents = []; // events to flush with next broadcast
+    this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
+    this._vpCacheTick = -1;   // tick when VP cache was last computed
     this._gameOver = false; // true after game ends
 
     // Match timer: minutes from room settings, 0 = unlimited
@@ -219,6 +221,7 @@ class GameEngine {
     this._dirtyPlayers.add(colony.ownerId);
     this._cachedState = null;
     this._cachedStateJSON = null;
+    this._vpCacheTick = -1; // VP depends on colonies — invalidate
   }
 
   // Count total districts (built + in queue)
@@ -345,6 +348,7 @@ class GameEngine {
     }
     this._cachedState = null;
     this._cachedStateJSON = null;
+    this._vpCacheTick = -1; // resources changed — VP depends on alloys/research
   }
 
   // Process construction queues
@@ -568,8 +572,13 @@ class GameEngine {
     return { district: modifiers, growth: growthMultiplier };
   }
 
-  // Calculate victory points for a player
+  // Calculate victory points for a player (tick-scoped cache: O(N) per broadcast instead of O(N²))
   _calcVictoryPoints(playerId) {
+    // Return cached value if computed this tick
+    if (this._vpCacheTick === this.tickCount && this._vpCache.has(playerId)) {
+      return this._vpCache.get(playerId);
+    }
+
     const state = this.playerStates.get(playerId);
     if (!state) return 0;
 
@@ -597,7 +606,10 @@ class GameEngine {
       + (state.resources.research.engineering || 0);
     const researchVP = Math.floor(totalResearch / 100);
 
-    return (totalPops * 2) + totalDistricts + alloysVP + researchVP;
+    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP;
+    this._vpCacheTick = this.tickCount;
+    this._vpCache.set(playerId, vp);
+    return vp;
   }
 
   // Process match timer countdown
