@@ -48,6 +48,8 @@
   const chatInput = document.getElementById('chat-input');
   const canvas = document.getElementById('game-canvas');
   const ctx = canvas.getContext('2d');
+  const minimapCanvas = document.getElementById('minimap-canvas');
+  const minimapCtx = minimapCanvas.getContext('2d');
 
   // ── Screen management ──
   function showScreen(name) {
@@ -224,7 +226,7 @@
       ctx.stroke();
     }
 
-    const playerMap = {};
+    const playerMap = Object.create(null);
     for (const p of players) playerMap[p.id] = p;
 
     // Apply zoom transform
@@ -311,47 +313,42 @@
     ctx.restore();
 
     // Minimap
-    renderMinimap();
+    renderMinimap(playerMap);
   }
 
-  function renderMinimap() {
+  function renderMinimap(playerMap) {
     if (!gameState) return;
-    const mc = document.getElementById('minimap-canvas');
-    const mctx = mc.getContext('2d');
-    const mw = mc.width;
-    const mh = mc.height;
-    const { mapWidth, mapHeight, units, buildings, players } = gameState;
+    const mw = minimapCanvas.width;
+    const mh = minimapCanvas.height;
+    const { mapWidth, mapHeight, units, buildings } = gameState;
 
-    mctx.clearRect(0, 0, mw, mh);
-    mctx.fillStyle = '#1a1a2e';
-    mctx.fillRect(0, 0, mw, mh);
+    minimapCtx.clearRect(0, 0, mw, mh);
+    minimapCtx.fillStyle = '#1a1a2e';
+    minimapCtx.fillRect(0, 0, mw, mh);
 
     const sx = mw / mapWidth;
     const sy = mh / mapHeight;
 
-    const playerMap = {};
-    for (const p of players) playerMap[p.id] = p;
-
     for (const b of buildings) {
       const owner = playerMap[b.ownerId];
-      mctx.fillStyle = owner ? owner.color : '#888';
-      mctx.fillRect(b.x * sx - 2, b.y * sy - 2, 4, 4);
+      minimapCtx.fillStyle = owner ? owner.color : '#888';
+      minimapCtx.fillRect(b.x * sx - 2, b.y * sy - 2, 4, 4);
     }
 
     for (const u of units) {
       const owner = playerMap[u.ownerId];
-      mctx.fillStyle = owner ? owner.color : '#888';
-      mctx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
+      minimapCtx.fillStyle = owner ? owner.color : '#888';
+      minimapCtx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
     }
 
     // Camera viewport indicator
-    mctx.strokeStyle = '#fff';
-    mctx.lineWidth = 1;
+    minimapCtx.strokeStyle = '#fff';
+    minimapCtx.lineWidth = 1;
     const vpX = (camera.x - 10 / camera.zoom) * sx;
     const vpY = (camera.y - 10 / camera.zoom) * sy;
     const vpW = (20 / camera.zoom) * sx;
     const vpH = (20 / camera.zoom) * sy;
-    mctx.strokeRect(vpX, vpY, vpW, vpH);
+    minimapCtx.strokeRect(vpX, vpY, vpW, vpH);
   }
 
   function updateHUD() {
