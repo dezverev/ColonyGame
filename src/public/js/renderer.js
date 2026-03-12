@@ -9,6 +9,16 @@
   let gridGroup = null; // holds terrain tile meshes
   let currentColony = null; // colony data currently being rendered
 
+  // Shared geometry/material pools — created once in init(), reused across rebuilds
+  const _geoCache = {};   // key -> BufferGeometry
+  const _matCache = {};   // key -> MeshStandardMaterial
+
+  // FPS counter (enabled with ?debug=1)
+  let _fpsEnabled = false;
+  let _fpsEl = null;
+  let _fpsFrames = 0;
+  let _fpsLastTime = 0;
+
   // Isometric camera settings
   const ISO_ANGLE_PITCH = Math.atan(1 / Math.sqrt(2)); // ~35.264°
   const ISO_ANGLE_YAW = Math.PI / 4; // 45°
@@ -64,6 +74,18 @@
     directional.position.set(5, 10, 5);
     scene.add(directional);
 
+    // Build shared geometry/material pools
+    _initPools();
+
+    // FPS counter
+    _fpsEnabled = /[?&]debug=1/.test(location.search);
+    if (_fpsEnabled) {
+      _fpsEl = document.createElement('div');
+      _fpsEl.style.cssText = 'position:fixed;top:4px;left:4px;color:#0f0;font:bold 14px monospace;z-index:9999;pointer-events:none';
+      document.body.appendChild(_fpsEl);
+      _fpsLastTime = performance.now();
+    }
+
     // Events
     window.addEventListener('resize', _onResize);
     renderer.domElement.addEventListener('wheel', _onWheel, { passive: false });
@@ -101,16 +123,34 @@
     camera.updateProjectionMatrix();
   }
 
+  // ── Shared geometry/material pools ──
+
+  function _initPools() {
+    // Empty tile
+    _geoCache.empty = new THREE.BoxGeometry(TILE_SIZE * 0.9, TILE_HEIGHT, TILE_SIZE * 0.9);
+    _matCache.empty = new THREE.MeshStandardMaterial({ color: 0x2a2a4e, opacity: 0.6, transparent: true });
+
+    // District types — one geometry + solid material + wireframe material each
+    for (const [type, color] of Object.entries(DISTRICT_COLORS)) {
+      const height = DISTRICT_HEIGHTS[type] || 0.4;
+      _geoCache[type] = new THREE.BoxGeometry(TILE_SIZE * 0.85, height, TILE_SIZE * 0.85);
+      _matCache[type] = new THREE.MeshStandardMaterial({ color });
+      _matCache[type + '_wire'] = new THREE.MeshStandardMaterial({ color, wireframe: true, opacity: 0.5, transparent: true });
+    }
+
+    // Ground — geometry depends on colony size, so we create it on demand (cheap, one-time per layout)
+    _matCache.ground = new THREE.MeshStandardMaterial({ color: 0x111122 });
+  }
+
   // ── Colony Grid ──
 
   function buildColonyGrid(colony) {
-    // Remove old grid
+    // Remove old grid — do NOT dispose shared pool geometry/materials
     if (gridGroup) {
       scene.remove(gridGroup);
-      gridGroup.traverse((child) => {
-        if (child.geometry) child.geometry.dispose();
-        if (child.material) child.material.dispose();
-      });
+      // Only dispose the ground geometry (created per-colony-size)
+      const ground = gridGroup.children[0];
+      if (ground && ground.geometry) ground.geometry.dispose();
     }
 
     gridGroup = new THREE.Group();
@@ -125,10 +165,9 @@
     const offsetX = -gridWidth / 2 + TILE_SIZE / 2;
     const offsetZ = -gridDepth / 2 + TILE_SIZE / 2;
 
-    // Ground plane underneath
+    // Ground plane underneath (geometry varies by colony size, material shared)
     const groundGeo = new THREE.BoxGeometry(gridWidth + 1, 0.05, gridDepth + 1);
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x111122 });
-    const ground = new THREE.Mesh(groundGeo, groundMat);
+    const ground = new THREE.Mesh(groundGeo, _matCache.ground);
     ground.position.set(0, -0.075, 0);
     gridGroup.add(ground);
 
@@ -194,41 +233,25 @@
   };
 
   function _createDistrictMesh(type) {
-    const color = DISTRICT_COLORS[type] || 0xffffff;
     const height = DISTRICT_HEIGHTS[type] || 0.4;
-    const geo = new THREE.BoxGeometry(TILE_SIZE * 0.85, height, TILE_SIZE * 0.85);
-    const mat = new THREE.MeshStandardMaterial({ color });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(_geoCache[type] || _geoCache.empty, _matCache[type] || _matCache.empty);
     mesh.userData.yOffset = height / 2;
     mesh.userData.districtType = type;
     return mesh;
   }
 
   function _createConstructionMesh(queueItem) {
-    const color = DISTRICT_COLORS[queueItem.type] || 0xffffff;
-    const height = DISTRICT_HEIGHTS[queueItem.type] || 0.4;
-    const geo = new THREE.BoxGeometry(TILE_SIZE * 0.85, height, TILE_SIZE * 0.85);
-    const mat = new THREE.MeshStandardMaterial({
-      color,
-      wireframe: true,
-      opacity: 0.5,
-      transparent: true,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const type = queueItem.type;
+    const height = DISTRICT_HEIGHTS[type] || 0.4;
+    const mesh = new THREE.Mesh(_geoCache[type] || _geoCache.empty, _matCache[type + '_wire'] || _matCache.empty);
     mesh.userData.yOffset = height / 2;
     mesh.userData.construction = true;
-    mesh.userData.districtType = queueItem.type;
+    mesh.userData.districtType = type;
     return mesh;
   }
 
   function _createEmptyTileMesh() {
-    const geo = new THREE.BoxGeometry(TILE_SIZE * 0.9, TILE_HEIGHT, TILE_SIZE * 0.9);
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x2a2a4e,
-      opacity: 0.6,
-      transparent: true,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(_geoCache.empty, _matCache.empty);
     mesh.userData.yOffset = TILE_HEIGHT / 2;
     mesh.userData.empty = true;
     return mesh;
@@ -321,6 +344,18 @@
     _processKeys();
     if (renderer && scene && camera) {
       renderer.render(scene, camera);
+    }
+    // FPS counter — update display every 500ms
+    if (_fpsEnabled) {
+      _fpsFrames++;
+      const now = performance.now();
+      if (now - _fpsLastTime >= 500) {
+        const fps = (_fpsFrames / (now - _fpsLastTime)) * 1000;
+        const calls = renderer ? renderer.info.render.calls : 0;
+        _fpsEl.textContent = fps.toFixed(0) + ' FPS | ' + calls + ' draws';
+        _fpsFrames = 0;
+        _fpsLastTime = now;
+      }
     }
   }
 
