@@ -979,7 +979,7 @@ describe('GameEngine — Performance', () => {
     // Measure 100 ticks (includes a monthly cycle)
     const start = process.hrtime.bigint();
     for (let i = 0; i < 100; i++) {
-      engine._dirty = true; // force state serialization every tick for worst-case
+      for (const [pid] of engine.playerStates) engine._dirtyPlayers.add(pid); // force worst-case
       engine._cachedStateJSON = null;
       engine.tick();
     }
@@ -1015,28 +1015,38 @@ describe('GameEngine — Performance', () => {
     assert.ok(avgMs < 5, `Serialization took ${avgMs.toFixed(2)}ms avg, target is <5ms`);
   });
 
-  it('skips broadcast on clean ticks (dirty flag)', () => {
+  it('skips broadcast on clean ticks (per-player dirty tracking)', () => {
     let broadcastCount = 0;
-    const engine = new GameEngine(makeRoom(1), {
+    let broadcastPlayers = [];
+    const engine = new GameEngine(makeRoom(2), {
       tickRate: 10,
-      onTick: () => { broadcastCount++; },
+      onTick: (playerId) => { broadcastCount++; broadcastPlayers.push(playerId); },
     });
 
-    // First tick should broadcast (dirty from init)
+    // First tick should broadcast to all players (dirty from init)
     engine.tick();
-    assert.strictEqual(broadcastCount, 1);
+    assert.strictEqual(broadcastCount, 2, 'Should broadcast to both players on init');
 
-    // Subsequent ticks with no changes should not broadcast
-    engine.tick();
-    engine.tick();
-    engine.tick();
-    assert.strictEqual(broadcastCount, 1, 'Should not broadcast when state is clean');
+    // Run enough ticks past growth/construction activity for a clean state
+    // (colonies with food surplus will have growth ticking — stop growth by filling housing)
+    for (const [, colony] of engine.colonies) {
+      colony.pops = 100; // exceed housing to stop growth
+      engine._invalidateColonyCache(colony);
+    }
+    engine.tick(); // flush dirty
+    broadcastCount = 0;
+    broadcastPlayers = [];
 
-    // Command should trigger broadcast on next tick
+    // Now subsequent ticks with no growth/construction should not broadcast
+    engine.tick();
+    engine.tick();
+    assert.strictEqual(broadcastCount, 0, 'Should not broadcast when no state changes');
+
+    // Command from player 1 should only broadcast to player 1
     const colony = engine.getState().colonies[0];
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
     engine.tick();
-    assert.strictEqual(broadcastCount, 2, 'Should broadcast after command');
+    assert.ok(broadcastPlayers.includes(1), 'Player 1 should receive broadcast after their command');
   });
 
   it('getState payload scales linearly and stays reasonable at 64 colonies', () => {
@@ -1155,7 +1165,6 @@ describe('GameEngine — Performance', () => {
         engine._addBuiltDistrict(colony, 'housing');
       }
     }
-    engine._dirty = true;
     engine._cachedState = null;
     engine._cachedStateJSON = null;
     const json = engine.getStateJSON();
@@ -1256,6 +1265,61 @@ describe('GameEngine — Per-Player State Filtering', () => {
     // Each player's colonies should only be their own
     assert.ok(received.get(1).colonies.every(c => c.ownerId === 1));
     assert.ok(received.get(2).colonies.every(c => c.ownerId === 2));
+  });
+
+  it('per-player dirty tracking only broadcasts to affected players', () => {
+    const broadcasts = new Map(); // playerId -> count
+    const engine = new GameEngine(makeRoom(2), {
+      onTick: (playerId) => {
+        broadcasts.set(playerId, (broadcasts.get(playerId) || 0) + 1);
+      },
+    });
+
+    // First tick broadcasts to all (init dirty)
+    engine.tick();
+    assert.strictEqual(broadcasts.get(1), 1);
+    assert.strictEqual(broadcasts.get(2), 1);
+
+    // Stop growth on all colonies (fill housing) to get clean state
+    for (const [, colony] of engine.colonies) {
+      colony.pops = 100;
+      engine._invalidateColonyCache(colony);
+    }
+    engine.tick(); // flush
+    broadcasts.clear();
+
+    // Player 1 builds — only player 1 should get broadcast
+    const colony1 = engine.getState().colonies.find(c => c.ownerId === 1);
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony1.id, districtType: 'generator' });
+    engine.tick();
+    assert.strictEqual(broadcasts.get(1), 1, 'Player 1 gets broadcast');
+    assert.strictEqual(broadcasts.get(2) || 0, 0, 'Player 2 does NOT get broadcast');
+  });
+
+  it('construction progress broadcasts only to building player each tick', () => {
+    const broadcastCounts = new Map();
+    const engine = new GameEngine(makeRoom(2), {
+      onTick: (playerId) => {
+        broadcastCounts.set(playerId, (broadcastCounts.get(playerId) || 0) + 1);
+      },
+    });
+
+    // Stop growth on all colonies to isolate construction broadcasts
+    for (const [, colony] of engine.colonies) {
+      colony.pops = 100;
+      engine._invalidateColonyCache(colony);
+    }
+    engine.tick();
+    broadcastCounts.clear();
+
+    // Player 1 starts building
+    const colony1 = engine.getState().colonies.find(c => c.ownerId === 1);
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony1.id, districtType: 'generator' });
+
+    // Run 10 ticks — player 1 should get 10 broadcasts, player 2 should get 0
+    for (let i = 0; i < 10; i++) engine.tick();
+    assert.strictEqual(broadcastCounts.get(1), 10, 'Building player gets broadcast each tick');
+    assert.strictEqual(broadcastCounts.get(2) || 0, 0, 'Non-building player gets no broadcasts');
   });
 });
 

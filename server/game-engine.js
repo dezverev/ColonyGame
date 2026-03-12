@@ -95,7 +95,7 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
-    this._dirty = true; // tracks whether state changed since last broadcast
+    this._dirtyPlayers = new Set(); // per-player dirty tracking
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._pendingEvents = []; // events to flush with next broadcast
@@ -108,6 +108,8 @@ class GameEngine {
 
     this._initPlayerStates();
     this._initStartingColonies();
+    // Mark all players dirty so first tick broadcasts initial state
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
   }
 
   _nextId() {
@@ -176,7 +178,9 @@ class GameEngine {
       this._playerColonies.set(ownerId, []);
     }
     this._playerColonies.get(ownerId).push(id);
-    this._dirty = true;
+    this._dirtyPlayers.add(ownerId);
+    this._cachedState = null;
+    this._cachedStateJSON = null;
     return colony;
   }
 
@@ -202,7 +206,7 @@ class GameEngine {
     colony._cachedHousing = null;
     colony._cachedJobs = null;
     colony._cachedProduction = null;
-    this._dirty = true;
+    this._dirtyPlayers.add(colony.ownerId);
     this._cachedState = null;
     this._cachedStateJSON = null;
   }
@@ -322,8 +326,8 @@ class GameEngine {
           food: state.resources.food,
         });
       }
+      this._dirtyPlayers.add(playerId);
     }
-    this._dirty = true;
     this._cachedState = null;
     this._cachedStateJSON = null;
   }
@@ -332,6 +336,10 @@ class GameEngine {
   _processConstruction() {
     for (const [, colony] of this.colonies) {
       if (colony.buildQueue.length === 0) continue;
+      // Mark owner dirty — ticksRemaining changed, client needs updated progress
+      this._dirtyPlayers.add(colony.ownerId);
+      this._cachedState = null;
+      this._cachedStateJSON = null;
       const item = colony.buildQueue[0];
       item.ticksRemaining--;
       if (item.ticksRemaining <= 0) {
@@ -396,6 +404,10 @@ class GameEngine {
       }
 
       colony.growthProgress++;
+      // Mark owner dirty — growth progress changed, client needs updated progress bar
+      this._dirtyPlayers.add(colony.ownerId);
+      this._cachedState = null;
+      this._cachedStateJSON = null;
       if (colony.growthProgress >= growthTarget) {
         colony.pops++;
         colony.growthProgress = 0;
@@ -527,12 +539,12 @@ class GameEngine {
       this.onEvent(events);
     }
 
-    // Only broadcast when state has changed — per-player filtered payloads
-    if (this.onTick && this._dirty) {
-      this._dirty = false;
-      for (const [playerId] of this.playerStates) {
+    // Only broadcast to players whose state actually changed
+    if (this.onTick && this._dirtyPlayers.size > 0) {
+      for (const playerId of this._dirtyPlayers) {
         this.onTick(playerId, this.getPlayerStateJSON(playerId));
       }
+      this._dirtyPlayers.clear();
     }
 
     // Record tick timing
@@ -599,7 +611,7 @@ class GameEngine {
 
         const id = this._nextId();
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
-        this._dirty = true;
+        this._dirtyPlayers.add(playerId);
         this._cachedState = null;
         this._cachedStateJSON = null;
         return { ok: true, id };
@@ -632,7 +644,7 @@ class GameEngine {
             }
           }
           colony.buildQueue.splice(qIdx, 1);
-          this._dirty = true;
+          this._dirtyPlayers.add(playerId);
           this._cachedState = null;
           this._cachedStateJSON = null;
           return { ok: true };
@@ -669,7 +681,7 @@ class GameEngine {
 
         // Set research — replaces any current research in this track (progress preserved)
         state.currentResearch[tech.track] = techId;
-        this._dirty = true;
+        this._dirtyPlayers.add(playerId);
         this._cachedState = null;
         this._cachedStateJSON = null;
         return { ok: true };
