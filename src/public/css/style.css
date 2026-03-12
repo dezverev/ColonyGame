@@ -118,7 +118,7 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 #chat-input { padding: 0.5rem; background: #16213e; color: #fff; border: 1px solid #333; border-radius: 4px; }
 
 /* ── Game View ── */
-#game-screen { position: relative; background: #0a0a1a; }
+#game-screen { background: #0a0a1a; }
 #render-container { position: absolute; inset: 0; }
 #colony-ui { position: absolute; inset: 0; pointer-events: none; }
 
@@ -251,7 +251,7 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 
 /* ── Research Panel ── */
-#research-panel { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 480px; max-width: 540px; z-index: 20; }
+#research-panel { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 480px; max-width: 540px; max-height: 80vh; overflow-y: auto; z-index: 20; }
 #research-tracks { display: flex; gap: 0.6rem; }
 .research-track {
   flex: 1; display: flex; flex-direction: column; gap: 0.4rem;
@@ -291,9 +291,9 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 /* District info — right side */
 #district-info { top: 50%; right: 2rem; transform: translateY(-50%); min-width: 200px; }
 #district-info-body { margin-bottom: 0.6rem; line-height: 1.6; }
-#district-info-body .info-row { display: flex; justify-content: space-between; }
-#district-info-body .info-label { color: #aaa; }
-#district-info-body .info-value { font-family: monospace; }
+.game-panel .info-row { display: flex; justify-content: space-between; }
+.game-panel .info-label { color: #aaa; }
+.game-panel .info-value { font-family: monospace; }
 .demolish-btn {
   width: 100%; padding: 0.5rem; background: #c0392b; color: #fff;
   border: none; border-radius: 4px; cursor: pointer; font-size: 0.85rem;
