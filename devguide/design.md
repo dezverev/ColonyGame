@@ -1,104 +1,79 @@
 # ColonyGame — Design & Implementation Roadmap
 
-Isometric multiplayer RTS where players create rooms, set up games, and compete in real-time strategy battles.
-Built on the rendering foundation and shared assets from IsometricJS.
+Isometric multiplayer space colony 4X game. Players found colonies on alien worlds, research technology, build fleets, explore the galaxy, and compete or cooperate. Rendered with Three.js in isometric 3D. Inspired by Stellaris.
 
 ## Architecture
 
-- **Static file server** (port 4000): `src/dev-client-server.js` — serves client files, falls back to IsometricJS assets
+- **Static file server** (port 4000): `src/dev-client-server.js` — serves client files
 - **WebSocket game server** (port 4001): `server/server.js` — room management, game state, tick loop
-- **Client**: Vanilla JS, Canvas 2D (upgrade to WebGL later), isometric projection from IsometricJS
-- **Shared assets**: Tiles, sprites, and props served from `../IsometricJS/src/public/assets/` as fallback
+- **Client**: Vanilla JS + Three.js — isometric colony view (primary), 3D galaxy map, system view
+- **Rendering**: Three.js OrthographicCamera for isometric, PerspectiveCamera for galaxy/system views
 
 ## Phases
 
-### Phase 1: Foundation
-- [x] Project scaffold (package.json, .gitignore, config)
-- [x] Static file server with IsometricJS asset fallback
-- [x] WebSocket game server
-- [x] Room management (create, join, leave, list)
-- [x] Player name entry
-- [x] Lobby UI (room list, create room dialog)
-- [x] Room view (player list, ready/unready, host controls)
-- [x] Chat in rooms
-- [x] Game launch flow (host launches when all ready)
-- [x] Basic game engine with tick loop
-- [x] Starting units and buildings per player
-- [x] Unit movement commands
-- [x] Unit tests for room-manager, game-engine
-- [x] Integration tests for server WebSocket protocol
+### Phase 1: Foundation Pivot
+- [ ] Add Three.js dependency (CDN link in index.html)
+- [ ] Replace Canvas 2D renderer with Three.js scene setup: create Scene, OrthographicCamera (isometric angle: 35.264° pitch, 45° yaw), WebGLRenderer. Initialize on game start, run requestAnimationFrame loop
+- [ ] Isometric camera controls: scroll-wheel zoom (adjust ortho frustum), middle-mouse drag to pan, arrow keys to pan. Clamp zoom to min/max bounds. Camera always maintains isometric angle
+- [ ] Basic colony terrain: generate a hex or square grid (16x16) of ground tiles using Three.js PlaneGeometry or BoxGeometry with basic color materials. Each tile represents a district slot. Render with slight elevation variation for visual interest
+- [ ] Refactor game-engine.js from RTS to colony 4X: remove unit movement/combat, add colony state (districts[], buildings[], pops, resources), planet properties (size, type, habitability). Keep tick loop and room integration
+- [ ] New resource system in game-engine.js: track per-player resources {energy, minerals, food, alloys, research: {physics, society, engineering}, influence}. Calculate production/consumption each tick based on colony districts and buildings. Starting resources: 100 energy, 200 minerals, 50 food, 50 alloys, 100 influence
+- [ ] Update network protocol: replace moveUnits/gameCommand with colony commands (buildDistrict, buildBuilding, demolish). Server validates ownership, resources, available slots. Client sends command, server processes on next tick
+- [ ] Basic resource HUD: display current resources and net income (per-month equivalent) in a top bar. Update each tick from gameState
+- [ ] Update all tests: remove RTS unit/combat tests, add colony creation, resource calculation, district building, protocol validation tests. Minimum 15 tests covering the new systems
+- [ ] Placeholder colony rendering: render districts as colored 3D boxes on the grid (green=agriculture, yellow=energy, gray=mining, blue=industrial). Buildings as taller boxes on building slots. Show player's colony on game start
 
-### Phase 2: Game View & Rendering
-- [ ] Isometric ground tile rendering using Canvas 2D
-  - Load tile PNGs from IsometricJS shared assets
-  - Render a 50x50 grid of grass tiles
-  - Frustum culling (only draw visible tiles)
-- [ ] Camera controls
-  - Arrow key panning
-  - Edge-of-screen scroll
-  - Middle-mouse drag panning (already started)
-  - Smooth zoom with scroll wheel (already started)
-- [ ] Replace placeholder unit diamonds with sprite rendering
-  - Load sprite sheets from IsometricJS shared assets
-  - Direction-based sprite selection
-  - Idle/run animation states
-- [ ] Replace placeholder building rectangles with proper isometric building rendering
-  - Use IsometricJS Cube/Wall geometry patterns
-  - Building footprints based on size
-- [ ] Minimap improvements
-  - Click-to-pan on minimap
-  - Terrain color coding
-- [ ] Selection improvements
-  - Selection box visual feedback
-  - Multi-select with Shift+click
-  - Select-all of type with Ctrl+click
-  - Double-click to select all of same type on screen
+### Phase 2: Colony Management
+- [ ] District system: 6 district types — Housing (provides housing for 5 pops, costs 50 minerals), Generator (produces 4 energy, costs 75 minerals), Mining (produces 4 minerals, costs 75 minerals), Agriculture (produces 6 food, costs 50 minerals), Industrial (produces 3 alloys, costs 100 minerals 25 energy), Research (produces 3 research each type, costs 100 minerals 50 energy). Districts occupy grid slots. Max districts = planet size (8-20). Build time: 180 ticks (18 seconds)
+- [ ] Population system: pops live in housing (1 pop per housing unit). Pops work district jobs (1 pop per district). Unemployed pops produce 1 research each. Pop growth: +1 pop every 600 ticks (1 minute) if food surplus > 0. Growth halts if food deficit. Pops consume 1 food each per month-equivalent (100 ticks). If food deficit, random pop dies every 200 ticks
+- [ ] Building system: buildings occupy building slots (separate from district grid). Unlock building slots at pop thresholds (slot 1 at 5 pops, slot 2 at 10, etc., max 12 slots). Building types: Administrative Center (capital building, +2 influence, cannot be demolished), Research Lab (+5 physics research, 150 minerals), Engineering Bay (+5 engineering research, 150 minerals), Cultural Center (+5 society research, 150 minerals), Hydroponics Bay (+10 food, 100 minerals), Alloy Foundry (+5 alloys, 150 minerals 50 energy), Civilian Shipyard (enables colony ship production, 200 minerals 100 alloys)
+- [ ] Colony overview UI panel: show colony name, planet type, district grid with built/available slots, building slots, pop count and jobs, local resource production breakdown. Click district slot to build, click building slot to build. Show construction progress bars
+- [ ] Colony list sidebar: list all player colonies with summary (name, pops, production). Click to switch colony view. Highlight capital colony
+- [ ] Construction queue: each colony has a build queue (max 3). Building takes time based on type. Show queue in colony panel with progress and cancel buttons
 
-### Phase 3: Units & Combat
-- [x] Expanded unit definitions with full stats in game-engine.js: worker (30 HP, 3 atk, 0 armor, 2.0 speed, 1 range, 1.5s cooldown, 50g 20w, 1 supply), soldier (60 HP, 10 atk, 2 armor, 1.5 speed, 1 range, 1.0s cooldown, 60g 20w, 1 supply), archer (40 HP, 8 atk, 0 armor, 1.8 speed, 5 range, 1.2s cooldown, 40g 50w, 1 supply), cavalry (70 HP, 12 atk, 1 armor, 3.5 speed, 1 range, 1.3s cooldown, 80g 30w, 2 supply). Add `armor`, `range`, `cooldown`, `cost`, `supplyCost`, `bonusVs` fields to unit defs
-- [ ] Unit counter system: add `bonusVs` multipliers — soldiers deal 1.5x to archers, archers deal 1.5x to cavalry, cavalry deal 1.5x to soldiers, workers deal 0.5x to all military. Apply multiplier in damage calc as `max(1, (atk * bonusMultiplier) - target.armor)`
-- [ ] Attack command: right-click enemy unit sends `attackUnit` command with `unitIds` and `targetUnitId`. Server validates ownership, sets unit state to 'attacking', unit moves toward target until within `range` tiles, then deals damage every `cooldown` seconds. If target moves out of range, pursue. If target dies, go idle
-- [ ] Auto-attack nearby enemies: idle units scan for enemies within 6-tile aggro radius each tick. Acquire nearest enemy (prefer lowest HP if tied on distance). Set state to 'attacking' and engage. Units already attacking don't switch targets unless current target dies
-- [ ] Unit death and removal: when HP <= 0, remove unit from game state Map, broadcast removal in next tick. Client shows 0.5s fade-out at last position. Award kill credit to attacking player for post-game stats
-- [ ] Formation movement: when multiple units are given a move command, spread them in a grid pattern around the target point (1.2 tile spacing). Prevent stacking by offsetting each unit's final position. Closest units get closest positions
-- [ ] Line of sight / fog of war: per-player visibility grid (50x50 booleans). Sight ranges: workers 7, soldiers 5, archers 8, cavalry 9, buildings 8, towers 10. Three states: visible (in LOS), revealed (previously seen — show terrain/buildings but not units), hidden (never seen — black). Server only includes units in `gameState` that are within the receiving player's vision. Client renders semi-transparent black overlay for revealed, opaque black for hidden
+### Phase 3: Galaxy & Exploration
+- [ ] Procedural galaxy generation: on game start, generate N star systems (small=50, medium=100, large=200) as 3D points. Use Poisson disc sampling for even distribution. Connect nearby systems with hyperlanes (Delaunay triangulation, then prune to avg 3-4 connections per system). Each system has: name (generated), star type (yellow/red/blue/white), 1-6 planets
+- [ ] Planet generation per system: each planet has: orbit slot (1-6), size (8-20 district slots), type (Continental, Ocean, Arctic, Desert, Arid, Tropical, Barren, Molten, Gas Giant), habitability (0-100% based on type — Continental/Ocean/Tropical 80%+, Arctic/Desert/Arid 60%, Barren 0%, Gas Giant 0%). Resource modifiers per type (e.g., Desert = +minerals, Ocean = +food, Barren = +minerals but uninhabitable). Only habitable planets (>20% habitability) can be colonized
+- [ ] Galaxy map view (Three.js): render star systems as glowing point sprites or small sphere meshes, colored by star type. Render hyperlanes as lines between connected systems. Player territory shown as colored regions (convex hull or Voronoi). Camera: perspective, orbit controls, zoom to galaxy/system level. Click system to select, double-click to open system view
+- [ ] System view: show star at center, planets on orbital rings. Click planet to see details (type, size, habitability, resources). If colonized, click to open colony view. Show any starbases or fleets in system
+- [ ] Fleet fundamentals: science ship (surveys systems, discovers anomalies), colony ship (founds new colonies, consumed on use), construction ship (builds starbases). Ships move along hyperlanes between systems — travel time based on distance (default 5 seconds per hyperlane hop). Fleet movement shown on galaxy map as animated dots along hyperlane paths
+- [ ] System surveying: unsurveyed systems appear as "?" on galaxy map. Send science ship to survey — takes 10 seconds per planet in system. Surveying reveals planet details (type, size, habitability, resources). May discover anomalies (20% chance per planet — placeholder for now, just bonus resources)
+- [ ] Colonization: build colony ship at Civilian Shipyard (cost: 200 minerals 100 food 100 influence). Send colony ship to habitable surveyed planet. On arrival, colony ship is consumed, new colony founded with 2 starting pops, Administrative Center auto-built. Colony appears in colony list. System claimed for player
+- [ ] Starbase construction: send construction ship to a system to build a starbase (cost: 200 minerals 100 alloys). Starbases claim uncolonized systems for the player. Starbases can be upgraded later for defense/economy. One starbase per system
 
-### Phase 4: Resources & Economy
-- [ ] Resource node world objects on map: gold mines (1500 gold each, rendered as yellow squares), tree clusters (10 trees per cluster, 50 wood each tree, rendered as green circles), stone quarries (800 stone each, rendered as gray squares). Each player spawn gets 1 gold mine, 1 forest cluster, 1 stone quarry nearby. Map center gets 1 rich gold mine (3000 gold). Map edges get 2 extra stone quarries and 2 extra forest clusters. Store as `resourceNodes` Map in game-engine with `{id, type, x, y, amount, maxAmount}`
-- [ ] Worker gathering: right-click resource node sends `gatherResource` command with `unitIds` and `nodeId`. Worker walks to node, gathers for 2 seconds (state: 'gathering'), picks up cargo (8 gold, 10 wood, or 5 stone per trip), walks to nearest town hall (state: 'returning'), deposits cargo (add to player resources), then auto-walks back to same node. If node depleted (amount <= 0), worker goes idle. Workers carry one resource type at a time
-- [ ] Resource node depletion: subtract gathered amount from node on each pickup. When amount <= 0, remove node from map. Client shows visual depletion stages (full/half/quarter/empty) based on amount/maxAmount ratio. Depleted gold mines leave a "depleted mine" marker (cannot be gathered)
-- [ ] Building construction: client sends `placeBuilding` command with `type`, `x`, `y`, `workerId`. Server validates: worker owned by player, sufficient resources, no collision with existing buildings/units. Deduct cost immediately. Create building with `progress: 0.0`. Assigned worker walks to site, increments progress each tick. Construction times: Town Hall 30s, Barracks 20s, Farm 10s, Tower 15s, Stable 20s, Wall 5s. When progress reaches 1.0, building becomes functional. Client shows ghost building during placement (green=valid, red=invalid), progress bar during construction
-- [ ] Building types with costs: Town Hall (300g 200w, drop-off point, produces workers, +10 supply cap), Barracks (150g 100w, produces soldiers and archers), Stable (200g 150w, produces cavalry), Farm (50g 30w, +5 supply cap), Tower (100g 75s, static defense — 8 atk, 7 range, 2s cooldown, auto-attacks enemies), Wall (25g 25s, blocking terrain piece, 200 HP, 1x1 size)
-- [ ] Unit production queue: click building to select it, show production panel with available unit buttons. Click unit button sends `produceUnit` command with `buildingId` and `unitType`. Server validates: building owned by player, building type can produce that unit, sufficient resources, supply available. Deduct cost, add to building's queue (max 5). Each tick decrements production timer. When timer hits 0, spawn unit at rally point (default: 2 tiles south of building). Rally point settable by right-clicking ground while building selected
+### Phase 4: Technology & Research
+- [ ] Tech tree structure: three parallel tracks (Physics, Society, Engineering). Each track has 5 tiers. Each tier has 3-4 tech options. Player researches one tech per track at a time. Research cost scales per tier (tier 1: 500, tier 2: 1000, tier 3: 2000, tier 4: 4000, tier 5: 8000). Research points per tick reduce remaining cost. When cost reaches 0, tech is complete
+- [ ] Physics techs: Tier 1 — Improved Power Plants (+25% Generator output), Laser Weapons I (+10% ship weapon damage), Sensor Arrays (+2 survey speed). Tier 2 — Advanced Reactors (+50% Generator output), Laser Weapons II (+20% damage), Hyperspace Mapping (+25% fleet speed). Tier 3-5 — increasingly powerful versions and new unlocks
+- [ ] Society techs: Tier 1 — Hydroponics (+25% Agriculture output), Colonial Bureaucracy (+1 building slot all colonies), Frontier Medicine (+25% pop growth). Tier 2 — Gene Crops (+50% Agriculture output), Planetary Administration (+2 building slots), Galactic Ambitions (+50 influence cap). Tier 3-5 — advanced versions
+- [ ] Engineering techs: Tier 1 — Improved Mining (+25% Mining output), Alloy Smelting (+25% Industrial output), Corvette Hulls (unlock corvettes). Tier 2 — Deep Mining (+50% Mining output), Advanced Alloys (+50% Industrial output), Destroyer Hulls (unlock destroyers). Tier 3-5 — cruisers, battleships, mega-structures
+- [ ] Research UI: panel showing three tracks side by side, current research per track with progress bar, available techs to pick when current completes, tech details on hover (cost, effect, prerequisites). Locked techs shown grayed with prerequisite chain
+- [ ] Tech effects system: when a tech completes, apply its modifiers to the player's state. Modifiers are multiplicative (e.g., +25% Generator output means all generator districts produce 5 instead of 4). Track active modifiers per player. Send `researchComplete` message to client with new options
 
-### Phase 5: Multiplayer Polish
-- [ ] Win condition — Annihilation: player is eliminated when they have zero buildings. Server checks each tick after a building is destroyed. Last player standing wins. On elimination: remove all remaining units for that player, send `playerEliminated` message to all. When only 1 player remains, send `gameOver` with `{winnerId, stats}`. Stats include: units killed, units lost, resources gathered, buildings built, buildings destroyed, game duration in ticks
-- [ ] Post-game screen: on `gameOver` message, client shows overlay with winner name, per-player stats table, "Return to Lobby" button. Server sets room status to 'finished', cleans up GameEngine. Clicking return sends `leaveRoom`, returns to lobby
-- [ ] Server-authoritative command validation: verify unit ownership on moveUnits/attackUnit/gatherResource, verify building ownership on produceUnit/setRallyPoint, verify resource sufficiency on placeBuilding/produceUnit, verify supply cap on produceUnit. Reject invalid commands silently (send error message to player). Rate limit: max 30 commands/second per player, drop excess
-- [ ] Player disconnect handling: on WebSocket close, start 30-second grace period. If player reconnects within grace period, restore their session (resend gameInit + current gameState). If timeout expires, remove all player units/buildings (elimination). Send `playerDisconnected`/`playerReconnected` messages to room
-- [ ] Spectator mode: join a running game as observer via `spectateGame` command. Spectators see full map (no fog), receive all gameState ticks, cannot send gameCommands. Spectator count shown in room list. Spectators auto-return to lobby on game end
-- [ ] Move confirmation visual: on right-click move command, client draws a green circle at target position that fades out over 1 second. On attack command, draw red circle. Add "ping" effect on minimap at command location
-- [ ] Under-attack alert: server sends `underAttack` event when a player's unit/building first takes damage from a new attacker. Client flashes minimap at attack location (red pulse), shows "Under attack!" text alert that fades after 3 seconds. Throttle to max 1 alert per 5 seconds per player
+### Phase 5: Fleets & Combat
+- [ ] Ship classes: Corvette (cost: 50 alloys, 30 HP, 10 firepower, 5 speed, 1 fleet cap), Destroyer (100 alloys, 80 HP, 30 firepower, 4 speed, 2 fleet cap), Cruiser (200 alloys, 200 HP, 80 firepower, 3 speed, 4 fleet cap), Battleship (400 alloys, 500 HP, 200 firepower, 2 speed, 8 fleet cap). Each ship class must be researched first (corvettes available by default)
+- [ ] Fleet management: group ships into fleets. Fleet speed = slowest ship. Fleet cap starts at 20 (from starbase), increased by techs and starbases. Fleets move between systems along hyperlanes. Fleet UI: list of fleets with composition, location, orders. Click to select, right-click system to move
+- [ ] Shipyard system: build military ships at starbases with shipyard module (upgrade cost: 100 alloys). Queue up to 5 ships. Build time: Corvette 10s, Destroyer 20s, Cruiser 35s, Battleship 60s. Ships spawn at starbase system
+- [ ] Space combat resolution: when hostile fleets occupy same system, combat begins. Each tick: each ship fires at random enemy ship (weighted by fleet cap — bigger ships draw more fire). Damage = firepower vs HP. Ships destroyed at 0 HP. Combat continues until one side is eliminated or retreats. Retreating fleet moves to adjacent friendly system at half speed. Send `combatResult` to involved players with losses
+- [ ] Starbase defense: starbases have base combat stats (100 HP, 40 firepower). Upgraded starbases are stronger. Starbases fight alongside defending fleets. Destroying enemy starbase removes their system claim
+- [ ] Military UI: fleet list panel, fleet composition view, ship build queue at starbases, combat log/notifications. "Fleet destroyed" / "System under attack" alerts
 
-### Phase 6: Maps & Variety
-- [ ] Map definitions (multiple maps)
-  - Size, terrain layout, resource placement, spawn points
-  - Symmetric maps for fairness
-- [ ] Map selection in room settings
-- [ ] Procedural map generation
-  - Noise-based terrain
-  - Guaranteed resource balance per spawn
-- [ ] Terrain types
-  - Grass (normal speed)
-  - Forest (slow, provides wood)
-  - Water (impassable)
-  - Hills (elevation, defense bonus)
+### Phase 6: Diplomacy & Interaction
+- [ ] Diplomatic stances: each player has a stance toward every other player — Neutral (default), Friendly, Rival, War. Changing stance costs influence (10 to change). War can only be declared from Rival stance (must be Rival for 60 seconds first). Peace can be proposed after 120 seconds of war
+- [ ] Communication: players can send diplomatic messages to each other (text + optional trade offer). Messages appear in a diplomacy inbox panel
+- [ ] Trade system: players can propose trades — exchange resources, systems, or treaties. Both players must accept. Active trades last until cancelled or war declared. Trade routes: +10% energy income between trading partners
+- [ ] Alliances: Friendly players can form alliances (costs 50 influence each). Allied players share vision, cannot attack each other, and are pulled into each other's wars. Max 1 alliance per player (with 1 other player in 2-player, or faction-based in larger games)
+- [ ] War & conquest: when at war, fleets can attack enemy systems. Conquering a colony (destroy starbase + have fleet in system for 30 seconds) transfers it to the attacker. Conquered pops are unhappy (-50% output for 120 seconds). War exhaustion builds over time — after 300 seconds, forced peace option becomes available
+- [ ] Diplomacy UI: player list with stances, diplomacy inbox, trade proposal panel, alliance status, war/peace controls
 
-### Phase 7: Advanced Features
-- [ ] Tech tree / upgrades: Town Hall researches Improved Gathering (+25% gather speed, 100g 100w, 30s), Barracks researches Forged Blades (+2 atk for soldiers/cavalry, 150g 75s, 25s) and Leather Armor (+1 armor for archers, 100g 50w, 20s), Stable researches Swift Steeds (+0.5 speed for cavalry, 100g 100w, 25s). Research uses production queue slot. Only one research per building at a time
-- [ ] Special abilities per unit type: Cavalry Charge — active ability, 30s cooldown, unit dashes 4 tiles toward target dealing 2x damage on arrival. Priest (new unit, 60 HP, 1 atk, 0 armor, 1.5 speed, produced at Town Hall, 80g 60w): auto-heals nearest friendly unit within 5 tiles for 3 HP/sec, cannot attack. Catapult (new unit, 80 HP, 25 atk, 0 armor, 0.8 speed, 8 range, 3s cooldown, produced at Siege Workshop — new building 200g 150s): deals splash damage in 2-tile radius, 1.5x damage vs buildings, minimum range 3 tiles
-- [ ] Win condition options selectable in room settings: Annihilation (destroy all enemy buildings — default), Regicide (each player gets a King unit at start, 150 HP, 5 atk, 3 armor — kill enemy King to eliminate them), Timed (15-minute match, score = units killed × 10 + buildings destroyed × 50 + resources gathered, highest score wins)
-- [ ] Commander abilities: pre-match, each player picks 1 of 3 commanders. Each grants 3 abilities on cooldowns. Commander A "Warlord": Rally Cry (selected units +30% speed 10s, 90s CD), Forced March (selected units ignore terrain penalties 15s, 120s CD), War Horn (all military units +3 atk 8s, 180s CD). Commander B "Economist": Supply Drop (+150 gold instantly, 90s CD), Overtime (all workers +50% gather speed 20s, 120s CD), Emergency Reserves (+200 of each resource, 180s CD). Commander C "Fortifier": Quick Walls (place 5 free walls instantly, 90s CD), Garrison (selected building gains 2x HP 20s, 120s CD), Watchtower Network (all towers +5 range 15s, 180s CD)
+### Phase 7: Events, Polish & Win Conditions
+- [ ] Anomaly events: when surveying, anomalies trigger event chains. 10 unique events with choices: e.g., "Ancient Ruins" (choose: excavate for +500 research or preserve for +50 influence), "Derelict Ship" (salvage for free corvette or study for +200 engineering research), "Alien Artifacts" (+research or +alloys). Events add narrative flavor and meaningful choices
+- [ ] Random galaxy events: every 120 seconds, chance of galaxy-wide event. Asteroid storm (random system loses 1 mining district), Solar flare (random system loses power for 30 seconds), Resource boom (random unclaimed system gets bonus resources). Notification to all players
+- [ ] Planet biome rendering: distinct Three.js materials/textures per planet type. Continental (green/blue), Ocean (deep blue), Arctic (white/pale blue), Desert (tan/orange), Tropical (deep green), Arid (brown), Barren (gray). Visible in colony view as ground material and in system view as planet color
+- [ ] Visual effects: fleet warp-in/warp-out animations, combat laser/explosion particles, building construction scaffolding animation, research complete flash, colony founding ceremony effect. Use Three.js particle systems and shader materials
+- [ ] Sound design: ambient space music, UI click sounds, combat sounds, notification chimes, warp drive sound for fleet movement. Use Web Audio API
+- [ ] Win conditions (selectable in room settings): Domination (control 60% of colonizable planets), Research Victory (complete all tier 5 techs in all 3 tracks), Economic Victory (accumulate 10000 of each basic resource simultaneously), Diplomatic Victory (be allied with or have friendly status with all surviving players for 120 continuous seconds). Default: Domination
+- [ ] Post-game screen: on `gameOver`, show overlay with winner, victory type, per-player stats (colonies, techs researched, ships built, ships lost, resources gathered, pops), timeline graph of territory over time. "Return to Lobby" button
+- [ ] Player disconnect handling: on disconnect, start 60-second grace period. AI takes over basic colony management (auto-queue food if deficit, continue existing research). If player reconnects, restore session. If timeout, colonies continue on auto-pilot as "fallen empire" (passive, doesn't expand)
 
 ## Conventions
 
@@ -107,5 +82,6 @@ Built on the rendering foundation and shared assets from IsometricJS.
 - Tests: `node:test` + `node:assert` (Node.js built-in)
 - All game state is server-authoritative
 - Commands: client sends intent, server validates and executes
-- State broadcast: server sends full state each tick (optimize later with deltas)
-- Shared rendering code from IsometricJS: projection.js math
+- State broadcast: server sends colony/fleet updates each tick (optimize later with deltas)
+- Three.js for all rendering — no 2D canvas, no sprites
+- Isometric colony view: OrthographicCamera at 35.264° pitch, 45° yaw

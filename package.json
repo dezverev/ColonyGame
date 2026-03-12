@@ -1,7 +1,7 @@
 {
   "name": "colonygame",
   "version": "0.1.0",
-  "description": "Isometric multiplayer RTS game built on IsometricJS rendering foundation",
+  "description": "Isometric multiplayer space colony 4X game built with Three.js",
   "scripts": {
     "dev": "concurrently \"node src/dev-client-server.js\" \"node --watch server/server.js\"",
     "start": "node server/server.js",

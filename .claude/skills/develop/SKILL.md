@@ -1,10 +1,10 @@
 ---
-name: rts-develop
+name: develop
 description: Analyze ColonyGame state, pick next task from design roadmap, implement it end-to-end with tests, commit, and update the development ledger.
-argument-hint: [optional focus area, e.g. "rendering", "combat", "resources". If omitted, picks the highest-priority unfinished task]
+argument-hint: [optional focus area, e.g. "colonies", "galaxy", "research", "combat". If omitted, picks the highest-priority unfinished task]
 ---
 
-You are the autonomous developer for the ColonyGame project — an isometric multiplayer RTS game. Your job is to advance the project by implementing the next needed feature from the design roadmap, testing it, committing it, and logging your work.
+You are the autonomous developer for the ColonyGame project — an isometric multiplayer space colony 4X game rendered with Three.js. Your job is to advance the project by implementing the next needed feature from the design roadmap, testing it, committing it, and logging your work.
 
 Before writing any code, read CLAUDE.md at the project root for the full architectural reference.
 
@@ -38,19 +38,7 @@ Find the first incomplete task in `devguide/design.md`:
 
 If ALL tasks in the current phase are done, move to the next phase.
 
-### 3. Reference IsometricJS
-
-Before implementing, check if IsometricJS (at `/Users/dz/Source/IsometricJS/`) has relevant code you can adapt:
-
-- **Rendering patterns**: `src/public/js/webglRenderer.js`, `sprites.js`, `groundTiles.js`
-- **Shared modules**: `projection.js`, `collision.js`, `pathfinding.js`
-- **Server patterns**: `server/server.js` message handling, tick loop, validation
-- **Assets**: `src/public/assets/` (tiles, sprites, props) — accessible via asset fallback
-- **Test patterns**: `src/tests/` for test structure and helpers
-
-Adapt patterns to RTS context — don't copy verbatim. The RTS has rooms/matches instead of a persistent world.
-
-### 4. Plan Before Coding
+### 3. Plan Before Coding
 
 Before writing any code, identify:
 
@@ -59,8 +47,9 @@ Before writing any code, identify:
 3. **What files will be created or modified?** List them
 4. **What message types are needed?** Client→Server and Server→Client
 5. **What tests are needed?** Unit tests and/or integration tests
+6. **Does this involve Three.js?** Plan the 3D scene graph additions (geometries, materials, meshes, camera setup)
 
-### 5. Implement
+### 4. Implement
 
 Follow existing conventions:
 - Server modules: plain `module.exports`
@@ -68,6 +57,7 @@ Follow existing conventions:
 - All game state is server-authoritative
 - Validate all inputs server-side
 - Add new `<script>` tags in `index.html` in correct order
+- Three.js loaded via CDN in index.html
 
 #### For server features:
 - Add message handlers in `server/server.js`
@@ -79,7 +69,14 @@ Follow existing conventions:
 - Follow existing UI patterns (DOM manipulation, CSS classes)
 - Add styles in `style.css`
 
-### 6. Write Tests
+#### For Three.js rendering:
+- Colony view: OrthographicCamera, isometric angle (35.264° pitch, 45° yaw)
+- Galaxy map: PerspectiveCamera with orbit controls
+- Use BoxGeometry/PlaneGeometry with MeshStandardMaterial for buildings and terrain
+- Use PointsMaterial or custom shaders for star systems
+- Keep geometry simple — performance matters in browser
+
+### 5. Write Tests
 
 Every feature MUST have tests. Add to `src/tests/`:
 
@@ -94,7 +91,7 @@ const assert = require('node:assert');
 3. Edge cases — boundary values, empty inputs
 4. Integration — WebSocket protocol tests for new message types
 
-### 7. Verify
+### 6. Verify
 
 Run tests:
 ```bash
@@ -111,7 +108,7 @@ curl -s http://localhost:4001/health
 kill %1
 ```
 
-### 8. Commit
+### 7. Commit
 
 Create a descriptive git commit:
 ```bash
@@ -125,7 +122,7 @@ Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
 
 Create or update a PR if on a feature branch.
 
-### 9. Update Ledger
+### 8. Update Ledger
 
 Append a new entry to `devguide/ledger.md`:
 
@@ -149,12 +146,12 @@ Append a new entry to `devguide/ledger.md`:
 **Next:** <what the next iteration should tackle>
 ```
 
-### 10. Update Design Doc
+### 9. Update Design Doc
 
 Mark completed tasks in `devguide/design.md`:
 - Change `- [ ]` to `- [x]` for completed items
 
-### 11. Report
+### 10. Report
 
 Output a summary:
 1. **Task completed** — what was built (2-3 sentences)
@@ -178,7 +175,7 @@ Output a summary:
 - Integration tests for new protocol messages
 
 ### Security
-- Validate unit/building ownership on every command
+- Validate colony/fleet/building ownership on every command
 - Validate numeric inputs with `Number.isFinite()`
 - Never trust client data — server computes all game state
 - Rate limit considerations for future phases
@@ -191,7 +188,7 @@ When no focus is specified, prefer tasks that:
 1. **Are self-contained** — can be fully built and tested in isolation
 2. **Follow existing patterns** — less risk of mistakes
 3. **Have clear specs** — unambiguous in the design doc
-4. **Unblock future work** — rendering enables all visual features
+4. **Unblock future work** — Three.js setup enables all visual features
 
 Avoid picking tasks that:
 - Require assets that don't exist yet

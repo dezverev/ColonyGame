@@ -1,6 +1,6 @@
 # ColonyGame — Project Guide
 
-Isometric multiplayer RTS game. Players create rooms, configure settings, wait for opponents, then launch real-time strategy matches. Built on the rendering foundation and shared assets from IsometricJS.
+Isometric multiplayer space colony 4X game. Players found colonies on alien worlds, research technology, build fleets, explore the galaxy, and compete or cooperate with other players. Inspired by Stellaris, rendered with Three.js in isometric 3D. Built on multiplayer WebSocket infrastructure.
 
 ## Quick Start
 
@@ -12,7 +12,6 @@ npm test             # Runs all tests
 
 - Static file server: `http://localhost:4000` (`src/dev-client-server.js`)
 - WebSocket game server: `ws://localhost:4001` (`server/server.js`)
-- Shared assets fallback: `../IsometricJS/src/public/assets/`
 
 ## Running Tests
 
@@ -28,8 +27,8 @@ npm test    # Runs all tests in src/tests/
 
 | Server | File | Port | Purpose |
 |--------|------|------|---------|
-| Static | `src/dev-client-server.js` | 4000 | Serves `src/public/`, falls back to IsometricJS assets |
-| Game | `server/server.js` | 4001 | WebSocket game server, room management, tick-based game loop |
+| Static | `src/dev-client-server.js` | 4000 | Serves `src/public/` |
+| Game | `server/server.js` | 4001 | WebSocket game server, room management, game loop |
 
 ### Server Modules
 
@@ -37,58 +36,123 @@ npm test    # Runs all tests in src/tests/
 |--------|---------|
 | `server/server.js` | WebSocket server, room/game lifecycle, message routing |
 | `server/room-manager.js` | Room CRUD, player tracking, ready states, launch validation |
-| `server/game-engine.js` | RTS game tick loop, unit movement, buildings, player states |
+| `server/game-engine.js` | Colony 4X game loop, galaxy state, colony management, fleet movement |
 | `server/config.js` | Environment-driven configuration |
 
 ### Client Modules (`src/public/js/`)
 
 | Module | Purpose |
 |--------|---------|
-| `projection.js` | Isometric math (adapted from IsometricJS): worldToScreen, screenToWorld, zoom |
+| `app.js` | Main client: WebSocket connection, screen management, input |
 | `lobby.js` | Room list rendering, player list, chat messages |
-| `app.js` | Main client: WebSocket connection, screen management, game rendering, input |
+| `renderer.js` | Three.js scene management, camera, rendering pipeline |
+| `colony-view.js` | Isometric colony surface view — buildings, districts, terrain |
+| `galaxy-view.js` | 3D galaxy map — star systems, hyperlanes, fleet markers |
+| `system-view.js` | System orbital view — planets, stations, asteroid belts |
+| `ui.js` | HUD panels — resources, research, production, diplomacy |
+
+### Rendering — Three.js
+
+The game uses Three.js for all rendering across three views:
+
+| View | Camera | Purpose |
+|------|--------|---------|
+| Colony (primary) | Orthographic (isometric angle) | Surface buildings, districts, pops, terrain |
+| Galaxy Map | Perspective | Star systems, hyperlanes, territory, fleet movements |
+| System | Perspective/Ortho | Planets, orbital stations, asteroid belts |
+
+Isometric projection is achieved with a Three.js OrthographicCamera positioned at a ~35.264° pitch and 45° yaw, giving the classic isometric look with real 3D geometry.
 
 ## Network Protocol
 
-**Client → Server:**
+**Client → Server (Lobby):**
 - `setName` — set display name
-- `createRoom` — create a new room (name, maxPlayers, map)
+- `createRoom` — create a new room (name, maxPlayers, galaxySettings)
 - `joinRoom` — join existing room by ID
 - `leaveRoom` — leave current room
 - `toggleReady` — toggle ready state
-- `launchGame` — host launches game (requires all non-host ready, >= 2 players)
-- `gameCommand` — in-game command (moveUnits, etc.)
+- `launchGame` — host launches game
 - `chat` — chat message in room
+
+**Client → Server (In-Game Commands):**
+- `buildDistrict` — build a district on a colony (colonyId, districtType)
+- `buildBuilding` — build a building on a colony (colonyId, buildingType, slot)
+- `demolish` — remove a district or building
+- `setResearch` — choose tech to research (techId)
+- `buildShip` — queue ship construction at a starbase (stationId, shipType)
+- `moveFleet` — order fleet to a destination system (fleetId, targetSystemId)
+- `surveySystem` — order a science ship to survey (fleetId, systemId)
+- `colonize` — send colony ship to found a colony (fleetId, planetId)
+- `setDiplomacy` — change diplomatic stance toward a player (targetPlayerId, stance)
+- `tradeOffer` — propose a trade deal
+- `setGameSpeed` — host changes game speed (speed: 1-5)
+- `togglePause` — host pauses/unpauses
 
 **Server → Client:**
 - `welcome` — connection established (clientId, displayName)
 - `nameSet` — name confirmed
-- `roomList` — list of all rooms (sent to lobby players)
+- `roomList` — list of all rooms
 - `roomJoined` — successfully joined/created a room
-- `roomUpdate` — room state changed (player join/leave/ready)
+- `roomUpdate` — room state changed
 - `roomLeft` — left room, back to lobby
-- `gameInit` — game starting (map, units, buildings, players, yourId)
-- `gameState` — tick update (units, buildings, players)
-- `chat` — chat message from another player
+- `gameInit` — game starting (galaxy, systems, colonies, fleets, techTree, yourPlayerId)
+- `gameState` — periodic state update (resources, colonies, fleets, diplomacy)
+- `colonyUpdate` — colony state changed (buildings, pops, production)
+- `researchComplete` — technology researched, new options available
+- `fleetUpdate` — fleet position/status changed
+- `combatResult` — space battle outcome
+- `diplomacyEvent` — diplomatic action from another player
+- `eventOccurred` — anomaly discovered, random event triggered
+- `gameOver` — win condition met
+- `chat` — chat message
 - `error` — error message
 
 ## Game Flow
 
 1. Player enters name → lobby screen
-2. Player creates or joins a room → room screen
-3. Players ready up, host launches → game screen
-4. Server creates GameEngine, sends `gameInit` to all players
-5. Server ticks at 10Hz, broadcasts `gameState` each tick
-6. Players send `gameCommand` messages (moveUnits, etc.)
-7. Game ends when win condition met → back to lobby
+2. Player creates or joins a room → room screen (configure galaxy size, AI, etc.)
+3. Players ready up, host launches → game starts
+4. Server generates galaxy, assigns starting systems, sends `gameInit`
+5. Server ticks at configurable speed, broadcasts `gameState` periodically
+6. Players manage colonies, research tech, build fleets, explore, fight
+7. Game ends when win condition met → results screen → back to lobby
 
-## Shared Assets from IsometricJS
+## 4X Core Loop
 
-The static file server falls back to `../IsometricJS/src/public/assets/` when a requested asset isn't found locally. Available:
+| Phase | Player Actions |
+|-------|---------------|
+| **Explore** | Send science ships to survey unknown systems, discover anomalies and habitable worlds |
+| **Expand** | Colonize habitable planets, build starbases to claim systems |
+| **Exploit** | Build districts and buildings on colonies, optimize resource production, research technology |
+| **Exterminate** | Build military fleets, engage in space combat, conquer enemy colonies |
 
-- **Tiles**: 233 isometric terrain tiles (56x56 PNG) in `assets/tiles/`
-- **Sprites**: 28 character types with 8-direction animations in `assets/sprites/`
-- **Props**: 172 isometric props in `assets/props/`
+## Resources
+
+| Resource | Purpose | Primary Source |
+|----------|---------|---------------|
+| Energy | Powers buildings, maintenance costs, trade | Generator districts, solar buildings |
+| Minerals | Construction, district/building costs | Mining districts, asteroid mining |
+| Food | Population growth and maintenance | Agriculture districts, hydroponics |
+| Alloys | Ship construction, advanced buildings | Industrial districts, foundries |
+| Research | Technology progression (Physics/Society/Engineering) | Research buildings, labs |
+| Influence | Claiming systems, edicts, diplomacy actions | Capital building, civic choices |
+
+## Key Constants
+
+| Constant | Value | Location |
+|----------|-------|----------|
+| TICK_RATE | 10 Hz (100ms) | server/config.js |
+| MAX_ROOMS | 20 | server/config.js |
+| MAX_PLAYERS_PER_ROOM | 8 | server/config.js |
+| Default galaxy size | Small (50 systems) | game-engine.js |
+| Starting energy | 100 | game-engine.js |
+| Starting minerals | 200 | game-engine.js |
+| Starting food | 50 | game-engine.js |
+| Starting alloys | 50 | game-engine.js |
+| Starting influence | 100 | game-engine.js |
+| Starting pops | 8 | game-engine.js |
+| Colony districts max | 16 per planet (size-dependent) | game-engine.js |
+| Building slots | 6-12 per colony (pop-dependent) | game-engine.js |
 
 ## Design Document & Ledger
 
@@ -100,42 +164,29 @@ The static file server falls back to `../IsometricJS/src/public/assets/` when a 
 ### Scripts
 
 ```bash
-./autopilot-rts.sh              # Run 1 development iteration
-./autopilot-rts.sh -n 3         # Run 3 iterations
-./autopilot-rts.sh --dry-run    # Analyze only, don't implement
-./autopilot-rts.sh --focus rendering  # Focus on a specific area
+./autopilot.sh                    # Run 1 development iteration
+./autopilot.sh -n 3               # Run 3 iterations
+./autopilot.sh --dry-run           # Analyze only, don't implement
+./autopilot.sh --focus colonies    # Focus on a specific area
 ```
 
 ### Skills
 
 | Skill | Invocation | Purpose |
 |-------|-----------|---------|
-| `rts-develop` | `/rts-develop [focus]` | Pick next task from design.md, implement it, test, commit, update ledger |
-| `rts-status` | `/rts-status` | Report current project state, what's done, what's next |
+| `develop` | `/develop [focus]` | Pick next task from design.md, implement it, test, commit, update ledger |
+| `status` | `/status` | Report current project state, what's done, what's next |
 | `game-designer` | `/game-designer [focus]` | Analyze game from a design/playstyle perspective, recommend improvements |
-
-## Key Constants
-
-| Constant | Value | Location |
-|----------|-------|----------|
-| TICK_RATE | 10 Hz (100ms) | server/config.js |
-| MAX_ROOMS | 20 | server/config.js |
-| MAX_PLAYERS_PER_ROOM | 8 | server/config.js |
-| Map size | 50x50 tiles | game-engine.js |
-| Starting gold | 200 | game-engine.js |
-| Starting wood | 100 | game-engine.js |
-| Starting stone | 50 | game-engine.js |
-| Starting workers | 3 | game-engine.js |
-| Worker speed | 2 tiles/sec | game-engine.js |
 
 ## Conventions
 
-- No build step or bundler — plain JS with `<script>` tags
+- No build step or bundler — vanilla JS with `<script>` tags + Three.js via CDN
+- Three.js for all rendering (isometric colony, 3D galaxy map, system view)
 - Client modules use IIFE wrapping for browser, `module.exports` for Node.js
 - Server modules are plain `module.exports`
 - Tests use `node:test` + `node:assert`
 - All game state is server-authoritative
-- Isometric projection: `sx = originX + (worldX - worldY) * 32`, `sy = originY + (worldX + worldY) * 16`
+- Isometric view: Three.js OrthographicCamera at 35.264° pitch, 45° yaw
 
 ## File Layout
 
@@ -144,18 +195,22 @@ ColonyGame/
   server/
     server.js              # WebSocket game server
     room-manager.js        # Room CRUD & player tracking
-    game-engine.js         # RTS game tick loop & state
+    game-engine.js         # Colony 4X game loop & state
     config.js              # Server configuration
   src/
-    dev-client-server.js   # Static file server + asset fallback
+    dev-client-server.js   # Static file server
     public/
       index.html           # Entry point
       css/style.css        # UI styles
       js/
-        app.js             # Main client (connection, rendering, input)
+        app.js             # Main client (connection, screens, input)
         lobby.js           # Lobby/room UI helpers
-        projection.js      # Isometric math (from IsometricJS)
-      assets/              # Local assets (falls back to IsometricJS)
+        renderer.js        # Three.js scene, camera, render loop
+        colony-view.js     # Isometric colony surface rendering
+        galaxy-view.js     # 3D galaxy map rendering
+        system-view.js     # System orbital view rendering
+        ui.js              # HUD panels and overlays
+      assets/              # Local assets (textures, models, etc.)
     tests/
       room-manager.test.js
       game-engine.test.js
@@ -164,6 +219,6 @@ ColonyGame/
     design.md              # Implementation roadmap
     ledger.md              # Development log
   .claude/skills/          # Automation skills
-  autopilot-rts.sh         # Shell automation script
-  autopilot-rts.ps1        # PowerShell automation script
+  autopilot.sh             # Shell automation script
+  autopilot.ps1            # PowerShell automation script
 ```

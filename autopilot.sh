@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # ══════════════════════════════════════════════════════════════
-# autopilot-rts.sh — Iterative RTS game development automation
+# autopilot.sh — Iterative ColonyGame development automation
 #
 # Each iteration runs a 3-phase pipeline:
-#   1. /rts-status      → assess current project state
-#   2. /game-designer   → analyze gameplay, recommend improvements,
-#                         add work items to design.md
-#   3. /rts-develop     → pick next task, implement, test, commit
+#   1. /status           → assess current project state
+#   2. /game-designer    → analyze gameplay, recommend improvements,
+#                          add work items to design.md
+#   3. /develop          → pick next task, implement, test, commit
 #
 # Usage:
-#   ./autopilot-rts.sh                    # run 1 iteration
-#   ./autopilot-rts.sh -n 3              # run 3 iterations
-#   ./autopilot-rts.sh --dry-run          # phases 1+2 only, skip implementation
-#   ./autopilot-rts.sh --focus rendering  # focus game-designer + rts-develop
+#   ./autopilot.sh                      # run 1 iteration
+#   ./autopilot.sh -n 3                # run 3 iterations
+#   ./autopilot.sh --dry-run            # phases 1+2 only, skip implementation
+#   ./autopilot.sh --focus colonies     # focus game-designer + develop
 # ══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -47,12 +47,12 @@ for ((i=1; i<=ITERATIONS; i++)); do
     log "Iteration $i of $ITERATIONS"
   fi
 
-  # ── Phase 1: /rts-status ──────────────────────────────────
+  # ── Phase 1: /status ────────────────────────────────────
   log "Phase 1: Project status..."
-  STATUS=$(claude --dangerously-skip-permissions -p "/rts-status" 2>&1) || true
+  STATUS=$(claude --dangerously-skip-permissions -p "/status" 2>&1) || true
   echo "$STATUS"
 
-  # ── Phase 2: /game-designer ───────────────────────────────
+  # ── Phase 2: /game-designer ─────────────────────────────
   log "Phase 2: Game design analysis..."
   DESIGN=$(claude --dangerously-skip-permissions -p "/game-designer $FOCUS
 
@@ -65,9 +65,9 @@ $STATUS" 2>&1) || true
     continue
   fi
 
-  # ── Phase 3: /rts-develop ─────────────────────────────────
+  # ── Phase 3: /develop ───────────────────────────────────
   log "Phase 3: Implementing next task..."
-  RESULT=$(claude --dangerously-skip-permissions -p "/rts-develop $FOCUS
+  RESULT=$(claude --dangerously-skip-permissions -p "/develop $FOCUS
 
 Game designer output (use for context on priorities):
 $DESIGN" 2>&1) || true

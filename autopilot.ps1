@@ -1,17 +1,17 @@
 # ══════════════════════════════════════════════════════════════
-# autopilot-rts.ps1 — Iterative RTS game development automation
+# autopilot.ps1 — Iterative ColonyGame development automation
 #
 # Each iteration runs a 3-phase pipeline:
-#   1. /rts-status      → assess current project state
-#   2. /game-designer   → analyze gameplay, recommend improvements,
-#                         add work items to design.md
-#   3. /rts-develop     → pick next task, implement, test, commit
+#   1. /status           → assess current project state
+#   2. /game-designer    → analyze gameplay, recommend improvements,
+#                          add work items to design.md
+#   3. /develop          → pick next task, implement, test, commit
 #
 # Usage:
-#   .\autopilot-rts.ps1                    # run 1 iteration
-#   .\autopilot-rts.ps1 -n 3              # run 3 iterations
-#   .\autopilot-rts.ps1 -DryRun           # phases 1+2 only, skip implementation
-#   .\autopilot-rts.ps1 -Focus rendering  # focus game-designer + rts-develop
+#   .\autopilot.ps1                      # run 1 iteration
+#   .\autopilot.ps1 -n 3                # run 3 iterations
+#   .\autopilot.ps1 -DryRun             # phases 1+2 only, skip implementation
+#   .\autopilot.ps1 -Focus colonies     # focus game-designer + develop
 # ══════════════════════════════════════════════════════════════
 
 param(
@@ -37,17 +37,17 @@ for ($i = 1; $i -le $n; $i++) {
         Log "Iteration $i of $n"
     }
 
-    # ── Phase 1: /rts-status ──────────────────────────────────
+    # ── Phase 1: /status ────────────────────────────────────
     Log "Phase 1: Project status..."
     try {
-        $status = claude --dangerously-skip-permissions -p "/rts-status" 2>&1 | Out-String
+        $status = claude --dangerously-skip-permissions -p "/status" 2>&1 | Out-String
         Write-Host $status
     } catch {
         Write-Warning "Phase 1 failed: $_"
         $status = "ERROR: $_"
     }
 
-    # ── Phase 2: /game-designer ───────────────────────────────
+    # ── Phase 2: /game-designer ─────────────────────────────
     Log "Phase 2: Game design analysis..."
     $designPrompt = @"
 /game-designer $Focus
@@ -68,10 +68,10 @@ $status
         continue
     }
 
-    # ── Phase 3: /rts-develop ─────────────────────────────────
+    # ── Phase 3: /develop ───────────────────────────────────
     Log "Phase 3: Implementing next task..."
     $devPrompt = @"
-/rts-develop $Focus
+/develop $Focus
 
 Game designer output (use for context on priorities):
 $design

@@ -4,10 +4,10 @@ Each entry records an iteration of automated development.
 
 ---
 
-## Entry 0 — 2026-03-11 — Initial Scaffold
+## Entry 0 — 2026-03-11 — Initial Scaffold (as RTSGame)
 
 **Phase:** 1 (Foundation)
-**Status:** Complete
+**Status:** Complete (pre-pivot)
 
 **What was built:**
 - Full project scaffold: package.json, .gitignore, .env.example, server config
@@ -16,11 +16,9 @@ Each entry records an iteration of automated development.
 - Static file server with IsometricJS asset fallback
 - Client: name entry, lobby UI, room view, chat, game view with isometric rendering
 - Isometric projection adapted from IsometricJS
-- Canvas 2D game renderer with placeholder graphics (diamonds for units, rectangles for buildings)
-- Unit selection (click and box select), right-click movement commands
-- Minimap with viewport indicator
-- Resource HUD
-- Camera pan (middle-mouse drag) and zoom (scroll wheel)
+- Canvas 2D game renderer with placeholder graphics
+- Unit selection, right-click movement commands
+- Minimap, Resource HUD, camera pan and zoom
 
 **Files created:**
 - `server/config.js`, `server/room-manager.js`, `server/game-engine.js`, `server/server.js`
@@ -31,29 +29,42 @@ Each entry records an iteration of automated development.
 
 **Tests:** 18 unit + integration tests covering room lifecycle, game engine, and server protocol
 
-**Next:** Phase 2 — Game View & Rendering (isometric tiles, sprites, proper building rendering)
+---
+
+## Entry 1 — 2026-03-11 — Expanded Unit Definitions & Damage Calc (as RTSGame)
+
+**Phase:** 3 (Units & Combat)
+**Status:** Complete (pre-pivot)
+
+**What was built:**
+- Extracted unit definitions into UNIT_DEFS with combat stats
+- Added calcDamage function with counter system
+- 12 new tests
+
+**Files changed:**
+- `server/game-engine.js`, `src/tests/game-engine.test.js`
+
+**Tests:** 35 total (12 new)
 
 ---
 
-## Entry 1 — 2026-03-11 — Expanded Unit Definitions & Damage Calc
+## Entry 2 — 2026-03-11 — Project Pivot: RTS → Space Colony 4X
 
-**Phase:** 3 (Units & Combat)
+**Phase:** N/A (retool)
 **Status:** Complete
 
-**What was built:**
-- Extracted unit definitions into `UNIT_DEFS` constant with all four unit types (worker, soldier, archer, cavalry) including full stats: hp, atk, armor, speed, range, cooldown, cost, supplyCost, bonusVs
-- Added `calcDamage(attackerType, defenderType)` function implementing the counter system: soldier>archer>cavalry>soldier triangle with 1.5x bonuses, workers deal 0.5x to military, damage formula is `max(1, round(atk * bonus - armor))`
-- Units created by the engine now carry `armor`, `range`, and `cooldown` fields for use by future combat logic
-
-**Files changed:**
-- `server/game-engine.js` — added UNIT_DEFS, calcDamage, updated _createUnit
-- `src/tests/game-engine.test.js` — 12 new tests across 3 new test suites
-
-**Tests:** 35 total (12 new) — UNIT_DEFS validation, calcDamage counter system, unit creation with expanded stats
+**What changed:**
+- Pivoted from medieval RTS to space colony 4X game (Stellaris-inspired)
+- Replaced all project documentation, design roadmap, and automation skills
+- Moving from Canvas 2D sprites to Three.js 3D rendering
+- New core loop: Explore, Expand, Exploit, Exterminate
+- New resource system: Energy, Minerals, Food, Alloys, Research, Influence
+- Kept: WebSocket multiplayer infrastructure, room/lobby system, tick-based game loop
 
 **Key decisions:**
-- Extracted unit defs to a top-level constant so future systems (production, UI) can import them directly
-- `calcDamage` uses `Math.round` after applying bonus and armor subtraction, with `Math.max(1, ...)` floor
-- bonusVs defaults to 1.0x if not specified (no entry = neutral matchup)
+- Three.js for rendering — isometric OrthographicCamera for colony view, PerspectiveCamera for galaxy map
+- No sprites — all 3D geometry and materials
+- Colony management as primary gameplay, fleet/galaxy as secondary layer
+- Simultaneous real-time multiplayer (like Stellaris, not turn-based)
 
-**Next:** Phase 3 — Unit counter system (bonusVs multipliers are defined, next implement attack command to use them)
+**Next:** Phase 1 — Foundation Pivot (Three.js integration, colony terrain, new game engine)
