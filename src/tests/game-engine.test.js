@@ -3383,3 +3383,181 @@ describe('GameEngine — Game Speed Controls', () => {
     }
   });
 });
+
+// ── VP Breakdown & Summary Cache (Research VP Rebalance coverage) ──
+
+describe('GameEngine — _calcVPBreakdown', () => {
+  it('returns full breakdown object with all expected fields', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 75;
+    state.resources.research = { physics: 30, society: 20, engineering: 10 };
+    state.completedTechs = ['improved_power_plants', 'advanced_reactors'];
+
+    const bd = engine._calcVPBreakdown(1);
+    assert.strictEqual(bd.pops, 8);
+    assert.strictEqual(bd.popsVP, 16);
+    assert.strictEqual(bd.districts, 4);
+    assert.strictEqual(bd.districtsVP, 4);
+    assert.strictEqual(bd.alloys, 75);
+    assert.strictEqual(bd.alloysVP, 3); // floor(75/25)
+    assert.strictEqual(bd.totalResearch, 60);
+    assert.strictEqual(bd.researchVP, 1); // floor(60/50)
+    assert.strictEqual(bd.techs, 2);
+    assert.strictEqual(bd.techVP, 15); // T1(5) + T2(10)
+    assert.strictEqual(bd.vp, 16 + 4 + 3 + 1 + 15);
+  });
+
+  it('returns empty breakdown for unknown player', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const bd = engine._calcVPBreakdown(999);
+    assert.strictEqual(bd.vp, 0);
+    assert.strictEqual(bd.pops, 0);
+    assert.strictEqual(bd.techVP, 0);
+    assert.strictEqual(bd.researchVP, 0);
+  });
+
+  it('is consistent with _calcVictoryPoints across cache invalidation', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Initial
+    assert.strictEqual(engine._calcVPBreakdown(1).vp, engine._calcVictoryPoints(1));
+
+    // Mutate state + invalidate
+    state.completedTechs.push('improved_mining');
+    engine._vpCacheTick = -1;
+    assert.strictEqual(engine._calcVPBreakdown(1).vp, engine._calcVictoryPoints(1));
+
+    // After tick advancement
+    engine.tick();
+    state.resources.alloys += 100;
+    assert.strictEqual(engine._calcVPBreakdown(1).vp, engine._calcVictoryPoints(1));
+  });
+
+  it('breakdown cache updates across tick boundaries', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    const bd1 = engine._calcVPBreakdown(1);
+    const vp1 = bd1.vp;
+
+    // Advance tick + change state
+    engine.tick();
+    state.resources.alloys += 250; // +10 VP (250/25)
+    const bd2 = engine._calcVPBreakdown(1);
+    assert.strictEqual(bd2.vp, vp1 + 10);
+    assert.strictEqual(bd2.alloysVP, bd1.alloysVP + 10);
+  });
+
+  it('gracefully handles unknown techId in completedTechs', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).completedTechs = ['nonexistent_tech', 'improved_power_plants'];
+    engine._vpCacheTick = -1;
+    const bd = engine._calcVPBreakdown(1);
+    // Should only count the valid tech
+    assert.strictEqual(bd.techVP, 5); // only improved_power_plants (T1)
+    assert.strictEqual(bd.techs, 2); // count includes unknown but VP skips it
+  });
+});
+
+describe('GameEngine — Summary Cache Invalidation', () => {
+  it('_invalidateColonyCache clears summary cache', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Populate summary cache
+    engine._getPlayerSummary(1);
+    assert.strictEqual(engine._summaryCacheTick, engine.tickCount);
+
+    // Invalidate colony — should clear summary cache tick
+    engine._invalidateColonyCache(colony);
+    assert.strictEqual(engine._summaryCacheTick, -1, 'Summary cache tick should be reset');
+  });
+
+  it('_invalidateColonyCache clears both VP and summary caches', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Populate both caches
+    engine._calcVPBreakdown(1);
+    engine._getPlayerSummary(1);
+    assert.strictEqual(engine._vpCacheTick, engine.tickCount);
+    assert.strictEqual(engine._summaryCacheTick, engine.tickCount);
+
+    // Invalidate colony
+    engine._invalidateColonyCache(colony);
+    assert.strictEqual(engine._vpCacheTick, -1, 'VP cache should be invalidated');
+    assert.strictEqual(engine._summaryCacheTick, -1, 'Summary cache should be invalidated');
+  });
+
+  it('summary reflects colony changes after invalidation', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const before = engine._getPlayerSummary(1);
+    const popsBefore = before.totalPops;
+
+    // Add pops and invalidate
+    colony.pops += 5;
+    engine._invalidateColonyCache(colony);
+
+    const after = engine._getPlayerSummary(1);
+    assert.strictEqual(after.totalPops, popsBefore + 5,
+      'Summary should reflect updated pops after invalidation');
+  });
+
+  it('summary cache resets on new tick', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+
+    // Cache summaries for tick 0
+    const s1 = engine._getPlayerSummary(1);
+    assert.strictEqual(engine._summaryCacheTick, 0);
+
+    // Advance tick
+    engine.tick();
+    // Cache should auto-clear on next call (different tick)
+    const s2 = engine._getPlayerSummary(1);
+    assert.strictEqual(engine._summaryCacheTick, engine.tickCount);
+  });
+});
+
+describe('GameEngine — getPlayerState summary fields', () => {
+  it('includes colonyCount, totalPops, and income for self', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const pState = engine.getPlayerState(1);
+    const me = pState.players[0]; // first player is self
+
+    assert.strictEqual(me.id, 1);
+    assert.strictEqual(typeof me.colonyCount, 'number');
+    assert.strictEqual(typeof me.totalPops, 'number');
+    assert.ok(me.income, 'self should have income field');
+    assert.strictEqual(typeof me.income.energy, 'number');
+    assert.strictEqual(typeof me.income.minerals, 'number');
+    assert.strictEqual(typeof me.income.food, 'number');
+    assert.strictEqual(typeof me.income.alloys, 'number');
+    assert.strictEqual(me.colonyCount, 1);
+    assert.strictEqual(me.totalPops, 8);
+  });
+
+  it('includes summary fields for other players', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const pState = engine.getPlayerState(1);
+    const other = pState.players[1]; // second player is other
+
+    assert.strictEqual(other.id, 2);
+    assert.strictEqual(typeof other.colonyCount, 'number');
+    assert.strictEqual(typeof other.totalPops, 'number');
+    assert.ok(other.income, 'other player should have income for scoreboard');
+    assert.strictEqual(typeof other.vp, 'number');
+  });
+
+  it('other players do not have resources (privacy)', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const pState = engine.getPlayerState(1);
+    const other = pState.players[1];
+
+    assert.strictEqual(other.resources, undefined, 'other player resources should not be exposed');
+    assert.strictEqual(other.completedTechs, undefined, 'other player techs should not be exposed');
+  });
+});
