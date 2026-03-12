@@ -178,6 +178,7 @@ Isometric projection is achieved with a Three.js OrthographicCamera positioned a
 | `status` | `/status` | Report current project state, what's done, what's next |
 | `game-designer` | `/game-designer [focus]` | Analyze game from a design/playstyle perspective, recommend improvements |
 | `perf` | `/perf [focus]` | Performance audit — profile server ticks, client FPS, memory, network payloads, apply fixes |
+| `ship` | `/ship [description]` | Commit changes, create branch, push, create PR, and merge — one-command ship-it workflow |
 
 ## Conventions
 
