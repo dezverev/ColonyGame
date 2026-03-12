@@ -44,6 +44,7 @@ class GameEngine {
     this.onTick = options.onTick || null;
     this._dirty = true; // tracks whether state changed since last broadcast
     this._cachedState = null; // cached serialized state
+    this._cachedStateJSON = null; // cached JSON string for broadcast
 
     this._initPlayerStates();
     this._initStartingColonies();
@@ -129,6 +130,7 @@ class GameEngine {
     colony._cachedProduction = null;
     this._dirty = true;
     this._cachedState = null;
+    this._cachedStateJSON = null;
   }
 
   // Count total districts (built + in queue)
@@ -237,6 +239,7 @@ class GameEngine {
     }
     this._dirty = true;
     this._cachedState = null;
+    this._cachedStateJSON = null;
   }
 
   // Process construction queues
@@ -328,7 +331,7 @@ class GameEngine {
     // Only broadcast when state has changed
     if (this.onTick && this._dirty) {
       this._dirty = false;
-      this.onTick(this.getState());
+      this.onTick(this.getStateJSON());
     }
   }
 
@@ -377,6 +380,7 @@ class GameEngine {
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
         this._dirty = true;
         this._cachedState = null;
+        this._cachedStateJSON = null;
         return { ok: true, id };
       }
 
@@ -429,6 +433,14 @@ class GameEngine {
     };
     this._cachedState = state;
     return state;
+  }
+
+  // Pre-stringified gameState payload for broadcast — avoids spread + re-stringify
+  getStateJSON() {
+    if (this._cachedStateJSON) return this._cachedStateJSON;
+    const state = this.getState();
+    this._cachedStateJSON = JSON.stringify({ type: 'gameState', ...state });
+    return this._cachedStateJSON;
   }
 
   getInitState() {

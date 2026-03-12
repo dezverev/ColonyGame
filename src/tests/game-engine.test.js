@@ -608,6 +608,7 @@ describe('GameEngine — Performance', () => {
     const start = process.hrtime.bigint();
     for (let i = 0; i < 100; i++) {
       engine._dirty = true; // force state serialization every tick for worst-case
+      engine._cachedStateJSON = null;
       engine.tick();
     }
     const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
@@ -684,6 +685,39 @@ describe('GameEngine — Performance', () => {
     const sizeKB = Buffer.byteLength(json) / 1024;
     // 64 colonies with 6 districts each should stay under 50KB
     assert.ok(sizeKB < 50, `64-colony payload is ${sizeKB.toFixed(1)}KB, limit 50KB`);
+  });
+
+  it('getStateJSON caches pre-stringified broadcast payload', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+
+    const json1 = engine.getStateJSON();
+    const json2 = engine.getStateJSON();
+    assert.strictEqual(json1, json2, 'Should return same cached string');
+
+    // Verify it includes the type field
+    const parsed = JSON.parse(json1);
+    assert.strictEqual(parsed.type, 'gameState');
+    assert.ok(parsed.players);
+    assert.ok(parsed.colonies);
+
+    // After a state change, should return a different string
+    const colony = engine.getState().colonies[0];
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    const json3 = engine.getStateJSON();
+    assert.notStrictEqual(json1, json3, 'Should return new string after state change');
+  });
+
+  it('onTick receives pre-stringified JSON', () => {
+    let receivedPayload = null;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onTick: (payload) => { receivedPayload = payload; },
+    });
+
+    engine.tick();
+    assert.strictEqual(typeof receivedPayload, 'string', 'onTick should receive a string');
+    const parsed = JSON.parse(receivedPayload);
+    assert.strictEqual(parsed.type, 'gameState');
   });
 
   it('caches production calculations between calls', () => {

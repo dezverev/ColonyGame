@@ -173,9 +173,9 @@ function startServer(options = {}) {
 
         const engine = new GameEngine(result.room, {
           tickRate: config.TICK_RATE,
-          onTick: (state) => {
-            // Stringify once, reuse for all players instead of per-player serialization
-            broadcastToRoom(room.id, JSON.stringify({ type: 'gameState', ...state }));
+          onTick: (stateJSON) => {
+            // Pre-stringified by engine — just broadcast the string directly
+            broadcastToRoom(room.id, stateJSON);
           },
         });
         games.set(room.id, engine);
