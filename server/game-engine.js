@@ -74,9 +74,10 @@ class GameEngine {
         type: 'continental',
         habitability: 80,
       });
-      // Start with 3 pre-built districts (instant, no construction time)
+      // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
       this._addBuiltDistrict(colony, 'mining');
+      this._addBuiltDistrict(colony, 'agriculture');
       this._addBuiltDistrict(colony, 'agriculture');
     }
   }
@@ -132,7 +133,7 @@ class GameEngine {
   // Calculate housing capacity for a colony (cached)
   _calcHousing(colony) {
     if (colony._cachedHousing !== null) return colony._cachedHousing;
-    let housing = 2; // base housing from capital
+    let housing = 10; // base housing from capital
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
       if (def) housing += def.housing;

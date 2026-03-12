@@ -138,3 +138,31 @@ Each entry records an iteration of automated development.
 - Added production calc fix for jobless districts so housing consumption actually applies
 
 **Next:** Fix starting food deficit (2 Agriculture districts), then pop growth pacing
+
+---
+
+## Entry 5 — 2026-03-11 — Balance Fix: Starting Food Deficit & Housing
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Changed starting pre-built districts from (1 Generator, 1 Mining, 1 Agriculture) to (1 Generator, 1 Mining, 2 Agriculture) so food production (12) exceeds consumption (10 pops × 1 = 10), giving a net +2 food/month surplus
+- Increased base capital housing from 2 to 10 so starting 10 pops don't exceed housing on turn 1
+- Updated all existing tests to match new starting state (4 districts, 10 housing, adjusted food/research values)
+- Added 4 new balance validation tests
+
+**Files changed:**
+- `server/game-engine.js` — _initStartingColonies (added 2nd agriculture), _calcHousing (base 2→10)
+- `src/tests/game-engine.test.js` — updated 8 existing tests, added 4 new food/housing balance tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 68 total (50 game-engine + 12 room-manager + 5 integration + 1 server-integration). All passing.
+
+**Key decisions:**
+- 2 Agriculture districts (12 food) vs 10 pops (10 food) gives a slim +2/month surplus — enough to survive but players still need to build more agriculture as they grow pops
+- Base housing of 10 matches starting pops exactly — players need housing districts to grow beyond 10 pops, creating a meaningful early decision
+- Pop death test needed adjustment: food set to -10 (not -1) because +2/month net surplus now recovers from small deficits
+
+**Next:** Pop growth pacing (colony.growthProgress, +1 pop based on food surplus thresholds)

@@ -43,13 +43,13 @@ describe('GameEngine — Initialization', () => {
     assert.strictEqual(state.colonies[0].pops, 10);
   });
 
-  it('starting colony has 3 pre-built districts', () => {
+  it('starting colony has 4 pre-built districts', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.strictEqual(colony.districts.length, 3);
+    assert.strictEqual(colony.districts.length, 4);
     const types = colony.districts.map(d => d.type).sort();
-    assert.deepStrictEqual(types, ['agriculture', 'generator', 'mining']);
+    assert.deepStrictEqual(types, ['agriculture', 'agriculture', 'generator', 'mining']);
   });
 
   it('starting colony is on a continental planet with size 16', () => {
@@ -116,8 +116,8 @@ describe('GameEngine — District Building', () => {
     const state = engine.getState();
     const colonyId = state.colonies[0].id;
     const colony = engine.colonies.get(colonyId);
-    // Fill up to max (planet size 16, already have 3)
-    for (let i = 0; i < 13; i++) {
+    // Fill up to max (planet size 16, already have 4)
+    for (let i = 0; i < 12; i++) {
       engine._addBuiltDistrict(colony, 'housing');
     }
     assert.strictEqual(engine._totalDistricts(colony), 16);
@@ -154,7 +154,7 @@ describe('GameEngine — District Building', () => {
   it('districts after the first 3 build at full time', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colonyId = engine.getState().colonies[0].id;
-    // Colony already has 3 built districts
+    // Colony already has 4 built districts
     engine.playerStates.get(1).resources.minerals = 10000;
 
     engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
@@ -172,7 +172,7 @@ describe('GameEngine — Demolish', () => {
     const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id, districtId });
     assert.strictEqual(result.ok, true);
     const after = engine.getState().colonies[0];
-    assert.strictEqual(after.districts.length, 2);
+    assert.strictEqual(after.districts.length, 3); // 4 starting - 1 demolished
   });
 
   it('rejects demolishing on another players colony', () => {
@@ -208,8 +208,8 @@ describe('GameEngine — Construction Processing', () => {
     }
 
     assert.strictEqual(colony.buildQueue.length, 0);
-    assert.strictEqual(colony.districts.length, 4); // 3 starting + 1 built
-    assert.strictEqual(colony.districts[3].type, 'housing');
+    assert.strictEqual(colony.districts.length, 5); // 4 starting + 1 built
+    assert.strictEqual(colony.districts[4].type, 'housing');
   });
 });
 
@@ -224,16 +224,16 @@ describe('GameEngine — Resource Production', () => {
     }
 
     const after = engine.playerStates.get(1).resources;
-    // Starting districts: generator(+6 energy), mining(+4 minerals), agriculture(+6 food)
-    // 10 pops consume 10 food, so net food = +6 - 10 = -4
+    // Starting districts: generator(+6 energy), mining(+4 minerals), 2x agriculture(+12 food)
+    // 10 pops consume 10 food, so net food = +12 - 10 = +2
     assert.strictEqual(after.energy, before.energy + 6);
     assert.strictEqual(after.minerals, before.minerals + 4);
-    assert.strictEqual(after.food, before.food + 6 - 10);
+    assert.strictEqual(after.food, before.food + 12 - 10);
   });
 
   it('unemployed pops produce research', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
-    // 3 working districts = 3 employed, 10 - 3 = 7 unemployed
+    // 4 working districts = 4 employed, 10 - 4 = 6 unemployed
     // Each unemployed pop produces 1 of each research type
 
     for (let i = 0; i < MONTH_TICKS; i++) {
@@ -241,9 +241,9 @@ describe('GameEngine — Resource Production', () => {
     }
 
     const after = engine.playerStates.get(1).resources;
-    assert.strictEqual(after.research.physics, 7);
-    assert.strictEqual(after.research.society, 7);
-    assert.strictEqual(after.research.engineering, 7);
+    assert.strictEqual(after.research.physics, 6);
+    assert.strictEqual(after.research.society, 6);
+    assert.strictEqual(after.research.engineering, 6);
   });
 
   it('does not produce resources before a full month', () => {
@@ -264,15 +264,15 @@ describe('GameEngine — Resource Production', () => {
 describe('GameEngine — Population', () => {
   it('pop dies when food deficit', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
-    // Set food to negative to simulate deficit
-    engine.playerStates.get(1).resources.food = -1;
+    // Set food to very negative so it stays negative after monthly production (+2 net)
+    engine.playerStates.get(1).resources.food = -10;
 
     for (let i = 0; i < MONTH_TICKS; i++) {
       engine.tick();
     }
 
     const colony = Array.from(engine.colonies.values())[0];
-    // Should have lost a pop (started with 10, food was already negative)
+    // Should have lost a pop (food was -10, +2 net = -8, still negative at month end)
     assert.ok(colony.pops < 10);
   });
 
@@ -300,15 +300,15 @@ describe('GameEngine — State Serialization', () => {
     assert.ok(colony.production.consumption);
     assert.strictEqual(colony.production.production.energy, 6); // generator
     assert.strictEqual(colony.production.production.minerals, 4); // mining
-    assert.strictEqual(colony.production.production.food, 6); // agriculture
+    assert.strictEqual(colony.production.production.food, 12); // 2x agriculture
   });
 
   it('getState includes housing and jobs', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.strictEqual(colony.housing, 2); // base housing only (no housing districts)
-    assert.strictEqual(colony.jobs, 3); // 3 working districts
+    assert.strictEqual(colony.housing, 10); // base housing from capital (no housing districts)
+    assert.strictEqual(colony.jobs, 4); // 4 working districts (gen, mining, 2x agri)
   });
 });
 
@@ -377,6 +377,46 @@ describe('GameEngine — Energy Balance', () => {
     // Generator: +6 energy, 2 industrials: -6 energy = net 0
     assert.strictEqual(production.energy, 6);
     assert.strictEqual(consumption.energy, 6);
+  });
+});
+
+describe('GameEngine — Food & Housing Balance', () => {
+  it('starting colony food production exceeds consumption (no deficit)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    const { production, consumption } = colony.production;
+    // 2 agriculture = 12 food, 10 pops consume 10 food => net +2
+    assert.ok(production.food > consumption.food,
+      `Food production (${production.food}) should exceed consumption (${consumption.food})`);
+  });
+
+  it('starting colony housing accommodates all starting pops', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    // Base housing = 10, starting pops = 10
+    assert.ok(colony.housing >= colony.pops,
+      `Housing (${colony.housing}) should be >= pops (${colony.pops})`);
+  });
+
+  it('base capital housing is 10', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Colony with no housing districts should have base housing of 10
+    const colony = engine._createColony(1, 'Bare', { size: 16, type: 'continental', habitability: 80 });
+    assert.strictEqual(engine._calcHousing(colony), 10);
+  });
+
+  it('food surplus grows over multiple months', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const before = engine.playerStates.get(1).resources.food;
+
+    // Run 3 months
+    for (let i = 0; i < MONTH_TICKS * 3; i++) {
+      engine.tick();
+    }
+
+    const after = engine.playerStates.get(1).resources.food;
+    // Net +2 food/month × 3 months = +6
+    assert.strictEqual(after, before + 6);
   });
 });
 
