@@ -4,510 +4,177 @@
 
 ---
 
-## Review #18 — 2026-03-12 — Galaxy View Live, Colony Builder Maturing
+## Review #24 — 2026-03-12 — Where Are the Planets?
 
 **Reviewer:** Game Design Analyst (automated)
-**Build State:** 32/120 tasks complete (27%). Galaxy map view with Three.js (star systems, hyperlanes, system panel, G key toggle). Procedural galaxy generation. Score timer + VP. Energy deficit auto-disable. Mini tech tree (6 techs, 2 tiers). Full HTML overlay UI. 279 tests passing. ~8,135 lines.
-
-**Key changes since Review #17:** Galaxy map Three.js view with PerspectiveCamera, orbit camera, star rendering by type, hyperlane LineSegments, ownership halos, system selection panel with planet table, G key colony/galaxy toggle. Performance fixes: client-side rendering bottlenecks in galaxy view, colony renderer, HUD. 18 new galaxy integration + command validation tests.
+**Build State:** 41/136 tasks complete (30%). Isometric colony, galaxy map, planet bonuses, game speed controls, mini tech tree, VP scoring, energy deficit, event toasts. 344 tests passing. ~9,500 lines.
+**Focus:** User asked: "Where is the link from galaxy map to planets? I see our colony and galaxy map but no planet representation."
 
 ---
 
-### 1. Pillar Scores
+### 1. The Diagnosis
+
+The user identified the most critical UX gap in the game: **planets exist as data but have zero visual presence**. Here's the full picture:
+
+**What exists:**
+- Galaxy map: 3D star spheres, hyperlanes, ownership rings, click-to-select, hover labels
+- System panel: when you click a star, a right-side panel shows star type, planet TABLE (orbit#, type, size, habitability%, bonus), and "View Colony" button if you own a colony there
+- Colony view: isometric grid of district tiles on a single planet — but the planet itself is invisible. No sphere, no terrain, no atmosphere
+- `system-view.js` is referenced in CLAUDE.md architecture but **does not exist**. There is no orbital system view
+
+**What's missing — the "planet gap":**
+1. **No system view** — clicking a star should zoom into the system showing the star and planets on orbital rings. Instead you get a flat HTML table. The architecture promised an orbital view but it was never built
+2. **No planet rendering anywhere** — planets are rows in a table. No 3D spheres, no colors, no visual identity. The user correctly noticed this
+3. **No visual bridge from galaxy → system → colony** — the navigation is galaxy star → HTML panel → "View Colony" button → colony grid. The middle layer (system with orbiting planets) doesn't exist
+4. **Colony view has no planet context** — you see a district grid floating in space. No planet sphere underneath, no horizon, no sky color matching planet type. Continental and Arctic colonies look identical except for the panel text
+
+### 2. Pillar Scores
 
 | Pillar | Score | Trend | Notes |
 |--------|-------|-------|-------|
-| Strategic Depth | 3.5/10 | ↑ | Galaxy is visible now — spatial awareness exists. But still one colony, no fleet movement, no expansion. Strategy is still "build optimal districts on one planet" |
-| Pacing & Tension | 4.5/10 | ↑ | VP timer + galaxy view creates a sense of a larger world with a clock. Energy deficit creates real recovery arcs. But no mid-game pivot point — the game still lacks a second act |
-| Economy & Production | 7/10 | → | District economy is solid for single-colony play. Tech modifiers work. Energy deficit is meaningful. Alloys remain a dead-end resource (no ships, no buildings consume them). Research completes too fast |
-| Exploration & Discovery | 3/10 | ↑↑ | Major jump from 1. Galaxy is visible, star systems can be inspected, planets listed with habitability. But no fog of war, no surveying, no anomalies — exploration is passive observation, not active discovery |
-| Multiplayer Fairness | 5.5/10 | ↑ | Galaxy spread ensures distance. Galaxy view shows where opponents are. VP scoring creates a competitive frame. But no interaction between players — still parallel solitaire |
+| Strategic Depth | 3/10 | → | Planet bonuses added but single-colony limit negates them |
+| Pacing & Tension | 5/10 | → | Speed controls are good. No new tension sources |
+| Economy & Production | 7/10 | → | Planet bonuses are a nice addition. Still one-colony |
+| Exploration & Discovery | 2/10 | → | Galaxy is a museum. Planets are a spreadsheet |
+| Multiplayer Fairness | 5/10 | → | No change |
 
-**Overall: 4.7/10** — Up from 4.0. The galaxy view is transformative — the game *looks* like a space 4X for the first time. Players can see star systems, inspect planets, understand the galaxy's topology. But the fundamental problem remains: there's nothing to *do* with the galaxy. You can look but not touch. The next leap requires ships, colonization, or at minimum multi-colony management.
+**Overall Score: 4.4/10** (unchanged — planet bonuses are invisible without expansion)
 
----
+### 3. Top 5 Things a Playtester Would Notice
 
-### 2. What a Player Would Notice (Top 5 Gaps)
+1. **"I clicked a star and got a table instead of planets."** The galaxy map promises exploration. The system panel delivers a spreadsheet. There's no visual payoff for discovering a system.
 
-1. **"I can see the galaxy but I can't go there."** — The galaxy map is beautiful. Stars glow, hyperlanes connect them, you can click systems and see habitable planets. But there's no way to send a ship, found a colony, or interact with any of it. It's a museum exhibit, not a gameplay space. This is the single most frustrating gap — the game shows you a universe of possibilities and then says "no."
+2. **"My colony is floating in a void."** The isometric grid has no planet underneath it. No sphere, no terrain color, no atmosphere. Desert and Ocean colonies are visually identical.
 
-2. **"I filled my planet, now what?"** — On a size-16 starting planet, you fill all district slots in about 8-10 minutes. After that: tech finishes, alloys pile up, you watch the timer count down. There is no mid-game. The colony management arc peaks at minute 8 and flatlines until the match ends. Players need either a second colony or building slots to keep making decisions.
+3. **"I can't expand."** Colony ships don't exist yet. Planet bonuses were just added but you can only ever play on your starting planet. The galaxy is decoration.
 
-3. **"Alloys are completely useless."** — Industrial districts cost 200 minerals + 3 energy/month to produce 3 alloys/month. Those alloys convert to VP at alloys/50 = 0.06 VP/month. A Mining district costs 100 minerals, 0 energy, produces 6 minerals to fund more districts worth 1 VP each. There is zero rational reason to build Industrial districts. The alloy economy is a trap.
+4. **"Where do I go from the galaxy map?"** The navigation flow is broken. Galaxy → click star → HTML panel. The system view (orbital rings with clickable planets) that every space 4X has is entirely absent.
 
-4. **"All my games play the same."** — No planet type bonuses, no starting condition variety, no anomalies, no random events. Every game: build 2 agriculture, 2 mining, 2 generators, 2 housing, research everything, fill remaining slots. The optimal build order is solved after 2 matches. Nothing creates divergent playstyles or memorable moments.
+5. **"All planets look the same."** Even in the system panel table, planets are just text rows. No color coding, no visual weight for habitability, no reason to get excited about finding a good planet.
 
-5. **"The other players might as well not exist."** — In multiplayer, you can see their colored rings on the galaxy map. That's it. No chat during game (lobby chat only), no trade, no competition over systems, no comparison of progress beyond the Tab scoreboard. The multiplayer is cosmetic.
+### 4. Recommendations
 
----
-
-### 3. Recommendations
-
-### R18-1: Buildings System — The Second Decision Layer
+### 4.1 System Orbital View — The Missing Middle Layer
 
 **Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
+**Effort:** High
+**Category:** Core Mechanic / UX
 
-**The problem:** Districts are the only production decision. Once players learn the optimal build order (~2 games), every colony plays identically. There's no depth beyond "which colored box do I place next."
+**The problem:** The architecture defines three views (colony, galaxy, system) but only two exist. Clicking a star in the galaxy map shows an HTML table. There's no 3D orbital view of a system's planets.
 
-**The fix:** Implement the building system (Phase 2 spec exists). Buildings occupy separate slots from districts, unlock at pop thresholds, and provide specialized bonuses. Key buildings: Research Lab (+5 physics, 150 minerals), Engineering Bay (+5 engineering, 150 minerals), Alloy Foundry (+5 alloys + consumes 2 minerals/month, 150 minerals 50 energy), Hydroponics Bay (+10 food, 100 minerals), Civilian Shipyard (enables colony ships, 200 minerals 100 alloys — even before ships exist, this is a gate for future colonization).
+**The fix:** Build `system-view.js` as the bridge between galaxy and colony. When a star is clicked in galaxy view, transition into a system view showing:
+- Central star (large emissive sphere, colored by star type)
+- Planets on orbital rings (concentric circles), each as a colored sphere sized by planet.size
+- Planet type determines color/material (Continental=green/blue, Ocean=deep blue, Arctic=white, Desert=tan, etc.)
+- Click planet to see details panel (type, size, habitability, bonus). If colonized, "View Colony" button
+- Camera: top-down or slight angle, centered on star, zoom-scrollable
 
-**Why it matters:** Buildings create a second decision axis orthogonal to districts. Districts are about macro resource allocation; buildings are about specialization and strategy. A player with 3 Research Labs and 2 Research districts is making a tech-rush play. A player with 2 Alloy Foundries is preparing for ships. Buildings also create an alloy sink (Foundry costs alloys, Shipyard costs alloys).
-
-**Design details:**
-- Unlock slots at pop 5, 10, 15, 20, 25, 30 (max 6 slots)
-- Buildings use the existing build queue (shared with districts, max 3)
-- Building build times: 400-600 ticks (40-60 seconds) — slower than districts to make them feel significant
-- Building slots render as a separate row below the district grid in isometric view
-- Reference: Stellaris building slots, Civ VI district buildings
-
-### R18-2: Alloy VP Weight Fix + Industrial Output Bump
-
-**Impact:** High
-**Effort:** Low
-**Category:** Balance
-
-**The problem:** Industrial districts produce 3 alloys/month at a cost of 200 minerals + 3 energy/month. VP conversion: alloys/50 = 0.06 VP/month. A Housing district (100 minerals, 1 energy) enables a pop worth 2 VP that grows in ~40 seconds. Industrial is 33x worse VP-per-resource than Housing.
-
-**The fix:** Two changes: (1) Change VP formula from alloys/50 to alloys/25. (2) Increase Industrial output from 3 to 4 alloys/month. Together, an Industrial district produces 4/25 = 0.16 VP/month, making it competitive with the ~0.1 VP/month from a pop (considering growth time + food cost).
-
-**Why it matters:** Without this fix, Industrial districts are a trap — new players build them thinking alloys matter, experienced players never touch them. This wastes a district type and removes a strategic axis.
+**Why it matters:** This is the "wow" moment of exploration. Finding a size-20 Continental planet in a distant system should feel like discovery, not like reading a database row. Every space 4X from Master of Orion to Stellaris has this view. It's where the galaxy comes alive.
 
 **Design details:**
-- VP formula: pops×2 + districts×1 + alloys/25 + totalResearch/100
-- Industrial output: 4 alloys/month (up from 3)
-- Research output should also bump to 4/4/4 (up from 3/3/3) to match the tier-2 premium
-- These are already spec'd in design.md as separate tasks — combine into one delivery
+- Navigation flow becomes: Galaxy (G key) → click star → System view → click planet → Colony view (if colonized)
+- Back button or Escape returns to galaxy
+- Planets orbit slowly for visual interest (cosmetic only, no gameplay)
+- Habitable planets get a subtle glow or atmosphere ring
+- Gas giants are noticeably larger (2-3x radius)
+- Stellaris reference: system view is where you order surveys, colonizations, and see fleets
 
-### R18-3: Event Toast Notification HUD
+### 4.2 Colony Planet Context — Give the Colony a World
 
 **Impact:** Medium
 **Effort:** Low
-**Category:** UX / Polish
+**Category:** Visual Polish / UX
 
-**The problem:** The game emits events (constructionComplete, popMilestone, housingFull, foodDeficit, researchComplete, districtDisabled/Enabled, matchWarning) but only matchWarning and researchComplete have visible client handling. All other events are silently dropped. Players miss critical information: they don't know when construction finishes, when housing fills, when districts get disabled.
+**The problem:** The colony isometric grid floats in a void. There's no visual indication that you're on a planet. Desert and Ocean colonies are indistinguishable.
 
-**The fix:** Toast notification system. Fixed-position container on the right side below the resource bar. Each toast: 220px wide, dark panel, icon + text, slide-in animation, auto-dismiss after 4 seconds. Max 5 visible. Color-coded borders: green (positive), yellow (warning), red (crisis).
+**The fix:** Add planet-type visual context to the colony view:
+- Ground plane color matches planet type (Desert=sandy tan, Ocean=blue-gray, Arctic=white, etc.)
+- Distant horizon glow matching atmosphere color (use a gradient quad behind the grid)
+- Sky/background color shifts slightly by planet type instead of uniform #0a0a1a
+- Colony panel already shows planet type text — make the 3D scene match it
 
-**Why it matters:** Without notifications, the game feels unresponsive. You queue a build and have to manually check when it finishes. You hit housing cap with no alert. Districts disable silently. Toast notifications are table-stakes game UX.
-
-**Design details:**
-- Green: constructionComplete, popMilestone, researchComplete, districtEnabled
-- Yellow: queueEmpty, housingFull
-- Red: foodDeficit, districtDisabled
-- Text templates: "Built: Mining District", "Population: 15 on Home Colony", "WARNING: Housing Full", etc.
-- Already fully spec'd in design.md as "Event toast notification HUD"
-
-### R18-4: Surface Anomalies on Colony Grid
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic / Content
-
-**The problem:** District placement is mechanically uninteresting — all tiles are identical. Whether you place a Mining district at position 0 or position 15 makes zero difference. The colony grid is a list pretending to be a spatial puzzle.
-
-**The fix:** When creating a colony, randomly place 1-3 anomalies on specific tile indices. Types: "Mineral Vein" (+50% mining output on this tile), "Thermal Vent" (+50% generator on this tile), "Fertile Soil" (+50% agriculture on this tile), "Ancient Ruins" (choose: +500 research or +2 influence/month), "Alien Artifact" (choose: +200 alloys or +300 research). 3D rendering: glowing crystals/runes on tiles (emissive pulsing materials).
-
-**Why it matters:** Anomalies transform district placement from "which type?" to "which type, where?" — a genuine spatial puzzle. A Mineral Vein on tile 7 means you want to place your Mining district there specifically. Ancient Ruins create an early-game choice with long-term consequences. Every colony becomes unique.
+**Why it matters:** Players spend most of their time in colony view. Making each colony feel like a unique world creates attachment and makes planet type bonuses feel tangible. "My Arctic Research world" vs "My Desert Mining colony" should look different, not just produce different numbers.
 
 **Design details:**
-- 1-3 anomalies per colony (random count, weighted: 1=40%, 2=40%, 3=20%)
-- Anomaly tiles chosen randomly from empty slots at colony creation
-- Bonus anomalies (+50% output) apply their multiplier in _calcProduction when the matching district type is built on that tile index
-- Choice anomalies (Ruins, Artifact) have a `resolveAnomaly` command with option parameter
-- Already fully spec'd in design.md Phase 1
+- Continental: green-brown ground, blue-white atmosphere glow
+- Ocean: blue-gray ground, deep blue atmosphere
+- Arctic: white ground with blue tint, pale atmosphere
+- Desert: tan-orange ground, hazy amber atmosphere
+- Tropical: dark green ground, humid green-yellow atmosphere
+- Arid: brown-red ground, dusty orange atmosphere
+- Use MeshStandardMaterial color on existing ground plane + a background hemisphere or gradient
 
-### R18-5: In-Game Chat + Event Ticker
+### 4.3 Planet Color Coding in System Panel (Quick Win)
 
 **Impact:** Medium
-**Effort:** Low
-**Category:** Multiplayer / Social
+**Effort:** Very Low
+**Category:** UX
 
-**The problem:** Players in multiplayer can see each other's colored dots on the galaxy map, but cannot communicate or observe each other's actions. The multiplayer is lonely.
+**The problem:** The system panel planet table treats all planets as equal text rows. A size-20 Continental is visually identical to a size-8 Barren.
 
-**The fix:** Two complementary features: (1) Extend existing lobby chat to work during gameplay — messages route to all room players. Collapsible overlay panel. (2) Event ticker: scrolling text at the top of the screen narrating significant actions across all players: "Player X built a Research district", "Player Y's colony reached 20 pops".
+**The fix:** Color-code planet rows in the existing HTML system panel:
+- Planet type name colored by type (Continental=green, Ocean=blue, Desert=tan, etc.)
+- Habitability column: green for 80%+, yellow for 60%, gray for 0%
+- Size column: bold for 15+, red for 8-10
+- Add a small colored circle/dot before the planet type name
+- Highlight "best" planet in system (highest hab*size) with subtle gold border
 
-**Why it matters:** Social awareness is what makes multiplayer 4X games feel alive. Even without direct interaction mechanics (trade, diplomacy, war), knowing what opponents are doing creates competitive tension. "Player Z just built their 5th Mining district" is information that shapes your strategy.
+**Why it matters:** Until the full system view exists, the HTML panel IS the planet experience. Making it visually scannable lets players quickly evaluate systems. "That system has a green dot — it has a habitable world!" This is already partially done (habClass CSS) but needs more visual weight.
 
-**Design details:**
-- Chat: reuse existing WebSocket chat routing, just display it during game screen
-- Event ticker: server broadcasts significant events to all players (not just the owner)
-- Ticker events: constructionComplete, popMilestone (every 5), colony trait earned
-- Chat keybind: Enter to focus, Escape to close
-- Both already spec'd in design.md
-
-### R18-6: Planet Type Signature Bonuses
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Content / Strategic Depth
-
-**The problem:** All planets are mechanically identical except for size and habitability percentage. A Continental planet plays exactly like an Arctic planet. Planet type is flavor text, not a strategic variable.
-
-**The fix:** Each planet type gets distinct bonuses:
-- Continental: +1 all district output (generalist)
-- Ocean: +50% Agriculture, +2 max districts (food world, extra space)
-- Tropical: +25% Agriculture, +25% Research (balanced growth)
-- Arctic: +50% Research (science world)
-- Desert: +50% Mining, +25% Energy (extraction world)
-- Arid: +25% Mining, +25% Alloys (industrial world)
-
-**Why it matters:** Planet bonuses make colonization targets meaningful. An Arctic planet with high habitability becomes a coveted research colony. A Desert world is your mineral engine. When combined with anomalies, each planet becomes a puzzle with a personality. This also makes the galaxy map's planet information actionable rather than decorative.
-
-**Design details:**
-- Apply bonuses as multipliers in _calcProduction
-- Show bonuses in colony panel and system view planet table
-- Starting planet type already varies per galaxy seed — bonuses make that meaningful
-- Already spec'd in design.md Phase 1
-
-### R18-7: Fog of War on Galaxy Map
-
-**Impact:** Medium
-**Effort:** Medium
-**Category:** Core Mechanic / Exploration
-
-**The problem:** All systems are visible with full detail from game start. There's no discovery, no exploration, no "what's out there?" tension. The galaxy map is a solved puzzle from tick 1.
-
-**The fix:** Three visibility tiers (client-side calculation):
-- **Known** (within 2 hyperlane hops of owned systems): full-color star, name on hover, hyperlanes shown
-- **Surveyed** (player has surveyed): green checkmark, planet details visible in system panel
-- **Unknown** (everything else): dim gray dot (opacity 0.2), no name, faded hyperlanes
-
-**Why it matters:** Fog of war is what makes exploration exciting. Not knowing what's beyond the next hyperlane creates anticipation and strategic uncertainty. It also makes multiplayer more tense — you don't know exactly what your opponent has access to.
-
-**Design details:**
-- BFS from owned systems along hyperlanes to compute 2-hop visibility set
-- Starting system + direct neighbors always visible
-- Other players' owned systems visible as colored dots (but planets hidden)
-- Pure client-side rendering change — no server changes
-- Already spec'd in design.md Phase 3
-
-### R18-8: Colony Ships + Multi-Colony
+### 4.4 Colony Ships — The Actual Fix
 
 **Impact:** Critical
 **Effort:** High
 **Category:** Core Mechanic
 
-**The problem:** The game's fatal flaw: you can only have one colony. 4X games are defined by expansion — founding new colonies, managing an empire, specializing worlds. Without multi-colony, the game is a city-builder, not a 4X. Every other improvement (buildings, anomalies, planet bonuses) only extends a single-colony experience by a few minutes.
+**The problem:** Planet bonuses, planet types, system exploration — none of it matters when you can never leave your starting system. The galaxy is a museum exhibit. Planets are trivia.
 
-**The fix:** Implement colony ships as the simplest possible expansion mechanic:
-1. Add "Colony Ship" as a buildable unit from the colony build queue (cost: 200 minerals, 100 food, 100 alloys, build time: 600 ticks/60 seconds)
-2. Colony ship appears as an icon in the galaxy view at the player's home system
-3. Click colony ship, then click a habitable planet in a known system → colony ship moves along hyperlanes (5 seconds per hop)
-4. On arrival, colony ship is consumed, new colony founded with 2 pops
-5. Colony list sidebar appears when player has 2+ colonies
+**The fix:** This is already the #2 priority in the R23 build order. Colony ships transform the galaxy from decoration into gameplay. Once players can expand, every other planet-related feature compounds: system view becomes a colonization decision screen, planet bonuses become colony specialization strategy, fog of war creates exploration tension.
 
-**Why it matters:** This is the difference between a 15-minute tech demo and a 30-minute game. Multi-colony enables: colony specialization (research world vs forge world), expansion race pressure, resource logistics, spatial strategy on the galaxy map. It connects the colony view and galaxy view into one unified experience.
+**Why it matters:** Colony ships are the keystone. Without them, the galaxy map is a screensaver and planet data is flavor text. With them, every system becomes a strategic question: "Is that Ocean world worth sending a colony ship 3 hops through unknown space?"
 
-**Design details:**
-- Colony ship is NOT a fleet — it's a single unit that moves on the galaxy map
-- Movement: follow hyperlanes, 50 ticks (5 seconds) per hop
-- Colonization: consume ship, create colony with 2 pops on target planet
-- Colony list: sidebar, number keys 1-5 to switch, shows name/pops/net income
-- Max 5 colonies per player (matches the 20-minute match target)
-- Requires: building system (Civilian Shipyard) OR can be built directly from colony queue as a simpler implementation
-- Reference: Stellaris colony ships, Endless Space colonization
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis (10-minute practice match)
-
-| Resource | Start | Production/month (4 starting districts) | Month 10 (~100 sec) Stockpile |
-|----------|-------|----------------------------------------|------------------------------|
-| Energy | 100 | +6 gen, -1 housing = +5 net | ~150 |
-| Minerals | 300 | +6 mining = +6 net | ~360 (spent on builds) |
-| Food | 100 | +12 agri, -8 pops = +4 net | ~140 |
-| Alloys | 50 | 0 (no industrial built by default) | 50 |
-| Research | 0/0/0 | 0 base (4 unemployed = +4 each) | ~40/40/40 |
-| Influence | 100 | 0 production | 100 |
-
-**Issues identified:**
-- **Alloys stuck at 50** for most matches — no incentive to build Industrial
-- **Influence frozen at 100** — no production, no spend. Remove starting influence or add an influence sink (edicts spec exists)
-- **Research too fast** — 4 unemployed pops produce 4 research/track/month. T1 completes in 37 months (~6 min). With 1 Research district: T1 in ~21 months (~3.5 min). All T1+T2 done by minute 12.
-- **Minerals bottleneck correct** — 300 start + 6/month means ~3 districts funded by month. This pacing feels right for a 10-minute match.
-
-#### Suggested Number Tweaks
-
-1. **Industrial alloys: 3→4** — already spec'd, needs implementation
-2. **Alloy VP: /50→/25** — already spec'd, needs implementation
-3. **Research district: 3/3/3→4/4/4** — already spec'd, needs implementation
-4. **T2 tech cost: 500→750** — extends T2 completion from minute 14 to minute 20, making it a real investment
-5. **Starting influence: 100→50** — with no spend, 100 is meaningless. 50 leaves room for edict system (25 for Emergency Reserves) when implemented
-6. **Starting alloys: 50→0** — no sink exists. Remove the confusion.
-
-#### Game Length Analysis
-
-- 10-minute practice: Colony fills (~12 districts by minute 8), tech finishes by minute 8, last 2 minutes are dead time
-- 20-minute multiplayer: Colony fills by minute 10, all tech done by minute 14, last 6 minutes are dead time
-- **Target: 20-40 minutes with meaningful decisions throughout** — currently fails at both ends. Too short for a real 4X, too long for the content available.
-- **Fix:** Multi-colony + buildings extend the decision space. Colony ships at minute 5-8, second colony online by minute 10, building slots unlocking at minute 12-15, T3 techs as a late-game reach goal.
-
----
-
-### 5. Content Wishlist — Making ColonyGame Distinctive
-
-1. **"Galactic Draft" starting conditions** — At match start, each player drafts from a pool of starting bonuses (extra resources, pre-built districts, special tech). Like a card draft in a board game. Creates asymmetric starts and replayability. Each match begins with a strategic decision before the first district is placed. Reference: Terraforming Mars corporation draft.
-
-2. **"Colony Legends" narrative system** — Colonies accumulate one-line history entries on milestones: "Founded by Player A on Month 1", "Survived the Great Mineral Scarcity", "Became the empire's first Forge World." At game end, display each colony's legend as a narrative recap. Makes every match feel like a story. Reference: Dwarf Fortress legends, Crusader Kings chronicle.
-
-3. **"Pressure Zones" dynamic galaxy effects** — Certain regions of the galaxy have persistent effects: "Nebula" zones reduce fleet speed but boost research, "Asteroid Fields" boost mining but risk random damage, "Void Rifts" are impassable barriers that shape expansion paths. Generated procedurally from galaxy topology. Makes the galaxy map a strategic landscape, not just a connectivity graph.
-
-4. **"Galactic Market" real-time trading** — Shared resource market with fluctuating prices driven by all players' production and consumption. Buy minerals when cheap, sell alloys when expensive. Creates economic interaction without formal diplomacy. Reference: Stellaris galactic market, Eve Online.
-
-5. **"Speed Chess Colony" blitz mode** — 5-minute matches with 3x resource production, 2x build speed, pre-built colony at 50% capacity. Perfect for quick competitive rounds. Unlocked after playing 3 normal matches. The "one more game" hook.
-
----
-
-### 6. Priority-Ordered Implementation Path
-
-Based on impact-to-effort ratio, the recommended build order for `/develop`:
-
-1. **R18-2: Alloy VP fix + Industrial output bump** (Low effort, High impact — balance fix)
-2. **R18-3: Event toast notification HUD** (Low effort, Medium impact — UX foundation)
-3. **R18-6: Planet type bonuses** (Low effort, Medium impact — content variety)
-4. **R18-5: In-game chat** (Low effort, Medium impact — multiplayer social)
-5. **R18-4: Surface anomalies** (Medium effort, High impact — spatial puzzle)
-6. **R18-1: Buildings system** (Medium effort, High impact — decision depth)
-7. **R18-7: Fog of war** (Medium effort, Medium impact — exploration)
-8. **R18-8: Colony ships + multi-colony** (High effort, Critical impact — game transformation)
-
----
-
-## Review #17 — 2026-03-12 — Galaxy Data Exists, Galaxy View Doesn't
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 27/113 tasks complete (24%). Procedural galaxy generation live (Poisson disc sampling, RNG hyperlanes, planet generation). Score timer + VP scoring. Energy deficit auto-disable. Mini tech tree. Full HTML overlay UI. Three.js isometric colony view. 261 tests passing. ~7,729 lines.
-
-**Key changes since Review #16:** Procedural galaxy generation with seeded PRNG, Relative Neighborhood Graph hyperlanes, 3 galaxy sizes (50/100/200 systems), planet generation per system, starting system assignment with greedy spread. Galaxy data exists server-side and is sent to clients in `gameInit`, but has zero visual representation. Performance: throttled growth broadcasts, deduplicated gameInit payload.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | → | Still one colony, one decision axis. Galaxy data exists but isn't interactive — no spatial strategy |
-| Pacing & Tension | 4/10 | → | VP timer creates urgency. Energy deficit is a real consequence. But all tension is still artificial (clock), not emergent |
-| Economy & Production | 7/10 | → | District economy is complete for single-colony play. Tech modifiers, energy deficit, growth tiers. Nothing new since R16 |
-| Exploration & Discovery | 1/10 | ↑ | Galaxy exists as data — star systems, planets, hyperlanes. But players can't see or interact with it. 1 instead of 0 for having the data |
-| Multiplayer Fairness | 5/10 | ↑ | Starting system spread algorithm ensures distance between players. Galaxy seed is deterministic. But players still can't see each other |
-
-**Overall: 4.0/10** — Up from 3.6. The galaxy infrastructure is a major milestone but it's invisible to players. The game is a single-colony builder with a hidden galaxy behind it. The critical path is now exclusively about visualization and interaction.
-
----
-
-### 2. What a Player Would Notice (Top 5 Gaps)
-
-1. **"I'm told there's a galaxy but I can't see it."** — The server generates 50 star systems with hyperlanes and planets, sends them to the client... and nothing renders. The data is there. The Three.js view is not. This is the single most impactful missing piece — a few hundred lines of Three.js to make the game feel like a space game.
-
-2. **"I still can't do anything with other players."** — Galaxy spread assignment means players start far apart, but there's no way to see where they are, where you are, or interact at all. The multiplayer is parallel solitaire.
-
-3. **"I filled my planet, now what?"** — On a size-16 planet, ~12 districts are buildable in a 10-minute match. After that: research completes, alloys pile up, and the player waits for the timer. No buildings, no ships, no second colony. The mid-game cliff is severe.
-
-4. **"Alloys are useless."** — Industrial districts produce alloys with no sink. In a 20-minute match, a player can accumulate 300+ alloys doing absolutely nothing. The alloy VP conversion (alloys/50) is too small to justify the energy cost of industrial districts. VP-per-energy-spent is far better on generators.
-
-5. **"The tech tree finishes too fast."** — With 2 research districts (6 research/month per track), all 6 techs complete in ~14 minutes. In a 20-minute match, tech is done by minute 14. No more meaningful decisions after that.
-
----
-
-### 3. Recommendations
-
-### R17-1: Galaxy Map View (Three.js) — THE Critical Path
-
-**Impact:** Critical
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Galaxy data exists server-side but is invisible to players. The `gameInit` payload includes full galaxy data — systems, hyperlanes, star types, planets — but the client discards it.
-**The fix:** Create `galaxy-view.js` with a PerspectiveCamera scene. Stars as small emissive spheres colored by star type. Hyperlanes as semi-transparent lines. Player-owned systems highlighted with player color. OrbitControls for camera. 'G' key toggles between colony view and galaxy view. Click system to select (show name + planet count). Double-click to enter system view (later) or colony view (if colonized).
-**Why it matters:** This is the single highest-leverage feature in the entire project. It transforms the game from "colony city builder" to "space 4X game" in one stroke. Every player who launches this game expects to see a galaxy. The data is already there — this is purely a visualization task.
-**Design details:**
-- Star sphere radius: 1.5-3.0 scaled by star type (blue giants bigger)
-- Star colors from galaxy.js STAR_TYPES: yellow=#f9d71c, red=#e74c3c, blue=#3498db, white=#ecf0f1, orange=#e67e22
-- Emissive materials with MeshBasicMaterial (no lighting needed — stars glow)
-- Hyperlanes: THREE.LineSegments with BufferGeometry, semi-transparent white (#ffffff, opacity 0.3)
-- Owned systems: ring/halo of player color around star
-- Camera: PerspectiveCamera, THREE.OrbitControls, damping enabled
-- Initial camera position: above galaxy center, looking down at ~45°
-- Fog or fade for distant systems to create depth
-- System name label on hover (CSS2DRenderer or sprite)
-- Galaxy stored client-side from `gameInit` — no new server work needed
-- Reference: Stellaris galaxy map (but simpler — no territory borders yet)
-
-### R17-2: Alloy Sink — Military Stockpile VP + Colony Reinforcement
-
-**Impact:** High
-**Effort:** Low
-**Category:** Balance / Economy
-
-**The problem:** Alloys accumulate with no use. Industrial districts are strictly worse than research districts for VP generation. The VP formula (alloys/50) means 200 alloys = 4 VP, but the same energy spent on research districts yields far more VP through pops and districts.
-**The fix:** Two changes: (1) Increase alloy VP weight from alloys/50 to alloys/25, making stockpiling alloys a viable strategy. (2) Implement colony reinforcement (already in design.md): spend 100 alloys for +5 housing, max 3 per colony. This creates an immediate alloy sink and rewards industrial-focused play.
-**Why it matters:** Without a meaningful alloy sink, 1/6 of the district types is a trap. Players who figure out the math will never build industrial districts, reducing strategic variety. Making alloys matter creates an industrial vs. research strategic fork.
-**Design details:**
-- VP formula change: alloys/25 instead of alloys/50 (200 alloys = 8 VP instead of 4)
-- Colony reinforcement: `reinforceColony` command, 100 alloys, +5 housing, max 3 per colony
-- Reinforce button in colony info panel (right side)
-- Net effect: a player who builds 3 industrial districts and reinforce their colony can grow 15 more pops (+30 VP from pops) while having alloy stockpile VP
-
-### R17-3: Building System — Unlock Specialization Beyond Districts
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** After districts fill up (or reach a good balance), there are no more colony decisions. The build menu becomes irrelevant. The mid-game has no agency.
-**The fix:** Implement the building system from Phase 2. Buildings occupy separate slots (not district grid slots). Unlock at pop thresholds: slot 1 at 5 pops, slot 2 at 10, slot 3 at 15, max 6 slots. Building types: Research Lab (+5 physics, 150 minerals), Engineering Bay (+5 engineering, 150 minerals), Cultural Center (+5 society, 150 minerals), Hydroponics Bay (+10 food, 100 minerals), Alloy Foundry (+5 alloys + consumes 2 energy, 150 minerals), Power Plant (+10 energy, 150 minerals).
-**Why it matters:** Buildings extend colony decision-making into the mid-game. Pop growth unlocking new building slots creates a natural progression arc. Different building loadouts enable colony specialization (research world vs forge world).
-**Design details:**
-- Buildings use the same build queue as districts (shared 3-item queue)
-- Building build time: 400 ticks (40 sec) — same as advanced districts
-- Buildings render as taller, distinct 3D shapes on a separate row below the district grid
-- Building production added to colony `_calcProduction` like districts
-- UI: building slots panel below district grid in colony view, similar click-to-build interaction
-- Reference: Stellaris buildings, Civ VI city center buildings
-
-### R17-4: Fog of War + System Info on Galaxy Map
-
-**Impact:** High
-**Effort:** Low
-**Category:** Core Mechanic / UX
-
-**The problem:** When the galaxy map exists, showing everything to everyone eliminates discovery tension. But making everything invisible prevents any strategic thinking.
-**The fix:** Three visibility tiers: (1) **Known** — systems within 2 hyperlane hops of owned systems are visible with star type and connections. (2) **Surveyed** — systems where the player has surveyed show full planet details. (3) **Unknown** — all other systems show as dim dots with no name/info. Players always see their own systems and owned-system connections.
-**Why it matters:** Information asymmetry is what makes exploration meaningful. Seeing dim dots at the edge of your known space and wondering "what's out there?" is the emotional core of the Explore pillar.
-**Design details:**
-- Visibility calculated client-side from galaxy data + player's surveyed systems
-- Known systems: full color star, name visible on hover, hyperlanes shown
-- Surveyed systems: green checkmark indicator, planet count visible
-- Unknown: dim gray dot (opacity 0.2), no name, hyperlane connections shown as dashed
-- Player's starting system and immediate neighbors always visible
-- Other players' owned systems visible as colored dots (but not their planets)
-- No server changes needed — client filters visibility from existing surveyed/owner data
-
-### R17-5: Expand Tech Tree to 3 Tiers
+### 4.5 Double-Click Star to Enter System View
 
 **Impact:** Medium
-**Effort:** Low
-**Category:** Content / Depth
-
-**The problem:** The current 2-tier, 6-tech tree completes too early. In a 20-minute match with 2 research districts, all techs finish by minute ~14. After that, research districts produce VP at diminishing returns and there are no more tech decisions.
-**The fix:** Add a Tier 3 to each track (3 new techs = 9 total). T3 techs cost 1000 research, require T2, and provide powerful late-game effects. Physics T3: Fusion Reactors (+100% Generator output, generators now also produce +1 alloy). Society T3: Genetic Engineering (+100% Agriculture, pop growth 2x). Engineering T3: Automated Mining (+100% Mining, mining districts no longer need workers — 0 job cost).
-**Why it matters:** T3 techs create a meaningful late-game goal. A 1000-cost tech with 2 research districts takes ~33 minutes worth of research per track — unreachable in most games without dedicating significant colony space to research. This creates a "tech rush" strategy distinct from "build rush" or "expand rush."
-**Design details:**
-- T3 costs: 1000 research (same track)
-- T3 supersedes T2 multipliers (use highest, don't stack)
-- Fusion Reactors: multiplier 2.0 on generators + new alloyBonus: 1 per generator
-- Genetic Engineering: multiplier 2.0 on agriculture + growthBonus: 0.5 (halves growth time)
-- Automated Mining: multiplier 2.0 on mining + jobBonus: mining districts cost 0 jobs
-- These techs are designed to be game-changing if reached — proper Tier 3 power level
-
-### R17-6: Event Notifications HUD (Toast System)
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** UX / Polish
-
-**The problem:** The server emits 7+ event types (constructionComplete, queueEmpty, popMilestone, housingFull, foodDeficit, districtDisabled, districtEnabled, researchComplete, matchWarning, finalCountdown) but most are silently ignored on the client. Players miss important state changes.
-**The fix:** Add a toast notification system — small cards that slide in from the right edge, auto-dismiss after 4 seconds, stack up to 5. Each event type gets an icon and color. Click a toast to jump to relevant context (e.g., click constructionComplete to select that colony).
-**Why it matters:** Event notifications are the game talking to the player. Without them, players have to constantly scan resource bars and colony panels for changes. Toasts make the game feel alive and responsive.
-**Design details:**
-- Toast container: fixed, right side, below resource bar
-- Toast card: 200px wide, dark background, icon + text, slide-in animation
-- Auto-dismiss: 4 seconds, fade out
-- Max 5 visible (oldest removed when 6th arrives)
-- Color coding: green (positive — construction, milestone), yellow (warning — housing, queue empty), red (crisis — food deficit, energy disabled)
-- Implementation: `_showToast(text, type)` function in app.js, called from gameEvent handler
-
-### R17-7: System Selection Panel on Galaxy Map
-
-**Impact:** Medium
-**Effort:** Low
+**Effort:** Low (once system view exists)
 **Category:** UX
 
-**The problem:** When galaxy map launches, clicking a system should show information. Without a system info panel, the galaxy map is just pretty dots.
-**The fix:** When a system is selected on the galaxy map, show a side panel with: system name, star type, planet list (type, size, habitability), owner (if any), surveyed status. If the system has a player colony, show a "View Colony" button that switches to colony view. This is the system view's lightweight precursor.
-**Why it matters:** The system panel is how players evaluate where to expand. "This system has a size-18 Continental world — I need to colonize it" is a core 4X decision that requires seeing planet data.
-**Design details:**
-- Panel: right side (same position as district info panel — only one visible at a time)
-- Planet list: show orbit number, type icon (colored dot), size, habitability %
-- If planet is colonized: show colony name, link to colony view
-- If system is unsurveyed: show "Unsurveyed — send a Science Ship" placeholder
-- Reuse existing game-panel CSS styling
+**The problem:** The current flow is click star → read HTML table. There's no spatial "entering" a system.
+
+**The fix:** Single-click star shows the quick info panel (existing behavior). Double-click or Enter key transitions into the system orbital view. This mirrors Stellaris's galaxy-to-system zoom. Add a "View System" button to the existing system panel as an alternative entry point.
+
+**Why it matters:** The two-level drill-down (galaxy → system → colony) is the standard 4X navigation pattern. Players expect to "zoom in" to systems. The current flat panel breaks spatial mental models.
+
+### 5. Balance Snapshot
+
+No balance changes needed — the user's question is about visualization and navigation, not numbers. Planet bonuses are well-tuned for when expansion becomes available.
+
+Key observation: planet bonus values were designed for multi-colony play (+1 food on Continental only matters when you're choosing WHERE to colonize). With single-colony, they're a nice flavor addition but not strategically meaningful. Colony ships are the economic unlock, not a balance change.
+
+### 6. Content Wishlist
+
+1. **Planet anomaly markers in system view** — rare planets with glowing markers indicating special features (ancient ruins, resource deposits). Visible before surveying, incentivizing exploration. "What's that purple glow on the 4th planet?"
+
+2. **Living galaxy background** — nebula clouds, asteroid fields, and cosmic dust rendered as subtle particle effects in the galaxy view. Makes exploration feel like traversing a real universe, not a node graph.
+
+3. **Colony time-lapse on founding** — when a colony ship lands, brief 3-second animation showing the planet sphere, then zooming down to the surface as the first buildings appear. The "founding moment" should feel monumental.
+
+### 7. Build Order Update
+
+The user's question reveals the priority should be:
+1. **Colony ships** (already R23 #2) — makes planets matter
+2. **System orbital view** (new) — makes planets visible
+3. **Colony planet context** (new) — makes colonies feel like worlds
+4. **Planet visual polish in system panel** (new) — quick win while building above
 
 ---
 
-### 4. Balance Snapshot
-
-**Resource Flow Analysis (10-minute practice game):**
-
-| Resource | Starting | Production/month (4 starter districts) | Consumption/month | Net/month | After 10 min (60 months) |
-|----------|----------|---------------------------------------|-------------------|-----------|--------------------------|
-| Energy | 100 | 6 (1 generator) | 1 (housing) | +5 | ~400 |
-| Minerals | 300 | 6 (1 mining) | 0 | +6 | ~660 |
-| Food | 100 | 12 (2 agriculture) | 8 (8 pops) | +4 (declining) | ~200 |
-| Alloys | 50 | 0 | 0 | 0 | 50 |
-| Research | 0 | 4 per track (4 unemployed) | 0 | +4 per track | ~240 per track |
-| Influence | 100 | 0 | 0 | 0 | 100 |
-
-**Key balance observations:**
-
-1. **Alloys are dead.** Zero production unless player actively builds industrial districts. VP conversion at alloys/50 means a player would need 250 alloys for just 5 VP. The energy opportunity cost (3 energy/month per industrial) makes this worse than just building more generators. **Fix: alloys/25 for VP.**
-
-2. **Research VP is underweighted.** Total research/100 means 720 total research (240 per track over 10 min) = 7 VP. Given research districts cost 200 minerals + 20 energy AND consume 4 energy/month, this is a poor return. But tech bonuses are where research pays off indirectly. No immediate change needed — the T3 tech expansion will make research more valuable.
-
-3. **Housing becomes the binding constraint at ~minute 3.** 8 starting pops in 10 housing slots. At +4 food surplus, first pop grows at 40 sec, second at 40 sec, then housing full. Player must build Housing district (100 minerals) to continue growing. This pacing is correct — it forces the first player decision.
-
-4. **Influence has zero use.** 100 starting influence sits idle the entire game. No edicts, no diplomacy, no starbases. **Low priority** since influence sinks come with galaxy interaction, but worth noting as dead weight.
-
-5. **Game length: 10 min practice / 20 min multiplayer feels right.** A 10-minute game allows ~6 districts built from mining income (600 minerals / 100 per district). With 4 starter districts, that's 10 total on a size-16 planet — reasonable but not capped. 20-minute games would allow full planet fill.
-
-**Recommended Number Tweaks:**
-- Alloy VP: 50 → 25 (double alloy VP value)
-- Industrial alloy output: 3 → 4 alloys/month (makes industrial more attractive)
-- Consider: influence trickle of +2/month from capital (gives influence a purpose before diplomacy)
-
----
-
-### 5. Content Wishlist (Aspirational)
-
-1. **Galactic Events with Player Choices** — Every 5 minutes, a galaxy-wide event fires that all players must respond to independently. "Subspace Storm" — choose to hunker down (no production loss, no fleet movement for 2 months) or push through (-25% energy for 2 months but fleets can still move). Different choices by different players create emergent strategic divergence. Like Endless Space 2's senate votes but faster-paced.
-
-2. **Colony Personality Emergence** — When a colony reaches 3+ districts of one type, it earns a visual personality. Mining colonies get asteroid field decorations. Research colonies get observatory domes. Agricultural colonies get verdant growth. The isometric view should tell you what a colony specializes in at a glance, without reading numbers. Tropico and Anno 1800 do this beautifully.
-
-3. **Galactic Wonders** — 3 unique megastructures that can only be built once per galaxy (first player wins). Dyson Sphere (2000 alloys, +100 energy/month), Ring World (3000 alloys, +30 housing +20 pops), Science Nexus (1500 alloys, +50 all research). Building one is a legitimate alternate win strategy. Visible on galaxy map. Like Stellaris megastructures but tuned for 20-minute matches.
-
-4. **Asymmetric Player Starts** — Instead of identical starts, each player picks (or is randomly assigned) a faction with a unique modifier. "The Builders" (+25% build speed, -10% research). "The Scholars" (+25% research, -10% minerals). "The Expansionists" (start with a Colony Ship, -15% all production). "The Isolationists" (+30% all production on homeworld, -50% production on new colonies). Creates replayability and forces adaptation.
-
-5. **Time-Lapse Victory Replay** — After game over, compress the entire match into a 30-second time-lapse showing the galaxy map. Systems light up as they're colonized, territory borders expand, fleets move as dots. Player colors spread across the map. It's the "one more game" hook — watching your empire unfold in fast-forward makes you want to try a different strategy.
-
----
-
-### 6. Priority Order for /develop
-
-Maintaining R15's course correction with updated specifics:
-
-1. **Galaxy map Three.js view** (R17-1) — THE priority. Data exists, needs rendering
-2. **Galaxy/colony view toggle** (existing task) — 'G' key to switch views
-3. **System selection panel** (R17-7) — click system to see planets
-4. **Alloy balance fix** (R17-2) — VP weight + reinforcement sink
-5. **Event toast HUD** (R17-6) — make events visible to players
-6. **Building system** (R17-3) — extend colony mid-game
-7. **Tech tree T3 expansion** (R17-5) — extend research late-game
-8. **Fog of war** (R17-4) — information asymmetry on galaxy map
-9. Then resume Phase 3: science ships, colony ships, fleet movement
-
----
-
-## Review #16 — 2026-03-12 — The Colony Engine Is Ready; Now Build the Galaxy
+## Review #23 — 2026-03-12 — The Same Score for the Third Time
 
 **Reviewer:** Game Design Analyst (automated)
-**Build State:** 25/110 tasks complete (23%). Score timer + VP scoring live. Energy deficit auto-disable. Mini tech tree. Full HTML overlay UI. Three.js isometric colony view. 196 tests passing. ~6,200 lines.
+**Build State:** 41/136 tasks complete (30%). Isometric colony builder, galaxy map with Three.js, procedural galaxy, mini tech tree (6 techs, 2 tiers), VP scoring with match timer, energy deficit system, event toast HUD, pop growth, demolition with refund, game speed controls (5 speeds + pause). 333 tests passing. ~9,200 lines.
 
-**Key changes since Review #15:** VP scoring with configurable match timer (10/20/30 min), post-game scoreboard with full breakdown, 2-minute and 30-second warnings, client scoreboard (Tab key), VP cached per tick. Additionally, 14 new edge case tests for VP/timer and a post-game-over command bug fix.
+**Key changes since Review #22:** None. Zero new gameplay features. The status report shows the same build state as R22 — game speed controls were the last feature shipped. This review exists because the game hasn't moved in the direction it needs to.
 
 ---
 
@@ -515,349 +182,222 @@ Maintaining R15's course correction with updated specifics:
 
 | Pillar | Score | Trend | Notes |
 |--------|-------|-------|-------|
-| Strategic Depth | 3/10 | → | Still one colony, one decision type. Tech tree adds a second dimension but no spatial/military strategy exists |
-| Pacing & Tension | 4/10 | ↑ | VP timer + warnings create a sense of urgency. Energy deficit creates real consequences. But tension is artificial (clock) not emergent (other players) |
-| Economy & Production | 7/10 | ↑ | District economy is polished: 6 types, tiered costs, energy deficit consequences, tech modifiers, variable build times. This pillar is nearly done for single-colony |
-| Exploration & Discovery | 0/10 | → | Nothing. Zero. The defining pillar of a space 4X game is completely absent |
-| Multiplayer Fairness | 4/10 | → | Identical starts, VP scoring is transparent. But "fairness" in a same-planet race is trivial |
+| Strategic Depth | 3/10 | → | Three consecutive reviews at 3. The solved build order, the cosmetic galaxy, the one-colony limit — all unchanged |
+| Pacing & Tension | 5/10 | → | Speed controls helped last time. Nothing new since |
+| Economy & Production | 7/10 | → | Still the crown jewel, still the only thing that works. Alloys and influence still dead |
+| Exploration & Discovery | 2/10 | → | Still a museum. Three reviews running |
+| Multiplayer Fairness | 5/10 | → | Still cooperative solitude |
 
-**Overall: 3.6/10** — Up from 3.0. The colony management engine is increasingly solid, but the game still hasn't started. Review #15's course correction stands: the galaxy is the game, districts are the fuel.
+**Overall Score: 4.4/10** (unchanged from R22)
 
----
-
-### 2. What a Player Would Notice (Top 5 Gaps)
-
-1. **"Where's the galaxy?"** — You launch a "space colony 4X" and see one planet grid. No stars. No map. No sense of space. This is the single biggest gap between the game's premise and its reality.
-
-2. **"I can't interact with other players at all."** — Multiplayer exists (rooms, chat, VP scoreboard) but players share no map, can't see each other, can't trade, fight, or even compare colonies visually. It's parallel solitaire.
-
-3. **"I have 50 alloys doing nothing."** — Alloys accumulate with no sink. Industrial districts feel pointless. The resource that should fund your military fleet is dead weight.
-
-4. **"What do I do after filling my districts?"** — On a size-16 planet with 16 districts built, there's nothing left to do but wait for the timer. No buildings, no second colony, no ships to build. The game ends before it begins.
-
-5. **"The tech tree is too small."** — 6 techs across 3 tracks is a tutorial, not a strategy layer. No branching, no trade-offs, completes too quickly in a 20-min match.
+The score has not moved in three reviews. The recommendations have been the same since R20. The game is stuck in a holding pattern — the foundation works, but no new systems are being added. This review shifts focus: instead of repeating the same recommendations, I'm identifying the *minimum viable 4X loop* — the smallest set of changes that makes this feel like a complete (if small) game.
 
 ---
 
-### 3. Recommendations
+### 2. What a Playtester Would Notice (Top 5)
 
-### R16-1: Galaxy Generation (Server) — THE Priority
+1. **"This is a city-builder, not a 4X."** The game has exactly one strategic loop: build districts, grow pops, accumulate VP. There's no explore, no expand, no exterminate. Only exploit. A player who's played one match has seen everything the game offers.
+
+2. **"I pressed G and saw the galaxy, then pressed G again and went back to my colony forever."** The galaxy view is architecturally complete — 50 systems, hyperlanes, star types, planet tables, ownership dots — and completely inert. There's nothing to do there. It's the game's most impressive broken promise.
+
+3. **"The opening is solved."** 2 Agri → Generator → Mining → Research → Industrial. Improved Power Plants first. There's exactly one optimal build order. Planet type doesn't differentiate it because planet bonuses aren't implemented.
+
+4. **"Two resources don't do anything."** Alloys bank toward VP but can't be spent. Influence sits at 100 permanently. The resource bar advertises 6 economic dimensions and delivers 4.
+
+5. **"I could be playing against bots and wouldn't know."** No chat, no interaction, no territorial tension. The "multi" in multiplayer is cosmetic.
+
+---
+
+### 3. The Minimum Viable 4X Loop
+
+Previous reviews listed 7-8 ordered recommendations. This review cuts to the bone: **what is the absolute minimum to make this a real 4X game?** Three features, implemented together, transform the experience:
+
+#### MVL-1: Planet Type Bonuses — Break the Solved Opener
+
+**Impact:** High
+**Effort:** Low (2-3 hours)
+**Category:** Core Mechanic / Balance
+
+**The problem:** Every planet plays identically. The opening build order is solved because there's no input variance.
+
+**The fix:** Already spec'd in R19, R22. Per-type additive bonuses:
+- Continental: +1 food/Agri, +1 mineral/Mining
+- Ocean: +2 food/Agri
+- Tropical: +1 food/Agri, +1 energy/Generator
+- Arctic: +2 research (per type)/Research
+- Desert: +2 mineral/Mining
+- Arid: +1 energy/Generator, +1 alloy/Industrial
+
+**Why it matters now:** This is the single lowest-effort change that affects gameplay. Starting on a Desert vs. Ocean world should change your first three builds. Even without colony ships, this adds replayability — your starting planet type becomes the first strategic variable.
+
+**Design details:**
+- `PLANET_BONUSES` lookup in game-engine.js
+- Apply in `_calcProduction` after tech modifiers
+- Show bonus in colony panel: "Desert World: +2 Mining per Mining district"
+- Starting colonies are assigned to best habitable planet, which is usually Continental — but galaxy generation occasionally places players on other types
+
+#### MVL-2: Colony Ships — The Bridge
 
 **Impact:** Critical
-**Effort:** Medium
+**Effort:** Medium (6-8 hours)
 **Category:** Core Mechanic
 
-**The problem:** No galaxy exists. A space 4X without a galaxy is a city builder without a city.
-**The fix:** Implement procedural galaxy generation from Phase 3. Generate N star systems (50/100/200) as 3D points using Poisson disc sampling. Connect with hyperlanes (Delaunay + pruning to avg 3-4 connections). Each system gets 1-6 planets with type/size/habitability. Players start in separate systems.
-**Why it matters:** Every other 4X feature depends on this. Ships, exploration, multi-colony, combat, diplomacy — none can exist without a galaxy. This unblocks 80% of the remaining roadmap.
-**Design details:**
-- Small galaxy (50 systems) is fine for 2-4 players, target 20-min matches
-- Minimum 2 hyperlane hops between starting systems per player
-- At least 30% of systems should have habitable planets (>20% habitability)
-- Reference: Stellaris spiral/ring/elliptical shapes. Start with random blob, add shapes later
+**The problem:** One colony = one game. The galaxy exists but can't be used. The entire Phase 3, 4, 5, 6, and 7 roadmap depends on multi-colony gameplay existing first.
 
-### R16-2: Galaxy Map View (Client — Three.js)
+**The fix:** Already spec'd in R18-8, R22-1. Colony ship from build queue: 200 minerals, 100 food, 100 alloys, 600 ticks. Moves along hyperlanes at 50 ticks/hop. Consumed on arrival: new colony with 2 pops on target planet. Max 5 colonies. Shared resource pool (Stellaris model).
 
-**Impact:** Critical
-**Effort:** Medium
-**Category:** Core Mechanic
+**Critical implementation sequence:**
+1. `buildColonyShip` in build queue (reuses existing queue system)
+2. Colony ship state tracking: `playerState.colonyShips[]` with movement processing in tick loop
+3. `sendColonyShip` command: validates target is habitable, within 2 hops, uncolonized
+4. Colony founding on arrival: reuses `_createColony`
+5. Galaxy view: render colony ships as diamond markers on hyperlanes
+6. Colony list sidebar + keyboard shortcuts (1-5)
 
-**The problem:** Players have no way to see or interact with the galaxy.
-**The fix:** Three.js PerspectiveCamera view showing stars as glowing sphere/point sprites colored by type, hyperlanes as lines, player territory as colored regions. Click system to select, 'G' key to toggle between galaxy and colony view.
-**Why it matters:** This is the moment the game becomes a space game. The galaxy map is where strategic decisions happen — where to expand, what's near you, where the enemy is.
-**Design details:**
-- Stars: yellow (G-type), red (M-type), blue (O-type), white (A-type) — small glowing spheres with bloom/emissive
-- Hyperlanes: thin white lines, brighter for surveyed routes
-- Unsurveyed systems: dim gray dot with "?" tooltip
-- Player colors on owned systems (from PLAYER_COLORS)
-- Orbit camera controls (not isometric — perspective is correct for galaxy scale)
-- Reference: Stellaris galaxy map, Endless Space 2 constellation view
+**First expansion pacing (at 1x speed):**
+- Month 0-5: Opening build rush (2-3 min)
+- Month 5-25: Economy optimization + alloy accumulation (~3 min)
+- Month 25-40: Colony ship construction (60 sec build) + transit (~3 hops = 15 sec)
+- Month 40+: Managing two colonies, choosing third target
 
-### R16-3: Science Ships + System Surveying
+#### MVL-3: Fog of War — Mystery and Motivation
 
 **Impact:** High
-**Effort:** Medium
+**Effort:** Low (client-only, 2-3 hours)
 **Category:** Core Mechanic
 
-**The problem:** No exploration loop exists. The "Explore" pillar of 4X is at 0/10.
-**The fix:** Build science ships at colony (50 minerals, 30 sec build). Send to unknown systems via galaxy map. Surveying takes 5-10 sec per planet. Reveals planet details. 20% chance of anomaly per planet (bonus resources for now).
-**Why it matters:** Exploration is the emotional hook of early-game 4X. The moment you reveal a size-18 Continental world two hops away — that's the moment that drives the next 15 minutes of gameplay.
-**Design details:**
-- Science ship: 50 minerals, 300 ticks (30 sec) build time, no upkeep
-- Travel: 50 ticks (5 sec) per hyperlane hop
-- Survey: 100 ticks (10 sec) per planet in system
-- Anomaly chance: 20% per planet, grants random resource bonus (100-500 of one type)
-- Only 1 science ship can survey a system at a time
-- Ship appears as small animated dot on galaxy map
+**The problem:** Complete information removes the "explore" from 4X. Every system is fully visible. When colony ships arrive, there's no discovery in choosing a destination.
 
-### R16-4: Colony Ships + Multi-Colony
+**The fix:** Already spec'd in R17-4, R22-3. Client-side BFS from owned systems:
+- **Known** (within 2 hops of owned/outposted systems): full color, name, planet details
+- **Unknown**: dim gray dot (opacity 0.2), no name, no planet data, dashed hyperlanes
+- Starting system + neighbors always known
+- Other players' colonies visible as colored dots (no planet details)
 
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
+**Why ship alongside colony ships:** Fog + colony ships creates the core exploration loop: "I can see dim stars beyond my borders. I need to expand to see what's there. That might have the Desert world I need for minerals." Without fog, colony ship destination choice is a spreadsheet exercise (compare all visible planets). With fog, it's an adventure.
 
-**The problem:** Players are stuck on one planet forever. The "Expand" pillar doesn't exist.
-**The fix:** Build colony ships (200 minerals, 100 food, 100 influence, 60 sec build). Send to habitable surveyed planet. Ship consumed on arrival, new colony founded with 2 pops. Colony appears in colony list, switchable with number keys.
-**Why it matters:** Multi-colony is where the district system earns its keep. Your first colony funds your second colony. Your second colony specializes differently. Now districts are strategic infrastructure, not the whole game.
-**Design details:**
-- Colony ship: 200 minerals + 100 food + 100 influence, 600 ticks (60 sec) build
-- New colony starts with 2 pops, base housing (10), and 1 pre-built Generator
-- First 3 player-built districts on new colonies get 50% build time discount (existing dead code!)
-- System ownership claimed when colony is founded
-- Colony list sidebar: click to switch which colony the isometric view shows
-- Max 5 colonies per player (prevents runaway expansion in 20-min matches)
+---
 
-### R16-5: Corvettes + Basic Fleet Combat
+### 4. Complementary Recommendations (after MVL)
 
-**Impact:** High
-**Effort:** Medium-High
-**Category:** Core Mechanic
-
-**The problem:** Alloys have no sink. No "Exterminate" loop. Players can't interact militarily.
-**The fix:** Build corvettes (50 alloys, 20 sec build at starbase/colony). Group into fleets. Fleets move along hyperlanes. When hostile fleets meet in same system, auto-resolve combat (HP vs firepower per tick). Winner stays, loser's fleet is destroyed.
-**Why it matters:** Military capability gives alloys purpose, creates player interaction, and enables the domination win condition. Even the threat of ships changes how players behave.
-**Design details:**
-- Corvette: 50 alloys, 200 ticks (20 sec) build, 30 HP, 10 firepower, 1 upkeep energy
-- Fleet: group of ships at a system, moves together at 50 ticks/hop
-- Combat: each tick, each ship deals (firepower/10) damage to random enemy ship. Ships die at 0 HP
-- Combat starts automatically when hostile fleets share a system
-- Start with all players Neutral — add "Declare Hostile" button (costs 25 influence)
-- Show fleet icons on galaxy map (small colored triangle at system)
-
-### R16-6: Alloy/Influence Interim Sinks
+#### R23-4: Housing Pressure — Diversify the Opener
 
 **Impact:** Medium
-**Effort:** Low
+**Effort:** Trivial (one number change)
 **Category:** Balance
 
-**The problem:** Alloys pile up with no use. Influence has no spend after colony ship. Both feel like dead resources.
-**The fix:** Before ships exist, add immediate sinks: (1) `reinforceColony` — spend 100 alloys for +5 housing (max 3 per colony, already in roadmap). (2) Edicts — spend influence for temporary bonuses (already in roadmap). These are already designed; they just need implementation.
-**Why it matters:** Every resource should have tension between saving and spending. Right now alloys and influence are just numbers that go up.
+Reduce base capital housing from 10 to 8. With 8 starting pops hitting the cap immediately, players must choose: Housing first (unlock growth) or economic district first (build income). Combined with planet bonuses, this means a Desert world player might build Mining first (exploiting bonus), while an Ocean world player builds Agri first (exploiting bonus), but both need Housing soon. The opener becomes a 3-way decision tree instead of a script.
 
-### R16-7: Surface Anomalies on Colony Grid
+#### R23-5: T3 Techs — Late-Game Strategic Fork
+
+**Impact:** Medium
+**Effort:** Low (3 new TECH_TREE entries + effect handlers)
+**Category:** Content / Balance
+
+Add 3 Tier 3 techs at cost 1000:
+- Physics T3: Fusion Reactors — +100% Generator output, generators also produce +1 alloy/month
+- Society T3: Genetic Engineering — +100% Agriculture output, pop growth time halved
+- Engineering T3: Automated Mining — +100% Mining output, mining districts cost 0 jobs
+
+These are transformative effects that create a true "tech rush" strategy. At 1000 cost with 2 Research districts (8/month per type), T3 takes ~125 months — achievable only with dedicated research investment. Creates the classic 4X tension: expand (colony ships) vs. tech up (T3 power spike).
+
+#### R23-6: In-Game Chat — Multiplayer Baseline
+
+**Impact:** Medium
+**Effort:** Low (infrastructure exists)
+**Category:** UX / Multiplayer
+
+Collapsible chat at bottom-left during gameplay. Reuse existing WebSocket chat system. Player names in player colors. Enter to focus, Escape to blur. This is the minimum viable multiplayer interaction feature.
+
+#### R23-7: Surface Anomalies — Colony Spatial Puzzle
 
 **Impact:** Medium
 **Effort:** Medium
-**Category:** Content / Discovery
+**Category:** Content / Core Mechanic
 
-**The problem:** Every colony grid is identical. District placement has no spatial strategy.
-**The fix:** Already designed in Phase 1 roadmap: randomly place 1-3 anomalies on colony grid at founding. "Mineral Vein" (+50% mining on this tile), "Thermal Vent" (+50% generator), "Fertile Soil" (+50% agriculture), "Ancient Ruins" (choice: +500 research or +2 influence/month), "Alien Artifact" (choice: +200 alloys or +300 research).
-**Why it matters:** Makes each colony unique. Turns district placement from type-selection into spatial puzzle. Brings exploration feeling to the colony view while galaxy is being built.
+1-3 randomly placed tile anomalies per colony:
+- "Mineral Vein": +50% Mining output on this tile
+- "Thermal Vent": +50% Generator output on this tile
+- "Fertile Soil": +50% Agriculture output on this tile
+- "Ancient Ruins": choice — excavate (+500 research) or preserve (+2 influence/month)
+- "Alien Artifact": choice — +200 alloys or +300 research
 
-### R16-8: Event Ticker for Multiplayer Awareness
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** UX / Social
-
-**The problem:** In multiplayer, you have no idea what other players are doing. The scoreboard shows VP numbers but not narrative.
-**The fix:** Scrolling text ticker at top of screen: "Player X built a Research district", "Player Y reached 15 pops", "Player Z researched Advanced Reactors". Server already emits gameEvents — just broadcast relevant ones to all players and render them.
-**Why it matters:** Creates competitive tension through social awareness. You see "Player B built their 6th Mining district" and think "they're going for minerals — I should prepare." Low effort, high social value.
+Makes district placement a spatial puzzle, not an arbitrary click. Each colony becomes unique.
 
 ---
 
-### 4. Balance Snapshot
+### 5. Balance Snapshot
 
-The economy is solid for single-colony play. The numbers work. Key observations:
+#### Resource Flow (unchanged — no new features)
 
-| Aspect | Status | Notes |
-|--------|--------|-------|
-| District costs | Good | 100/200 mineral tiers are clear and intuitive |
-| Resource flow | Good | Energy→buildings, food→pops, minerals→districts is clean |
-| Tech pacing | Good for colony | T1 (150 research) at ~8 min with 1 lab, ~4 min with 2. T2 (500) at ~14 min with 2 labs. Fits 20-min match |
-| Starting resources | Good | 300 minerals = 3 basic builds or 1 advanced + 1 basic. Clear opening choice |
-| Energy tension | Good | Industrial (3 energy) + Research (4 energy) vs Generator (6 energy). ~2 consumers per generator |
-| **Alloys** | **Problem** | Industrial produces 3/month, accumulates with zero sink. 50 starting alloys are dead weight |
-| **Influence** | **Problem** | 100 starting influence, zero production, zero spend. Entirely dormant resource |
-| Pop growth | Good | 40/30/20 sec tiers create natural acceleration curve |
-| VP formula | Adequate | pops×2 + districts + alloys/50 + research/100. Heavily favors pop growth (correct for current state) |
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| Starting minerals | 300 | 3 basic districts immediately |
+| Starting energy | 100 | 16+ months buffer |
+| Mining income | +6/month | District every ~17s — OK |
+| Food surplus (2 Agri, 8 pops) | +4/month | Slow growth tier |
+| Energy margin (1 Gen) | +5/month | Thin — good tension |
 
-**Recommended number tweaks:**
-1. Industrial output: 3→4 alloys/month (already in roadmap as balance tweak)
-2. Research output: 3/3/3→4/4/4 per type (already in roadmap)
-3. Starting alloys: 50→0 (no sink exists, remove confusion — already in roadmap)
-4. Starting minerals: 300→250 (forces opening choice — already in roadmap)
-5. No other changes needed — the existing roadmap balance tweaks are correct
+#### Colony Ship Economics (projected, unchanged from R22)
 
----
+| Metric | Value |
+|--------|-------|
+| Colony ship cost | 200 minerals + 100 food + 100 alloys |
+| 100 alloys at 4/month | ~25 months = 25 sec at 1x |
+| First colony ship | ~month 40-50 (~7-8 min at 1x) |
+| Travel time (3 hops avg) | 150 ticks = 15 sec |
+| New colony start | 2 pops, 50% build discount on first 3 districts |
 
-### 5. Content Wishlist (Aspirational — Beyond Standard 4X)
+#### Planet Bonus Impact (projected)
 
-1. **"Colony Legends" narrative history** — Each colony accumulates one-line history entries on milestones: "Founded on Month 1", "Survived the Great Mineral Scarcity", "Became the empire's first Forge World." At game end, display each colony's legend as a narrative recap. Makes every match feel like a unique story. (Already in roadmap — implement it.)
+Desert starting world with 1 Mining district: 6 + 2 = 8 minerals/month (33% boost). Arctic with 1 Research district: 4 + 2 = 6 per type (50% boost). These are significant enough to shape the opening but not so large that they eliminate other considerations.
 
-2. **Hyperlane chokepoints as strategic territory** — Galaxy topology should create natural bottlenecks — a single hyperlane connecting two galaxy regions becomes a contested border. Players who control chokepoints control expansion paths. Stellaris does this well; lean into it with the Delaunay pruning algorithm.
+#### Recommended Number Tweaks
 
-3. **"The Reveal" — fog of war as emotional design** — When a science ship surveys a system, don't just populate data. Do a brief reveal animation: stars brighten, planets fade in orbit-by-orbit, a size-18 Continental world gets a special golden glow and a subtle chime. The reveal should feel like finding treasure on a treasure map.
-
-4. **Colony founding ceremony** — When a colony ship founds a new colony, brief 3-second cinematic: camera flies from galaxy map to system, zooms to planet surface, colony pod lands, first buildings rise. Then switches to isometric colony view. Makes expansion feel like an achievement, not a menu click.
-
-5. **Galactic radio as shared narrative** — Instead of a dry event ticker, style multiplayer events as "radio broadcasts" with personality: "BREAKING: Commander [Player] establishes colony on Kepler-7b — 'A new dawn for humanity,' they reportedly said" or "ALERT: Fleet detected near the Orion Nebula. Regional tensions rise." Turns game events into a shared story.
+1. **Base capital housing: 10 → 8** — creates immediate housing pressure
+2. **Starting alloys: 50 → 0** — alloys should be earned, not given (no sink exists yet)
+3. **Starting influence: 100 → 50** — preserve budget for future edicts, reduce the "dead resource" feeling by showing a smaller number
+4. **Colony ship alloy cost: playtest at both 100 and 80** — if first expansion is too late in 20-min matches, reduce to 80
 
 ---
 
-### 6. Priority Order for `/develop`
+### 6. Content Wishlist — "Wouldn't It Be Cool If..."
 
-Review #15's course correction stands. The priority order is:
+1. **Cascading Colony Events:** When one colony triggers a crisis event, nearby colonies (within 2 hops) get a related event. A "Plague" on Colony A spreads to Colony B as "Quarantine Warning" (pay 20 food to prevent, or risk 30% chance of plague spreading). Creates inter-colony narrative connections — your empire isn't isolated dots, it's a connected network where problems propagate. Inspired by Plague Inc's spread mechanics applied to colony management.
 
-1. **Galaxy generation** (Phase 3) — the skeleton
-2. **Galaxy map view** (Phase 3) — the window into the game
-3. **Science ships + surveying** (Phase 3) — the exploration loop
-4. **Colony ships + multi-colony** (Phase 3) — the expansion loop
-5. **Corvettes + basic combat** (Phase 5) — the interaction loop
-6. **Surface anomalies** (Phase 1) — colony spatial strategy while galaxy builds out
-7. **Event ticker** (Phase 1) — multiplayer awareness
-8. **Alloy/influence sinks** (Phase 2) — resource tension
+2. **Galaxy Archaeology Breadcrumb Trail:** First survey of any system has a 15% chance of finding a "Precursor Fragment." Collecting 5 fragments reveals the location of a hidden Precursor system (not on the normal map) containing a size-25 planet with all planet bonuses active. Race to collect fragments before opponents. Creates a shared exploration goal and a reason to survey aggressively. Inspired by Stellaris precursor chains but competitive.
 
-Everything else (colony mood, governors, scarcity seasons, colony legends, etc.) comes after the galaxy exists.
+3. **Colony Resonance Grid:** A 7th district type — "Resonance Array" (300 minerals, 50 energy, 600 ticks). Copies the output of whatever district type is most common among its grid neighbors. Place it next to 2 Mining districts and it mines. Rewards spatial planning and district clustering. Unique to ColonyGame's grid system — no other 4X has this because no other 4X has a spatial colony grid.
+
+4. **Empire Heartbeat Visualization:** In galaxy view, owned systems pulse with a subtle "heartbeat" glow whose frequency matches their colony's growth rate. Fast-growing colonies pulse quickly (green), stagnant ones pulse slowly (amber), starving ones flash red. Creates an at-a-glance empire health dashboard through pure visual design, no UI panels needed. Makes the galaxy view feel alive rather than static.
+
+5. **Tidal Lock Worlds:** A new planet type — "Tidally Locked" (habitability 50%). One side is permanent day (Generators produce 2x), other side is permanent night (Research districts produce 2x). Districts are randomly assigned to day or night side when built. Creates a gambling mechanic in colony building — will your Industrial district land on the useful side? Players can demolish and rebuild to reroll, but at cost. Unique, thematic, and mechanically interesting.
 
 ---
 
 ### 7. Summary
 
-- **Overall score: 3.6/10** (up from 3.0 — colony engine is polished, but the game still hasn't started)
-- **Top 3:** (1) Galaxy generation, (2) Galaxy map view, (3) Science ships + surveying
-- **Most urgent balance fix:** Industrial/Research output bump (3→4) — already in roadmap, low effort
-- **Big idea:** Make the fog of war survey reveal feel like treasure discovery — visual animation + sound when a great planet is found
-- **New work items added to design.md:** 3 (view toggle, colony list sidebar, max colonies cap)
+**Overall Score: 4.4/10** — unchanged for the third consecutive review.
+
+**Top 3 recommendations:**
+1. Planet type bonuses — break the solved opener (lowest effort, immediate impact)
+2. Colony ships + colony list UI — the bridge between colony and galaxy
+3. Fog of war — turn exploration from spreadsheet to adventure
+
+**Most urgent balance fix:** Reduce base capital housing from 10 to 8 — diversifies the currently scripted opening.
+
+**Big idea:** Cascading Colony Events — crises that propagate along hyperlanes between your colonies, turning your empire into a living network where problems spread and must be contained.
+
+**New work items added to design.md:** 5 (MVL implementation sequence, colony ship validation tightening, fog of war BFS spec, housing balance change, T3 tech entries)
 
 ---
 
-## Review #15 — 2026-03-11 — COURSE CORRECTION: Planets and Ships, Not Spreadsheets
-
-**Reviewer:** Game Design Analyst + Creative Director input
-**Directive:** The pressure cooker VP timer mode is wrong for this game. ColonyGame should be about planets and ships. Districts are a means to get resources, not the game itself.
-
-### The Problem
-
-The game has been optimizing the wrong thing. 18 development iterations have built a polished colony management spreadsheet — districts, resources, production rates, tech modifiers, VP timers. But **none of that is what a 4X game is about.**
-
-A 4X game is about:
-- **Seeing a galaxy full of stars and wanting to go there**
-- **Finding a perfect planet and planting your flag**
-- **Building a fleet and watching it cross the map**
-- **The tension of not knowing what's beyond the next hyperlane**
-- **The dread of seeing enemy ships near your border**
-
-Right now the game has none of that. It has a single colony on a single planet with a countdown timer. That's not Stellaris — that's Cookie Clicker with a deadline.
-
-### Pillar Scores (Current State)
-
-| Pillar | Score | Assessment |
-|--------|-------|-----------|
-| Strategic Depth | 3/10 | One colony, one decision type (which district), no strategic tension |
-| Pacing & Tension | 2/10 | VP timer creates artificial urgency, not real tension |
-| Economy & Production | 6/10 | District system is solid, but it's an engine with no car |
-| Exploration & Discovery | 0/10 | Nothing exists. This should be 8/10+ for a space 4X |
-| Multiplayer Fairness | 4/10 | Everyone starts identical, but "fairness" in a single-colony race is meaningless |
-
-**Overall: 3.0/10** — The foundation is good but the game hasn't started yet.
-
-### What the VP Timer Got Wrong
-
-The VP timer was recommended 3 times as the "single highest-impact feature." That was wrong. Here's why:
-
-1. **It optimizes for the wrong loop.** VP scoring rewards pop growth and district spam. Players should be rewarded for exploration, territorial control, and fleet projection.
-2. **It creates time pressure instead of strategic pressure.** Real 4X tension comes from other players expanding toward you, not a clock. A countdown timer belongs in a party game, not a strategy game.
-3. **It locks the game into single-colony.** With a 20-minute timer and no galaxy, you can't explore, colonize, or build fleets. The timer becomes the game.
-4. **It's boring to watch.** Nobody spectates someone clicking districts against a timer. Fleets moving across a galaxy map — that's spectatable.
-
-### The Path Forward: Galaxy First, Everything Else Follows
-
-The next development priority is unambiguous:
-
-**1. Galaxy generation and rendering (Phase 3)**
-Give players a map. Stars, hyperlanes, the unknown. This is the skeleton that every other 4X feature hangs on.
-
-**2. Ships and movement (Phase 3 + Phase 5 basics)**
-Science ships to explore. Colony ships to expand. Corvettes to fight. Movement along hyperlanes. This is the player's hand reaching into the galaxy.
-
-**3. Multi-colony (Phase 3)**
-Colonize new worlds. Each colony uses the existing district system. Now districts matter — they're how you fund ships and colonies, not the game itself.
-
-**4. Territory and victory through control**
-Win by controlling territory, not by a timer. Domination (control 60% of habitable worlds) or economic/research victories, but all require the galaxy.
-
-### Recommendations
-
-#### 1. Galaxy Generation (Server)
-
-**Impact:** Critical | **Effort:** Medium | **Category:** Core Mechanic
-
-Generate N star systems as 3D points with hyperlane connections. Each system has 1-6 planets with type, size, habitability. Players start in different systems. Fog of war — only see surveyed systems.
-
-This is the #1 priority. Without it, no other 4X feature can exist.
-
-#### 2. Galaxy Map View (Client — Three.js)
-
-**Impact:** Critical | **Effort:** Medium | **Category:** Core Mechanic
-
-Three.js PerspectiveCamera rendering stars as glowing spheres, hyperlanes as lines, territory as colored regions. Click to select system, view to switch between galaxy and colony. This is the moment the game stops being a spreadsheet and starts being a space game.
-
-#### 3. Science Ships + System Surveying
-
-**Impact:** High | **Effort:** Medium | **Category:** Core Mechanic
-
-Build science ships (50 minerals). Send to unknown systems. Surveying takes time, reveals planet details. Chance of anomaly discovery. This is the Explore loop — the first thing that makes the galaxy feel alive.
-
-#### 4. Colony Ships + Multi-Colony
-
-**Impact:** High | **Effort:** Medium | **Category:** Core Mechanic
-
-Build colony ships (200 minerals, 100 food, 100 influence). Send to habitable surveyed planet. Colony ship consumed, new colony founded. Now districts matter — they fund the ships that let you expand.
-
-#### 5. Corvettes + Basic Fleet Combat
-
-**Impact:** High | **Effort:** Medium | **Category:** Core Mechanic
-
-Build corvettes (50 alloys). Move fleets along hyperlanes. When hostile fleets meet, auto-combat resolves. Destroying starbases captures systems. This is the Exterminate loop.
-
-#### 6. Demote VP Timer to Optional Party Mode
-
-**Impact:** Medium | **Effort:** Low | **Category:** Balance
-
-Keep the VP timer code but make it off by default. Default win condition: Domination (control 60% of habitable worlds). VP timer becomes "Blitz mode" in room settings for people who want it. Don't delete it — just stop centering the game around it.
-
-#### 7. Remove Pressure Cooker Mode from Roadmap
-
-**Impact:** Medium | **Effort:** None | **Category:** Cleanup
-
-The shared-planet Pressure Cooker mode is a gimmick that distracts from the real game. Remove it from the roadmap. If someone wants it later as a novelty mode, fine. But it should never be a development priority.
-
-### Balance Snapshot (No Changes Needed)
-
-The district economy is solid. No balance changes recommended — the numbers work. What's needed isn't balance tuning, it's building the rest of the game so the economy has something to serve.
-
-| Aspect | Status |
-|--------|--------|
-| District costs/output | Good — 100/200 mineral tiers are clear |
-| Resource flow | Good — energy powers buildings, food grows pops, minerals build, alloys for ships |
-| Tech pacing | Good for colony phase — needs expansion for galaxy-scale |
-| Starting resources | Fine — gives 2-3 immediate builds |
-
-### Content Wishlist (Aspirational)
-
-1. **Procedural star names with personality** — "Kepler-7b" is boring. "The Crimson Drift" or "Pale Reach" makes you want to go there.
-2. **Fleet combat that you can watch** — zoomed-in system view showing ships exchanging fire, explosions, wreckage.
-3. **Colony ships as emotional moments** — founding a new colony should feel like an achievement, with a brief "Colony Established" celebration.
-4. **Hyperlane chokepoints** — galaxy topology that creates natural borders and defensible positions.
-5. **The fog of war reveal** — the moment you survey a system and see 3 habitable worlds should feel like finding treasure.
-
-### Summary
-
-- **Overall score: 3.0/10** (foundation good, game hasn't started)
-- **Top 3:** (1) Galaxy generation, (2) Galaxy map view, (3) Science ships + surveying
-- **Most urgent balance fix:** None — economy is fine, build the galaxy
-- **Big idea:** Make the fog of war reveal feel like treasure discovery
-- **Roadmap action:** Restructure priority order to galaxy/ships first, demote VP timer
-
----
-
-## Review #14 — 2026-03-11
+## Review #22 — 2026-03-12 — Still Waiting for Liftoff
 
 **Reviewer:** Game Design Analyst (automated)
-**Build State:** 21/101 tasks complete (21%). Energy deficit auto-disable system live with desaturated 3D rendering. Mini tech tree (2-tier, 3-track) with client UI. Full HTML overlay UI. Three.js isometric colony view. 157 tests passing.
+**Build State:** 41/133 tasks complete (31%). Isometric colony builder, galaxy map with Three.js, procedural galaxy, mini tech tree (6 techs, 2 tiers), VP scoring with match timer, energy deficit system, event toast HUD, pop growth, demolition with refund, game speed controls (5 speeds + pause). 333 tests passing. ~9,200 lines.
 
-**Key change since Review #13:** Energy deficit consequences are now implemented — the game's first punitive mechanic. Districts auto-disable when energy goes negative, rendered as desaturated gray in the 3D view. This transforms energy from a passive number into an active constraint: building Industrial (3 energy/mo) or Research (4 energy/mo) districts without sufficient Generators now has teeth. Combined with the tech tree from R13, the colony management loop has genuine tension for the first time: energy budget, tech investment, food/housing pressure. However, the game still has no win condition, no multiplayer interaction, and two dead-end resources (alloys have no active sink, influence has no spend).
+**Key changes since Review #21:** Game speed controls (5 speeds 0.5x–5x with pause, keyboard shortcuts +/-/Space, host-only in multiplayer). This was R21's top recommendation — it shipped. No new gameplay systems beyond that.
 
 ---
 
@@ -865,3488 +405,492 @@ The district economy is solid. No balance changes recommended — the numbers wo
 
 | Pillar | Score | Trend | Notes |
 |--------|-------|-------|-------|
-| Strategic Depth | 5.0/10 | +0.5 | Energy deficit consequences complete the "constraint triangle" — energy limits advanced districts, food limits growth, housing limits pops. Three simultaneous optimization pressures plus tech tree path choices. But alloys remain dead (no active sink), influence has no spend, no win condition means no strategic target, and single-colony limits decision space. The game has *tactics* but not yet *strategy*. |
-| Pacing & Tension | 3.5/10 | +0.5 | Energy deficit adds the game's first crisis moment — seeing districts go gray is a genuine "oh no" moment that forces reactive play. But this is the *only* source of disruption. No timer, no scarcity seasons, no crises, no opponents acting. The economy still monotonically increases once energy is balanced. The game has one tension spike; it needs a dozen. |
-| Economy & Production | 6.5/10 | +0.5 | The strongest pillar, further improved. Energy deficit means the energy/production tradeoff is now real — you can't freely stack Industrial and Research without Generator backing. The constraint cascade works: housing → pops → jobs → production → energy → district viability. 18 balance iterations have produced a clean economy. Remaining gaps: alloys accumulate uselessly (need VP scoring or colony reinforcement), influence sits at 100 forever, Research/Industrial output still slightly undervalued (3/3/3 and 3 alloys vs 200-mineral cost). |
-| Exploration & Discovery | 1.0/10 | = | Still nonexistent. Single colony, single planet type, no anomalies, no galaxy. The most glaring absence. Surface anomalies remain the highest-leverage single feature for bringing discovery to the colony view. |
-| Multiplayer Fairness | 2.0/10 | = | Unchanged. Identical starts (fair but uninteresting). Zero player interaction during gameplay. No scoreboard, no event ticker, no diplomacy. Multiplayer is functionally parallel single-player. |
+| Strategic Depth | 3/10 | → | Unchanged. One colony, one optimal build path. Galaxy is scenery. Speed controls don't add decisions — they compress the wait between them |
+| Pacing & Tension | 5/10 | ↑ | Speed controls are a meaningful improvement. Players can now fast-forward dead air (minutes 5-20) and pause to think. The game *feels* better even though the decision density hasn't changed. Bumped from 4 |
+| Economy & Production | 7/10 | → | Still the strongest pillar. District trade-offs, housing pressure, energy crisis, pop-job chain all work. Alloys and influence remain dead resources. No change |
+| Exploration & Discovery | 2/10 | → | Galaxy is still a museum. No fog, no ships, no surveying, no agency. Speed controls don't help — you can fast-forward through nothing faster |
+| Multiplayer Fairness | 5/10 | → | Speed controls add host-only enforcement (good design for multiplayer). But still zero player interaction during gameplay |
 
-**Overall: 3.6/10** (up from 3.3 — energy deficit adds real constraint but doesn't expand the game's scope)
+**Overall Score: 4.4/10** (up from 4.2 — speed controls earned +0.2 via pacing)
 
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"What am I trying to do?"** — Still the #1 problem. No win condition, no score, no timer, no goal. After mastering the energy balance puzzle (~5 minutes), the player asks "and then what?" This is the single largest blocker to the game feeling like a *game*.
-
-2. **"Alloys pile up and I can't do anything with them."** — Industrial districts cost 200 minerals + 3 energy/month, but alloys have zero use. With energy deficit consequences making the energy cost *real*, Industrial districts are now actively harmful — they consume scarce energy to produce a worthless resource. The HUD shows alloys climbing with no sink. This is worse than useless; it's a trap.
-
-3. **"I filled my planet, now what?"** — A size-16 planet fills in ~12-15 minutes. After that, the only progression is tech research (which completes) and watching numbers climb. No expansion, no galaxy, no second colony. The game flatlines.
-
-4. **"Every game is exactly the same."** — Same Continental size-16 planet, same starting resources, same 4 pre-built districts. No anomalies for spatial puzzles, no planet type bonuses for strategy variance, no starting condition drafts. Optimal build order is memorizable after 2 games.
-
-5. **"The other player might as well not exist."** — In multiplayer, zero awareness of opponents. No scoreboard, no event ticker, no shared events. The practice mode is functionally identical to multiplayer. There's no reason to play with another person.
+Speed controls were the right call and they shipped fast. But the fundamental problem remains: the game has one colony, one galaxy you can't touch, and one optimal build path. Every review since R17 has identified colony ships as the watershed. It's time.
 
 ---
 
-### 3. Recommendations
+### 2. What a Playtester Would Notice (Top 5)
 
-#### 3.1 Score Timer + VP Scoring (CRITICAL PATH)
+1. **"I can fast-forward, but fast-forward through what?"** Speed controls exposed the dead-time problem more starkly. At 5x, the gap between meaningful decisions shrinks from 30 seconds to 6 seconds — but it's still dead time. The game needs more decisions, not just faster transitions between them.
 
-**Impact:** Critical | **Effort:** Medium | **Category:** Core Mechanic
+2. **"The galaxy is gorgeous and pointless."** This remains the #1 frustration. The galaxy map is the game's visual centerpiece — 50 star systems with hyperlanes, star types, planet tables — and none of it matters. Pressing G to toggle views feels like switching between a game and a screensaver.
 
-**The problem:** The game has no end state. Without a win condition, every strategic decision is weightless. Energy deficit consequences added tactical tension, but there's no strategic goal to optimize toward.
+3. **"I solved the build order."** 2 Agri → Generator → Mining → Research → Industrial. Improved Power Plants first. This is optimal every game on every planet type because planet types don't do anything mechanically. The opening is a script, not a puzzle.
 
-**The fix:** Implement the combined score timer + VP system already specced in design.md. Match timer (10/20/30 min), VP = pops×2 + districts×1 + alloys/50 + total_research/100. Tab scoreboard, 2-min warning, 30-sec final countdown, post-game overlay.
+4. **"Two of my resources are decorations."** Alloys accumulate toward VP with no active use. Influence sits at 100 forever. The resource bar promises 6 dimensions of economy and delivers 4.
 
-**Why it matters:** This is the single feature that transforms ColonyGame from a sandbox into a competitive game. Every decision becomes "will this maximize VP before time expires?" Alloys get passive value through VP. Tech investment becomes a calculation. The timer creates natural game phases. This has been the #1 recommendation for 3 consecutive reviews — it must ship next.
-
-**Design details:**
-- VP formula gives alloys their first purpose (alloy stockpiling = valid Industrial strategy)
-- Timer creates early (build) / mid (tech) / late (optimize) game arc
-- 2-minute warning creates climactic tension
-- Default 10 min practice, 20 min multiplayer
-- Already fully specced — just needs implementation
-
----
-
-#### 3.2 Game Speed Controls
-
-**Impact:** High | **Effort:** Low | **Category:** UX / Core
-
-**The problem:** Fixed speed means early game is slow (waiting 30 sec per district) and players can't pause to think or speed up when confident. Table-stakes for any 4X game.
-
-**The fix:** Speed 1-5 multiplier on MONTH_TICKS. Speed 1 = 200 ticks/month (slow), Speed 3 = 100 (default), Speed 5 = 50 (fast). +/- keys, Space for pause. Host-only in multiplayer.
-
-**Why it matters:** Speed control is the #1 QoL feature for 4X. Pause lets players read tech descriptions and plan. Speed 5 enables experienced-player flow. Without it, the game feels rigid and frustrating during idle moments. Every 4X reference game has this.
-
----
-
-#### 3.3 Research & Industrial Output Bump
-
-**Impact:** Medium | **Effort:** Trivial | **Category:** Balance
-
-**The problem:** Research districts produce 3/3/3 at 200 minerals + 4 energy/mo. With energy deficit consequences, that 4 energy/mo is now a real cost. T1 tech takes ~8 minutes with 1 Research district — too slow for a 20-minute match. Industrial produces 3 alloys at 200 minerals + 3 energy/mo — even if VP scoring lands, 3 alloys/mo is weak.
-
-**The fix:** Research output 3/3/3 → 4/4/4. Industrial output 3 → 4 alloys. Already specced.
-
-**Why it matters:** With energy deficit making upkeep real, tier-2 districts must produce enough to justify the risk. 4/4/4 research means T1 completes in ~38 months (~6 min) with 1 district — much better pacing. 4 alloys/mo makes Industrial feel worthwhile when VP scoring values alloy stockpiles.
-
----
-
-#### 3.4 Surface Anomalies (Server Logic)
-
-**Impact:** High | **Effort:** Medium | **Category:** Exploration & Discovery
-
-**The problem:** District placement is "click any empty tile, pick a type." No spatial reasoning, no discovery, no surprise. Every colony is identical. Exploration & Discovery scores 1/10 — the weakest pillar by far.
-
-**The fix:** 1-3 random anomalies per colony. Mineral Vein (+50% mining output on tile), Thermal Vent (+50% generator), Fertile Soil (+50% agriculture), Ancient Ruins (choice: +500 research or +2 influence/mo), Alien Artifact (choice: +200 alloys or +300 research).
-
-**Why it matters:** This is the highest-impact replayability feature within single-colony scope. Transforms placement from "any tile" to "which tile has the bonus." Choice anomalies add narrative moments. Each colony becomes spatially unique. Brings exploration-like discovery without requiring the galaxy. Inspired by Anno 1800 fertility/deposit system.
-
----
-
-#### 3.5 Planet Type Bonuses + Starting Variety
-
-**Impact:** Medium | **Effort:** Low | **Category:** Content / Replayability
-
-**The problem:** Every game starts on Continental size 16. No strategic adaptation needed. Build order is memorizable after 2 sessions.
-
-**The fix:** Each planet type gets mechanical bonuses (Continental +1 all, Arctic +50% Research, Desert +50% Mining +25% Energy, etc.). Randomly assign starting planet type/size (12-20). Multiplayer fairness: all players get same random type/size.
-
-**Why it matters:** Low-effort, high-replayability content. An Arctic start pushes Research-heavy play. A Desert start favors Mining/Energy. Combined with anomalies and VP scoring, each game demands different strategy.
-
----
-
-#### 3.6 Edict System (Influence Sink)
-
-**Impact:** Medium | **Effort:** Low | **Category:** Core Mechanic
-
-**The problem:** Influence is a displayed resource with no purpose. 100 starting, no income, no spend. UI clutter and player confusion.
-
-**The fix:** 4 edicts: Mineral Rush (50 inf, +50% mining 5 months), Population Drive (75 inf, +100% growth 5 months), Research Grant (50 inf, +50% research 5 months), Emergency Reserves (25 inf, instant +100 energy/minerals/food). Max 1 active.
-
-**Why it matters:** Influence becomes a strategic reserve. Emergency Reserves is a safety valve against energy deficit. With 100 total and no income, every edict is a commitment. Creates strategic tempo variation.
-
----
-
-#### 3.7 In-Game Chat + Event Ticker
-
-**Impact:** Medium | **Effort:** Low | **Category:** Multiplayer / UX
-
-**The problem:** In multiplayer, zero awareness of other players. The game feels like isolated single-player instances sharing a lobby.
-
-**The fix:** Extend lobby chat to work during gameplay (collapsible overlay). Add scrolling event ticker showing player actions: "Player X built a Research district", "Player Y's colony reached 15 pops", "Player Z researched Improved Mining."
-
-**Why it matters:** Minimal implementation cost, high social value. Event ticker creates competitive awareness without requiring direct interaction mechanics. Players can chat strategy, trash-talk, or cooperate. Bridges the gap until diplomacy is built.
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow (Month 1-10, Current Values)
-
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| Starting minerals | 300 | 3 basic districts instantly — slightly generous |
-| Mining income | 6/mo | 100-mineral district in ~17 months (~2.8 min) — adequate |
-| Generator income | 6/mo | Powers 2 Industrial or 1.5 Research — clean ratio |
-| Energy budget pressure | Real | Deficit → auto-disable makes this meaningful |
-| Food surplus (start) | +4/mo | Healthy — 2 growth cycles before housing cap |
-| Research income (1 district) | 3/3/3/mo | T1 in ~50 months (~8 min) — too slow, bump to 4/4/4 |
-| Industrial income | 3 alloys/mo | No active sink — needs VP scoring + bump to 4 |
-| Influence | 100 (static) | Dead — needs edict system |
-
-#### Recommended Number Tweaks
-
-| Change | Current | Proposed | Reason |
-|--------|---------|----------|--------|
-| Research output | 3/3/3 | 4/4/4 | T1 pacing: ~38 months vs ~50 with 1 district |
-| Industrial output | 3 alloys | 4 alloys | Justify 200-mineral + energy cost now that deficit is real |
-| Starting minerals | 300 | 250 | Force opening choice, tighten early game |
-| Starting alloys | 50 | 0 | No active sink — remove confusion |
-
----
-
-### 5. Game Length Estimate
-
-With current mechanics + proposed VP timer at 20 minutes:
-- **Months 1-5 (0-50 sec):** Spend starting minerals on 2-3 districts. Opening choice: Housing (enable growth) vs Mining (fund next builds) vs Generator (enable tier-2).
-- **Months 5-20 (50 sec - 3 min):** Mining income funds expansion. First tech choice made. Pop growth fills initial housing.
-- **Months 20-60 (3-10 min):** Mid-game. Colony 50% developed. 2-3 techs completing. Energy budget becomes tight as advanced districts stack. Deficit risk rises.
-- **Months 60-120 (10-20 min):** Late optimization. T2 techs landing. Colony nearing capacity. VP calculation drives final district choices. 2-minute warning triggers last-minute alloy/research pivots.
-
-Pacing is solid for 20 minutes *if* the timer exists. Without it, the game flatlines at month 40-50.
-
----
-
-### 6. Content Wishlist (Aspirational)
-
-1. **"Pressure Cooker" Multiplayer Mode:** 5-minute blitz matches where all players share a single planet but compete for district slots. First-come-first-served tile claiming. Shared energy grid means one player's Industrial district drains everyone's energy. Creates intense real-time competition within a single colony view — no galaxy needed. Unique to ColonyGame; no other 4X has this.
-
-2. **Dynamic Colony Skyline:** As the colony develops, shift the camera angle slightly upward and add atmospheric effects — dust particles for Desert worlds, snow for Arctic, rain for Ocean. At 50% development, add a faint city glow on the horizon. At 100%, the skybox shifts from dark space to a colonized atmosphere. Makes colony progression *visible* at the environmental level, not just in individual buildings.
-
-3. **Tech Tree Branching Dilemma:** At T2, offer two mutually exclusive options per track instead of one linear upgrade. Physics T2: Advanced Reactors (+50% Generator) OR Laser Arrays (+30% Generator, +combat bonus for future fleets). Engineering T2: Deep Mining (+50% Mining) OR Alloy Refinement (+50% Industrial). Forces permanent specialization within tech tracks. Inspired by Civ VI's civic/tech boost system.
-
-4. **Colony Rivalry Duel:** In 2-player games, at the midpoint of the timer, reveal a "rivalry challenge" — both players race to reach a specific milestone first (e.g., "First to 20 pops" or "First to complete 2 techs"). Winner gets a permanent +10% production bonus. Creates a shared dramatic moment without combat mechanics.
-
-5. **Procedural Colony Names with Memory:** Generate colony names from planet type + player history. A player who always builds Mining-heavy colonies might get "Ironhold" or "Deep Shaft Station." A research-focused player might get "Lux Academy" or "Nova Institute." Names reflect playstyle, creating identity across sessions.
-
----
-
-### 7. Priority Implementation Order
-
-Based on impact-to-effort ratio:
-
-1. **Score timer + VP scoring** (Phase 1, fully specced) — Medium effort, CRITICAL. Transforms sandbox → game. 3rd consecutive review recommending this as #1.
-2. **Research & Industrial output bump** (Phase 1, specced) — Trivial effort. Balance fix for energy-deficit-aware economy.
-3. **Starting minerals & alloys adjustment** (Phase 1, specced) — Trivial effort. Tightens early game.
-4. **Game speed controls** (Phase 1, specced) — Low effort. Table-stakes 4X UX.
-5. **Surface anomalies — server logic** (Phase 1, specced) — Medium effort. Discovery in colony view.
-6. **Planet type bonuses + starting variety** (Phase 1, specced) — Low effort. Replayability.
-7. **Edict system** (Phase 2, specced) — Low effort. Gives influence purpose.
-8. **In-game chat + event ticker** (Phase 1, specced) — Low effort. Multiplayer awareness.
-9. **Scarcity seasons** (Phase 2, specced) — Medium effort. Economy disruption.
-10. **Colony mood system** (Phase 2, specced) — Medium effort. Management depth.
-
----
-
-## Review #13 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 20/102 tasks complete (20%). Mini tech tree (2-tier, 3-track) live with client UI. Full HTML overlay UI — resource bar, status bar, colony info panel with build queue/cancel/growth indicators. Three.js isometric colony view with click interaction, build menu, demolish. 140 tests passing.
-
-**Key change since Review #12:** The mini tech tree gives Research districts a purpose for the first time. Players now have a meaningful choice loop: build Research districts to accumulate research, pick a tech track to invest in, and see production bonuses compound over time. The game has crossed from "resource accumulation simulator" to "colony optimization game with progression." However, the game remains a single-colony builder with no win condition, no multiplayer interaction during gameplay, and two dead-end resources (alloys and influence).
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 4.5/10 | +0.5 | Tech tree adds a real decision axis — Physics (energy), Society (growth/food), or Engineering (minerals) first? Combined with energy balance trade-offs (Industrial/Research consume energy) and housing pressure, there are now 3-4 simultaneous optimization dimensions. But alloys and influence remain dead resources with no sink. One colony means no tall-vs-wide tension. No win condition means no strategic goal to optimize toward. |
-| Pacing & Tension | 3.0/10 | = | No game arc. The experience is monotonically increasing — build districts, watch numbers go up, research techs, watch numbers go up faster. No timer, no crises, no scarcity, no opponents doing visible things. Pop growth creates mild tension (housing pressure) but it's the only source of urgency. The game never ends, which means there's no climax. |
-| Economy & Production | 6.0/10 | +0.5 | The strongest pillar. 17 balance iterations have produced a clean economy: uniform 100-mineral basic districts, clear 200-mineral tier-2 upgrade path, energy as the binding constraint (Industrial costs 3/mo, Research costs 4/mo vs Generator output of 6/mo). Tech multipliers (1.25x/1.5x) compound meaningfully. Food/housing/growth loop creates real pressure. But alloys accumulate with no purpose, influence sits at 100 forever, and there's no inter-colony trade or specialization. |
-| Exploration & Discovery | 1.0/10 | = | Nothing to explore. Single colony, single planet, no galaxy, no anomalies, no fog of war. The most glaring absence in a "4X" game. Surface anomalies (planned but unbuilt) would be the first step toward bringing discovery to the colony view without requiring the full galaxy. |
-| Multiplayer Fairness | 2.0/10 | = | Identical starting conditions (fair but uninteresting). No interaction during gameplay — players occupy parallel universes. No diplomacy, no trade, no combat, no shared events. Practice mode works for solo, but multiplayer is functionally single-player with a shared lobby. The scoreboard (planned) and event ticker (planned) would create minimal awareness. |
-
-**Overall: 3.3/10** (up from 3.1)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"What am I trying to do?"** — There is no win condition, no score, no timer, no goal. After 5 minutes of building districts, the player asks "and then what?" The game never ends. This is the #1 blocker to the game feeling like a *game* vs a sandbox.
-
-2. **"What do I do with alloys?"** — Industrial districts produce alloys (3/month) at significant energy cost (3/month), but alloys have zero use. No ships, no reinforcements, no market. A player who builds Industrial districts is actively harming their economy for no benefit. Same with influence — 100 starting, no way to spend it.
-
-3. **"I filled my planet, now what?"** — A size-16 planet fills in ~15 minutes of play. After that, the only progression is tech research (which eventually completes) and pop growth (which caps at housing). The game flatlines. No expansion to new colonies, no galaxy to explore.
-
-4. **"Is anyone else even playing?"** — In multiplayer, there's zero awareness of other players during gameplay. No scoreboard, no event ticker, no diplomacy panel. You can't see, trade with, or interact with opponents in any way. The multiplayer lobby creates expectations the game doesn't fulfill.
-
-5. **"Every game feels the same"** — Same starting planet (Continental, size 16), same starting resources, same optimal build order (Housing → Mining → Generator → Research). No planet type bonuses, no starting condition variety, no anomalies to create spatial puzzles. Replayability is near zero.
+5. **"Is anyone else even playing?"** In multiplayer, the only evidence of other players is colored dots on the galaxy map and VP numbers on the scoreboard. No chat, no interaction, no territorial tension. Multiplayer is cooperative solitude.
 
 ---
 
 ### 3. Recommendations
 
-#### 3.1 Score Timer Victory Condition
+#### R22-1: Colony Ships — Stop Waiting, Start Expanding
 
-**Impact:** HIGH | **Effort:** Medium | **Category:** Core Mechanic
-
-**The problem:** The game has no end state. Players build indefinitely with no goal, climax, or resolution. Without a win condition, strategic decisions have no weight — nothing is at stake.
-
-**The fix:** Implement the planned score timer victory. Configurable match timer (10/20/30 min), VP formula (pops x2 + districts x1 + alloys/50 + total_research/100), 2-minute warning, final countdown with visible scores. Default 10 min for practice, 20 min for multiplayer.
-
-**Why it matters:** This single feature transforms ColonyGame from a sandbox into a competitive game. Every district choice becomes "will this maximize my VP before time runs out?" Tech investment becomes a calculation: "will the research multiplier compound enough to beat raw district spam?" The timer creates natural early/mid/late game phases (opening builds → mid-game tech race → late-game optimization).
-
-**Design details:**
-- VP weights should reward diverse strategies: heavy pops (tall play), many districts (wide play with multiple colonies later), alloy stockpiling (industrial focus), and research accumulation (tech rush)
-- Alloys in VP formula gives Industrial districts their first purpose — alloy stockpiling becomes a valid strategy
-- 2-minute warning creates a "last round" tension spike (Civ VI's "one more turn" energy)
-- Tab scoreboard shows live VP so players can gauge their position
-- Already fully specced in design.md — just needs implementation
-
----
-
-#### 3.2 Energy Deficit Auto-Disable
-
-**Impact:** HIGH | **Effort:** Low | **Category:** Core Mechanic
-
-**The problem:** Players can go energy-negative with no consequence. Building 3 Industrial districts without enough Generators creates a permanent energy drain, but nothing happens. There's no penalty for economic mismanagement.
-
-**The fix:** Already specced — when energy is negative at monthly processing, auto-disable the highest-consuming district until energy balance is non-negative. Disabled districts produce nothing. Re-enable cheapest first when energy supports them. Send events.
-
-**Why it matters:** Energy becomes a real constraint rather than a number to watch. The threat of auto-disable makes Generator placement genuinely strategic. Players must plan their energy budget before building Industrial/Research districts. This is the equivalent of Stellaris's energy deficit mechanic — it teaches economic planning through consequence rather than prevention.
-
-**Design details:**
-- Disable highest-consumer first (Research at 4/mo before Industrial at 3/mo)
-- Re-enable cheapest first (Industrial at 3/mo before Research at 4/mo)
-- This asymmetry creates interesting recovery dynamics
-- Visual: desaturated 3D mesh with red tint (already specced)
-
----
-
-#### 3.3 Surface Anomalies on Colony Grid
-
-**Impact:** HIGH | **Effort:** Medium | **Category:** Exploration & Discovery
-
-**The problem:** District placement is purely a type-selection problem — "what do I need more of?" There's no spatial reasoning, no discovery, no reason to care *which* tile you build on. Every colony looks and plays identically.
-
-**The fix:** Already specced — 1-3 random anomalies per colony (Mineral Vein, Thermal Vent, Fertile Soil, Ancient Ruins, Alien Artifact). Tile bonuses (+50% output) and one-time choices (research vs influence, alloys vs research). Glowing crystal markers on tiles.
-
-**Why it matters:** This is the highest-impact feature for replayability at the colony level. It transforms district placement from "click any empty tile" to "which tile has the Mineral Vein — I should put my Mining district there." Ancient Ruins and Alien Artifacts add narrative choice moments. Each colony becomes spatially unique. This brings exploration-like discovery to the colony view without requiring the galaxy. Inspired by Anno 1800's fertility/deposit system.
-
-**Design details:**
-- 1-3 anomalies per colony (weighted: 50% get 1, 35% get 2, 15% get 3)
-- Bonus anomalies (+50% output) should visually indicate their affinity (silver=mining, orange=generator, green=agriculture)
-- Choice anomalies (Ancient Ruins, Alien Artifact) should pause gameplay with a modal dialog — this is a narrative moment
-- Anomaly positions should avoid the first 4 tiles (pre-built districts) to ensure players discover them during expansion
-
----
-
-#### 3.4 Edict System (Influence Sink)
-
-**Impact:** Medium | **Effort:** Low | **Category:** Core Mechanic
-
-**The problem:** Influence starts at 100 and sits there forever. It's a resource with no purpose, creating UI clutter and player confusion. "What is this purple number and why should I care?"
-
-**The fix:** Already specced — 4 empire-wide edicts spending influence for temporary bonuses. "Mineral Rush" (50 inf, +50% mining 5 months), "Population Drive" (75 inf, +100% growth 5 months), "Research Grant" (50 inf, +50% research 5 months), "Emergency Reserves" (25 inf, instant +100 energy/minerals/food).
-
-**Why it matters:** Influence becomes a strategic reserve — do you spend it early for a Mineral Rush opening, or save it for a Population Drive when your housing is ready? With 100 starting influence and no production, it's a budget you must spend wisely. Emergency Reserves acts as a safety valve for energy deficit situations. Each edict creates a distinct strategic tempo.
-
-**Design details:**
-- Max 1 active edict at a time forces mutually exclusive choices
-- No influence production until diplomacy — 100 is the entire budget
-- Emergency Reserves at 25 influence is the "panic button" — cheap but doesn't compound
-- Edict UI: 4 buttons in a collapsible panel, cooldown indicator, active edict timer
-
----
-
-#### 3.5 Game Speed Controls
-
-**Impact:** Medium | **Effort:** Low | **Category:** UX / Core
-
-**The problem:** The game runs at a fixed speed. Early game feels slow (waiting 30 seconds per district), late game feels too fast (multiple things completing simultaneously). Players can't adjust pacing to their preference or playstyle.
-
-**Why it matters:** Speed control is table-stakes for any 4X game. Stellaris, Civ, Endless Space — all have 3-5 speed settings plus pause. Without it, players who understand the systems are forced to wait, and new players can't slow down to learn. Pause is essential for reading tech descriptions and planning builds. Speed 5 enables quick testing and experienced-player flow.
-
-**Design details:**
-- Speed 1 = 200 ticks/month (20 sec), Speed 3 = 100 (default, 10 sec), Speed 5 = 50 (5 sec)
-- Construction times scale proportionally
-- Host-only control in multiplayer
-- Keyboard shortcuts: +/- for speed, Space for pause
-- HUD indicator showing current speed and pause state
-
----
-
-#### 3.6 Planet Type Signature Bonuses
-
-**Impact:** Medium | **Effort:** Low | **Category:** Content / Balance
-
-**The problem:** Planet type is displayed but mechanically meaningless. A Continental planet plays identically to an Arctic one. Starting on "Continental (Size 16)" every game eliminates variety.
-
-**The fix:** Already specced — Continental (+1 all), Ocean (+50% Agri, +2 districts), Tropical (+25% Agri/Research), Arctic (+50% Research), Desert (+50% Mining, +25% Energy), Arid (+25% Mining/Alloys). Combined with random starting planet assignment.
-
-**Why it matters:** This is low-effort, high-replayability content. An Arctic start pushes toward a Research-heavy strategy; a Desert start favors Mining/Energy. Combined with the score timer, players must adapt their strategy to their planet rather than following a memorized build order. Starting planet variety + anomalies together ensure no two games feel the same.
-
----
-
-#### 3.7 Scarcity Seasons
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Pacing & Tension
-
-**The problem:** The economy is monotonically growing. Once you build a Mining district, minerals go up forever. There's no disruption, no adaptation, no reactive play. The game feels safe and predictable.
-
-**The fix:** Already specced — every 8-12 months, one resource gets -25% production galaxy-wide for 3 months. Warning 1 month in advance. Rewards diversified economies, punishes over-specialization.
-
-**Why it matters:** Scarcity seasons are the game's first crisis mechanic. They break optimization monotony, force reactive play ("I need to build a backup Generator before the energy scarcity hits"), and punish monoculture strategies. The 1-month warning turns scarcity from frustration into strategic opportunity. In multiplayer, scarcity affects everyone simultaneously — creating shared drama and strategic divergence (who prepared better?).
-
----
-
-#### 3.8 Colony Mood System
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Core Mechanic
-
-**The problem:** Colonies are pure optimization engines with no personality or management tension. You build the most efficient districts and that's it. There's no "nurturing" relationship with your colony, no consequences for neglect beyond raw numbers.
-
-**The fix:** Already specced — mood states (Thriving/Content/Restless/Rebellious) based on housing ratio, food surplus, and district variety. Thriving gives +10% output, Rebellious gives -25% and can destroy a district after 5 months.
-
-**Why it matters:** Mood adds a management dimension that interacts with every other system. Want to maximize output? Keep housing ratio below 70%, maintain food surplus, and build diverse districts. This naturally prevents the "spam one district type" degenerate strategy and rewards balanced colony development. The Rebellious state with district destruction is a genuine crisis — it forces intervention. Inspired by Tropico's citizen satisfaction.
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis (Month 1-10)
-
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| Starting minerals | 300 | 3 basic districts — good opening budget |
-| Mining income | 6/mo | 100-mineral district in 16.7 months (~2.8 min) — slightly slow |
-| Generator income | 6/mo | Powers 2 Industrial (3 ea) or 1.5 Research (4 ea) — clean ratio |
-| Food surplus (start) | +4/mo (12 prod - 8 consume) | Healthy — 2 growth cycles before housing cap |
-| Pop growth (base) | 1 pop / 40 sec | Good pace for 20-min matches — ~30 pops achievable |
-| Research income (1 district) | 3/3/3 per track/mo | T1 tech in ~50 months (~8 min) — reasonable |
-| Alloy income (1 Industrial) | 3/mo | No sink — accumulates uselessly |
-| Influence | 100 (no income) | Dead resource — no way to spend |
-
-#### Identified Balance Issues
-
-1. **Alloy dead-end:** Industrial districts cost 200 minerals + 3 energy/mo upkeep but alloys do nothing. Fix: score timer VP formula includes alloys, giving them passive value. Colony reinforcement (+5 housing for 100 alloys) gives active use. Priority: implement VP scoring first.
-
-2. **Research district undervalued:** 3/3/3 research per month at 200 minerals + 4 energy/mo is expensive relative to impact. T1 tech (150 cost) takes 50 months with 1 Research district. Recommend: bump Research output from 3/3/3 to 4/4/4 (already specced as a balance tweak in design.md). This makes T1 complete in ~38 months (~6 min) with 1 district — better pacing.
-
-3. **Industrial output too low:** 3 alloys/mo at 200 minerals + 3 energy/mo. Even with VP scoring, Industrial feels underweight vs a second Mining district (6 minerals/mo at 100 minerals, 0 upkeep). Recommend: bump Industrial from 3 to 4 alloys/mo (already specced).
-
-4. **Starting minerals surplus:** 300 starting minerals means players can build 3 districts immediately. With uniform 100-mineral costs, the opening is "build 3 things, then wait." Consider: reduce to 250 (already specced) to force an opening choice — 2 basic + buffer, or save for 1 advanced.
-
-5. **No early-game tension:** Starting food surplus of +4, housing headroom of 2, 300 minerals in the bank. The first 2 minutes have no pressure. Energy deficit consequences and scarcity seasons would add the missing tension.
-
-#### Recommended Number Tweaks
-
-| Change | Current | Proposed | Reason |
-|--------|---------|----------|--------|
-| Research output | 3/3/3 | 4/4/4 | T1 tech pacing: 38 months vs 50 months with 1 district |
-| Industrial output | 3 alloys | 4 alloys | Justify 200-mineral + energy cost vs basic districts |
-| Starting minerals | 300 | 250 | Force opening choice, reduce free-build buffer |
-| Starting alloys | 50 | 0 | No sink exists — remove false signal |
-
----
-
-### 5. Game Length Estimate
-
-With current mechanics and a 20-minute timer:
-- **Months 1-5 (0-50 sec):** Build opening districts with starting minerals. Housing → Mining → Generator typical.
-- **Months 5-20 (50 sec - 3 min):** Mining income funds new districts. First tech choice made. Pop growth fills housing.
-- **Months 20-60 (3-10 min):** Mid-game expansion. 2-3 tech completions. Colony approaching 50% capacity. Scarcity seasons would hit here.
-- **Months 60-120 (10-20 min):** Late optimization. T2 techs completing. Colony nearing full capacity. VP optimization phase.
-
-Current pacing is reasonable for a 20-minute match. The problem isn't speed — it's that there's no arc (no win condition to pace toward) and no disruption (no scarcity/crises to respond to).
-
----
-
-### 6. Content Wishlist (Aspirational)
-
-1. **Colony Terraform Events:** When a colony reaches full development (all district slots filled), offer a one-time terraforming event: convert the planet to an adjacent type (e.g., Arid → Desert, or Arctic → Continental) for a massive resource cost (500 minerals + 200 energy). Changes the planet's signature bonuses, creating a "prestige" moment and late-game strategic decision. Like Stellaris terraforming but as a dramatic colony milestone.
-
-2. **Asymmetric Starting Factions:** Instead of identical starts, offer 3-4 faction choices with distinct playstyles. "Industrialists" (+50% alloy output, -25% food), "Scholars" (+50% research, -25% minerals), "Ecologists" (+50% food/growth, -25% energy), "Traders" (start with 500 minerals but -25% all production). Each faction changes the optimal build order and tech priority, massively increasing replayability without adding new systems.
-
-3. **Colony Constellation Map:** Even without a full galaxy, show a simple map of all players' colonies as icons in a shared view. Purely informational — no fleet movement, just awareness. "Player A has 2 colonies, Player B has 3." This creates the *feeling* of a shared universe with minimal implementation cost. Later, this becomes the real galaxy map.
-
-4. **Dynamic District Visuals:** Instead of static colored boxes, make districts visually evolve with tech. A Generator with Advanced Reactors tech should glow brighter and have more complex geometry. A Mining district with Deep Mining should be taller and more industrial-looking. Farms with Gene Crops should have animated particle effects (floating spores). Makes tech progression *visible* in the 3D view, not just numerical.
-
-5. **Colony Legacy Scoring:** At game end, narrate each colony's story: "New Helsinki (Arctic, Size 14) — Founded Month 1, survived 2 scarcity seasons, became an Academy World on Month 45, reached 22 pops." Score bonus VP for colonies with more "legend entries." Turns the post-game screen from a number comparison into a shared storytelling moment. Inspired by Dwarf Fortress legends mode.
-
----
-
-### 7. Priority Implementation Order
-
-Based on impact-to-effort ratio, the recommended implementation sequence for `/develop`:
-
-1. **Energy deficit consequences** (Phase 1, already specced) — Low effort, adds strategic consequence
-2. **Game speed controls** (Phase 1, already specced) — Low effort, essential UX
-3. **Research & Industrial output bump** (Phase 1, already specced) — Trivial, improves balance
-4. **Starting minerals & alloys adjustment** (Phase 1, already specced) — Trivial, tightens early game
-5. **Score timer victory condition** (Phase 1, already specced) — Medium effort, transforms the game
-6. **Planet type signature bonuses** (Phase 1, already specced) — Low effort, adds variety
-7. **Surface anomalies — server logic** (Phase 1, already specced) — Medium effort, adds discovery
-8. **Edict system** (Phase 2, already specced) — Low effort, gives influence purpose
-9. **Scarcity seasons** (Phase 2, already specced) — Medium effort, adds tension
-10. **Colony mood system** (Phase 2, already specced) — Medium effort, adds management depth
-
----
-
-## Review #12 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 18/101 tasks complete (18%). Full HTML overlay UI live — resource bar with net income, status bar with growth indicator, colony info panel with build queue + cancel. Three.js isometric colony view with click-to-build, demolish, camera controls. Per-player state filtering optimized. 120 tests passing.
-
-**Key change since Review #11:** The game crossed from "playable" to "informable." Players can now see their resource stockpiles, net income per month (green/red), pop growth speed with progress bar, housing warnings, and build queue with estimated completion times. The strategic decision loop is complete for the first time: see resources → identify bottleneck → click tile → choose district → monitor queue → see results in HUD. Sprint 5/5 was the last critical UX blocker.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 4.0/10 | +0.5 | The HUD transforms district-building from guesswork to informed strategy. Players can now see net energy before building an Industrial district, see food surplus before adding pops, and monitor housing pressure. But the decisions themselves remain shallow: only 4 of 6 district types produce useful resources (alloys and research have no sinks). One colony, no tech, no expansion pressure. |
-| Pacing & Tension | 4.0/10 | +0.5 | Growth indicator + progress bar create a satisfying "waiting for the next pop" micro-tension. Housing warnings (yellow near cap, red at cap) signal when to build Housing. Queue progress bars make construction feel tangible. But there's no macro arc — no mid-game pivot, no late-game crisis, no ending. |
-| Economy & Production | 7.0/10 | +0.5 | The economy is now *visible*: resource bar with green/red net income, cost affordability in build menu, queue cancellation with 50% refund. The underlying math is well-balanced for early game (energy/food/mineral triangle works). But 2 dead resources (alloys, research) undermine the system — players learn quickly to never build Industrial or Research districts. |
-| Exploration & Discovery | 0/10 | = | Still nonexistent. This is the single largest gap. Every session plays identically on the same Continental size-16 planet. Surface anomalies remain the highest-leverage discovery feature within the single-colony scope. |
-| Multiplayer Fairness | 3/10 | = | Unchanged. Identical starts, per-player state filtering is in place, but no multiplayer interaction mechanics exist. Players are parallel universes. |
-
-**Overall Score: 3.6/10** (up from 3.3 — information visibility completes the build loop but doesn't add new strategic layers)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"Research and Industrial districts are traps."** This is now *worse* than before Sprint 5/5 — the HUD makes it painfully obvious that alloys and research accumulate with zero purpose. The resource bar shows alloys climbing, research climbing, and nothing consuming them. A new player who builds a Research district sees "+9 Research/month" and wonders "...for what?" The Mini Tech Tree is the single most important gameplay addition remaining. Without it, 33% of the build menu is actively misleading.
-
-2. **"I filled my colony and there's nothing left to do."** A competent player fills 16 district slots in ~8-10 minutes. The resource bar shows everything climbing, pops maxed at housing cap, and... the game continues forever with no resolution. Score Timer Victory or any end condition would transform this dead-end into strategy ("should I build for points or for growth?").
-
-3. **"Every game is identical."** Same planet, same size, same starting districts. The build menu always presents the same 6 options with the same costs. No surface anomalies to make district placement spatial. No planet type bonuses to change priorities. No starting condition draft. This is the replayability killer.
-
-4. **"I can see I'm energy-negative but nothing happens."** The HUD shows red energy numbers but there are no consequences. Energy deficit is toothless — districts keep producing, pops keep growing. The energy constraint is decorative. Energy deficit consequences (auto-disabling districts) would make the energy/production tradeoff real.
-
-5. **"Where are the other players?"** In multiplayer, each player builds their own colony in total isolation. No event ticker, no scoreboard, no rivalry signals. The per-player state filtering (a good optimization) ironically means players can't even see each other's resource levels. The game feels like single-player with extra loading time.
-
----
-
-### 3. Recommendations
-
-#### 3.1 — Mini Tech Tree: Make Research Districts Worth Building
-
-**Impact:** Critical — fixes 33% of dead build options
-**Effort:** Medium (server logic + UI panel)
-**Category:** Core Mechanic
-
-**The problem:** Research districts produce 3 physics/3 society/3 engineering per month, but research points accumulate with zero effect. Players learn within 2 minutes that Research districts are a waste of 200 minerals and 4 energy/month. This breaks the economy design — the game has 6 district types but only 4 are rational choices.
-
-**The fix:** Implement the Mini Tech Tree (already designed in Phase 2): 2 tiers, 3 tracks. Physics T1: Improved Power Plants (+25% Generator, 150 research). Society T1: Frontier Medicine (+25% pop growth, 150 research). Engineering T1: Improved Mining (+25% Mining, 150 research). T2s at 500 research with stronger bonuses.
-
-**Why it matters:** This single feature transforms the game from "build generators and farms" to "do I rush tech for multiplied output, or maximize raw production now?" It's the first genuine strategic fork in the game. Reference: Stellaris's early tech choices fundamentally shape empire identity.
-
-**Design details:**
-- Use adjusted costs from design.md: T1 = 150 research, T2 = 500 research
-- At 9 research/month (1 Research district), T1 completes in ~17 months (~3 min). Viable but requires commitment.
-- At 18/month (2 Research districts), T1 in ~8 months (~1.5 min). Aggressive but expensive in energy.
-- Research UI: simple panel showing 3 tracks, click to select active research per track, progress bar.
-
-#### 3.2 — Surface Anomalies: Make Each Colony Unique
-
-**Impact:** High — adds discovery and spatial strategy to every game
-**Effort:** Medium (server: anomaly generation + tile bonuses; client: glowing markers)
-**Category:** Core Mechanic / Exploration
-
-**The problem:** Every game starts on an identical Continental size-16 planet with an empty grid. District placement is purely type-selection — there's no reason to prefer one tile over another. This makes every session feel identical and removes spatial reasoning from the colony management puzzle.
-
-**The fix:** Already designed (Phase 1 priority item): 1-3 anomalies per colony. Mineral Vein (+50% mining output on tile), Thermal Vent (+50% generator on tile), Fertile Soil (+50% agriculture on tile), Ancient Ruins (excavate for +500 research OR preserve for +2 influence/month), Alien Artifact (+200 alloys OR +300 research).
-
-**Why it matters:** Anomalies transform district placement from a flat list-pick into a spatial puzzle. "I have a Mineral Vein on tile 7 and a Thermal Vent on tile 3 — should I prioritize mining to exploit the vein, or generators to power industrial districts near the vent?" This is the cheapest way to add replayability and discovery to the current single-colony game. Reference: Civ VI's appeal bonuses make city planning a spatial optimization puzzle.
-
-**Design details:**
-- Generate 1-3 anomalies per colony (weighted: 60% chance of 2, 20% each for 1 or 3)
-- Anomalies placed on random empty tile indices at colony creation
-- Glowing crystal/rune markers on tiles (emissive pulsing material)
-- Bonus applied in `_calcProduction` when a matching district type is built on an anomaly tile
-- Ancient Ruins and Alien Artifact require `resolveAnomaly` command with choice parameter
-
-#### 3.3 — Score Timer Victory: Give the Game an Ending
-
-**Impact:** High — transforms aimless building into strategic optimization
-**Effort:** Low-Medium (server timer + VP calculation + gameOver message)
-**Category:** Core Mechanic
-
-**The problem:** The game has no win condition, no ending, no score. After filling the colony grid (8-10 minutes), the game continues ticking indefinitely with nothing to do. Players have no motivation to optimize their build order because there's no metric to optimize against.
-
-**The fix:** Configurable match timer (default 10 min practice, 20 min multiplayer). VP formula: pops×2 + districts×1 + alloys_stockpiled/50 + total_research/100. Timer countdown visible in status bar. At expiry, broadcast gameOver with winner and breakdown.
-
-**Why it matters:** A timer + VP formula retroactively makes every decision strategic. "Should I build Housing for more pops (×2 VP each) or Industrial for alloys (VP from stockpile)?" Research districts become viable because total_research contributes to VP. The timer creates late-game urgency. Reference: Anno 1800's score mode makes optimization feel purposeful.
-
-**Design details:**
-- VP breakdown incentivizes balanced play: pops (growth focus), districts (expansion focus), alloys (industrial focus), research (tech focus)
-- 2-minute warning event, 30-second final countdown with all scores visible
-- Timer displayed in status bar next to month counter
-- In practice mode, default 10 minutes. Multiplayer default 20 minutes.
-
-#### 3.4 — Energy Deficit Consequences: Make Energy Matter
-
-**Impact:** Medium-High — transforms energy from decorative to strategic
-**Effort:** Low (server logic only, UI already shows red energy)
-**Category:** Balance / Core Mechanic
-
-**The problem:** Energy can go negative with zero consequences. The HUD dutifully shows red numbers, but districts keep producing and pops keep growing. This undermines the entire energy economy — players learn to ignore energy and stack production districts freely.
-
-**The fix:** Already designed (Phase 1 task): when energy is negative at monthly processing, auto-disable the highest-energy-consuming district. Disabled districts produce nothing, consume nothing. Re-enable cheapest first when energy recovers.
-
-**Why it matters:** Energy becomes the circuit breaker of the economy. Players must balance generators against energy-consuming districts (Industrial: 3/month, Research: 4/month, Housing: 1/month). This creates the game's first genuine constraint — you can't just build everything. Reference: Stellaris's energy deficit cascading into fleet maintenance creates real economic pressure.
-
-**Design details:**
-- Process at monthly tick: if energy < 0, disable highest-energy-consuming district
-- `district.disabled = true`, skip in production calc
-- Re-enable check each month: enable cheapest disabled district if energy would stay ≥ 0
-- Send `districtDisabled`/`districtEnabled` events
-- 3D rendering: disabled districts get desaturated material (gray tint, reduced opacity)
-
-#### 3.5 — Planet Type Bonuses: Differentiate Starting Conditions
-
-**Impact:** Medium — adds variety to each game session
-**Effort:** Low (modify `_calcProduction` + starting planet randomization)
-**Category:** Content / Balance
-
-**The problem:** All players start on Continental size-16 every game. Planet type is stored but has zero mechanical effect. The game has 6 habitable planet types defined but they're cosmetic.
-
-**The fix:** Already designed (Phase 1): Continental (+1 all output), Ocean (+50% Agriculture, +2 max districts), Tropical (+25% Agriculture, +25% Research), Arctic (+50% Research), Desert (+50% Mining, +25% Energy), Arid (+25% Mining, +25% Alloys). Randomize starting planet type.
-
-**Why it matters:** Different planet types force different opening strategies. An Arctic start encourages early research investment. A Desert start favors mining/energy. This is cheap variety — the data structures exist, only the production modifiers need implementation.
-
-#### 3.6 — Scoreboard Overlay (Tab Key): Multiplayer Awareness
-
-**Impact:** Medium — essential for multiplayer engagement
-**Effort:** Low (server VP calc + client overlay)
-**Category:** Multiplayer / UX
-
-**The problem:** In multiplayer, players exist in complete isolation. There's no way to see other players' progress, no competitive tension, no reason to care that other humans are in the game.
-
-**The fix:** Tab key shows/hides a scoreboard: player name, colony count, total pops, resource income rates, VP score. Server calculates VP and includes in state broadcast.
-
-**Why it matters:** Social comparison is the cheapest form of competitive tension. Seeing "Player B has 15 pops, you have 12" creates urgency without requiring combat mechanics. Reference: Every competitive game since the beginning of time has a scoreboard.
-
-#### 3.7 — Opening Hands (Starting Condition Draft): Asymmetric Starts
-
-**Impact:** Medium — adds replayability and early-game decisions
-**Effort:** Medium (server: option generation + selection handler; client: choice UI)
-**Category:** Content / Strategic Depth
-
-**The problem:** Every game starts identically: 8 pops, 4 districts, 300 minerals, Continental size-16. The first 2 minutes of every game play out the same way. There's no "what kind of game do I want to play?" moment.
-
-**The fix:** Already designed (Phase 2): present 3 random starting conditions. "Industrial Start" (+200 alloys, 1 Industrial district), "Research Rush" (+500 research, 1 Research district), "Mining Boom" (+200 minerals, 1 Mining district), etc. 30-second draft timer.
-
-**Why it matters:** The opening choice creates asymmetry between players and sets a strategic direction. "I picked Research Rush, so I should lean into tech" vs "I picked Population Boom, so I should focus on housing and food." Makes each game feel different from the first second.
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis
-
-| Metric | Current Value | Assessment |
-|--------|--------------|------------|
-| Starting minerals | 300 | Good — enables 3 basic district builds immediately |
-| Starting energy | 100 | Good — comfortable buffer for first Industrial district |
-| Starting food | 100 | Good — buffer against early deficits while growing |
-| Starting alloys | 50 | **Wasted** — no sink exists. Should be 0 until alloy sinks are added |
-| Starting influence | 100 | **Wasted** — no sink exists. Fine to keep for future edicts |
-| Generator output | 6 energy/month | Good — 1 Generator powers 2 Industrial districts |
-| Mining output | 6 minerals/month | Good — 1 Mining district funds a basic build every ~17 months |
-| Agriculture output | 6 food/month | Good — 1 Agriculture feeds 6 pops |
-| Industrial output | 3 alloys/month | **Useless** — alloys have no sink |
-| Research output | 9 total/month | **Useless** — research has no sink |
-
-**Key issue:** 2 of 6 district types (33%) produce resources with zero purpose. This is the game's most critical design flaw. Mini Tech Tree and Colony Reinforcement are structural fixes.
-
-#### District Cost/Output Ratio
-
-| District | Cost | Monthly Output | Payback Period | Verdict |
-|----------|------|---------------|----------------|---------|
-| Housing | 100 minerals | +5 housing (enables +5 pops) | Instant value | Essential |
-| Generator | 100 minerals | +6 energy | 17 months (100/6) | Good |
-| Mining | 100 minerals | +6 minerals | 17 months (100/6) | Good |
-| Agriculture | 100 minerals | +6 food | 17 months (100/6) | Good |
-| Industrial | 200 minerals | +3 alloys, -3 energy | Never (no alloy sink) | **Trap** |
-| Research | 200 minerals + 20 energy | +9 research, -4 energy | Never (no research sink) | **Trap** |
-
-Industrial and Research need sinks to justify their 2x cost and energy drain.
-
-#### Pop Growth Pacing
-
-- Starting: 8 pops, +4 food surplus → base growth (400 ticks = 40 sec per pop)
-- After 1 Housing district (10 pops, 15 housing): growth continues at base rate
-- After 2 Agriculture districts: surplus jumps to ~16, triggering rapid growth (200 ticks = 20 sec per pop)
-- Colony fills at ~8-10 minutes with focused growth → good for 10-20 min matches
-
-**Assessment:** Growth pacing is solid. The food surplus → growth speed tiers create meaningful decisions about when to invest in agriculture vs other districts.
-
-#### Projected Match Length
-
-- Colony saturation (16 districts): ~8-10 minutes
-- With tech tree (research payoff): extends engagement to ~12-15 minutes
-- With score timer: hard cap at 10/20 minutes
-- **Target: 10 min practice, 20 min multiplayer — achievable with current pacing**
-
----
-
-### 5. Content Wishlist — "Wouldn't It Be Cool If..."
-
-1. **Colony Mood Riots.** Colonies that stay Rebellious for 5+ months spawn a "rebel faction" that takes control of 2-3 districts, turning them hostile. The player must spend influence (or eventually alloys for military suppression) to reclaim them. This transforms the mood system from a passive modifier into an active crisis that feels like a mini-narrative. Inspired by Tropico's faction revolts.
-
-2. **Planetary Terraforming.** Players can spend massive resources (500 minerals + 200 energy + 100 alloys over 5 minutes) to change their planet type — Arctic → Continental, Desert → Arid → Continental. Each step improves habitability and changes the type bonus. This creates an epic late-game project that transforms the colony's identity. Inspired by Alpha Centauri's terraforming system.
-
-3. **Colony Ship Exodus.** When a player's colony is fully developed and scoring victory points, they can build a Colony Ship (500 alloys + 100 influence) that launches to a new system tile on the galaxy map. The colony ship carries 5 pops and 200 minerals, founding a second colony. This creates the "expand" moment of the 4X loop without needing the full galaxy map — just a second colony grid to manage. The player switches between colonies via the colony list sidebar.
-
-4. **Galactic Weather.** Solar storms, comet showers, and ion clouds move across the galaxy map on a visible trajectory. Solar storms disable generators for 1 month. Comet showers grant +100 minerals to any colony in the path. Ion clouds boost research +50% but disable communications (no multiplayer chat) for 2 months. Players can see the weather coming and prepare. Inspired by FTL's environmental hazards.
-
-5. **Living Colony History.** Each colony accumulates a procedurally-written narrative journal: "Month 3: A thermal vent was discovered near the southern ridge. Chief Engineer Voss proposed a generator complex." "Month 7: The population reached 15 — housing blocks stretched across the eastern plateau." On game end, the journal is presented as a colony story. Makes each match feel like a unique narrative. Inspired by Dwarf Fortress legends and RimWorld's storytelling.
-
----
-
-### 6. Priority Implementation Order
-
-For maximum player experience improvement per engineering effort:
-
-1. **Mini Tech Tree** (Critical — makes 2 districts useful, adds first strategic fork)
-2. **Energy Deficit Consequences** (High — makes energy constraint real)
-3. **Surface Anomalies** (High — adds discovery and spatial strategy)
-4. **Score Timer Victory** (High — gives the game an ending)
-5. **Planet Type Bonuses + Starting Variety** (Medium — cheap replayability)
-6. **Scoreboard Overlay** (Medium — multiplayer awareness)
-7. **Opening Hands** (Medium — asymmetric starts)
-
-This order resolves the two most critical design flaws first (dead resources, toothless energy), then adds variety and competition.
-
----
-
-## Review #11 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 16/98 tasks complete (16%). Click interaction is live — raycaster tile selection, build menu overlay, district info/demolish panel. Three.js isometric colony scene renders with colored 3D district boxes, wireframe construction previews, and camera controls. HTML overlay UI (Sprint 5/5) is next. 113 tests passing.
-
-**Key change since Review #10:** The game crossed from "watchable" to "playable." Players can now click tiles, open a build menu, choose districts, and demolish — all through mouse interaction on the 3D scene. This is the single most important milestone yet: the game loop is now interactive.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3.5/10 | +0.5 | District sequencing now has real input: click tile → choose type → watch it build. The decision is the same (Generator vs Mining vs Housing) but the interactive build menu makes it *feel* like strategy rather than watching numbers tick. Still one colony, no tech, 3 dead resources. |
-| Pacing & Tension | 3.5/10 | +1.0 | **Biggest jump.** Click-to-build creates a genuine gameplay loop: see empty tile → open build menu → weigh cost vs production → place district → watch wireframe fill in → see it complete. Construction wireframes → solid meshes is a satisfying visual beat. Build menu graying unaffordable options creates resource tension. |
-| Economy & Production | 6.5/10 | = | Unchanged mechanically. The build menu now surfaces costs and production previews, which makes the economy *visible* through interaction even without the resource bar HUD. But players still can't see their stockpile or net income without Sprint 5/5. |
-| Exploration & Discovery | 0/10 | = | Still nonexistent. Surface Anomalies remain the highest-impact discovery feature that works within the current single-colony view. |
-| Multiplayer Fairness | 3/10 | = | Unchanged. Identical starts, no interaction mechanics. |
-
-**Overall Score: 3.3/10** (up from 3.0 — interaction is the most impactful UX improvement so far)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can build things! But I have no idea how many resources I have."** The build menu shows costs and grays out unaffordable districts, but there's no resource bar showing stockpile or income. Players must mentally track resources by watching what's grayed out. Sprint 5/5 is now the #1 blocker to informed decision-making.
-
-2. **"Research and Industrial districts seem pointless."** A smart playtester will notice Research and Industrial are 200 minerals (2x basic cost) for resources that do nothing. Alloys pile up, research piles up. These are *trap* districts — 2 of 6 build options are dead ends. Mini Tech Tree + Colony Reinforcement are structural fixes, not polish.
-
-3. **"I filled my colony. Game over? No score? No ending?"** After 12-15 minutes of satisfying building, the game just... continues ticking with nothing to do. Score Timer Victory would turn this dead-end into a climactic final countdown.
-
-4. **"Every game plays the same."** Same planet, same grid, same resources. No anomalies, no variety, no starting asymmetry. Opening Hands + Surface Anomalies would make each session feel unique.
-
-5. **"I can't see what my colony is producing."** The district info panel shows individual output, but there's no aggregate view. "Am I energy-positive? How fast are my pops growing? What's my food surplus?" These are the strategic questions the game generates but refuses to answer visually.
-
----
-
-### 3. Recommendations
-
-#### 3.1 — HTML Overlay UI (Sprint 5/5) — The Information Gate
-
-**Impact:** Critical (players are blind without it)
-**Effort:** Medium
-**Category:** Core UX
-
-**The problem:** The gameplay loop works (click → build → watch) but players can't see their resource stockpile, net income, pop growth rate, or housing status. Every strategic decision is a guess.
-**The fix:** Already designed — resource bar (top), colony info panel (right), build queue with progress bars and cancel buttons. The design in design.md is thorough and correct.
-**Why it matters:** This is the difference between "toy" and "game." A 4X is fundamentally about reading information and making tradeoffs. Without visible numbers, there are no tradeoffs — just clicking. Stellaris without the top bar is unplayable. This is that.
-**Priority context:** Now that click interaction works, this is the ONLY blocker to a complete single-colony gameplay loop. Everything else (tech, anomalies, victory) layers on top of this.
-
-#### 3.2 — Mini Tech Tree (Convert Dead Research)
-
-**Impact:** High (makes 1 of 6 district types worth building)
+**Impact:** Critical (transforms the entire game)
 **Effort:** Medium
 **Category:** Core Mechanic
 
-**The problem:** Research districts cost 200 minerals + 20 energy and produce resources with zero purpose. A rational player should never build one.
-**The fix:** 2-tier, 3-track tech tree already designed in Phase 2. With adjusted costs (T1=150, T2=500), a single Research district completes T1 in ~50 months (~8 min). Two Research districts halve that.
-**Why it matters:** Tech creates the first real strategic fork: "Power Plants or Pop Growth first?" This single system transforms the game from "build the same sequence every time" to "I have a plan this game." The research rate pacing already works — the cost values in design.md produce completion times that fit a 20-minute match arc.
-**What I'd add:** A "Tech Complete" visual celebration on the 3D scene — a brief glow or particle burst on all affected districts. When your Generator output jumps +25%, make the yellow boxes flash brighter for 2 seconds. Juice matters.
+**The problem:** The game is called ColonyGame but has one colony. The galaxy, hyperlanes, planet diversity, starting positions — all exist for multi-colony play that doesn't. The economy runs dry at minute 3. Speed controls just compress the emptiness.
 
-#### 3.3 — Colony Reinforcement (Convert Dead Alloys)
+**The fix:** Already specified (R18-8). Colony ship from build queue: 200 minerals, 100 food, 100 alloys. Moves along hyperlanes at 50 ticks/hop. Consumed on arrival: new colony with 2 pops. Max 5 colonies. Colony list sidebar when 2+ colonies exist.
 
-**Impact:** High (makes 1 of 6 district types worth building)
-**Effort:** Low
-**Category:** Core Mechanic
+**Why it matters:** This is the single feature that converts the game from city-builder to 4X. It gives alloys a purpose (200 alloy cost = major investment). It makes the galaxy actionable. It creates the core 4X tension: expand early (weaken home colony) vs. optimize first (risk falling behind). Would move Strategic Depth from 3 to 5 and Exploration from 2 to 4. Every other recommendation in this review compounds with colony ships — planet bonuses matter more when you choose where to settle, fog of war matters more when you're navigating toward a target.
 
-**The problem:** Industrial districts produce alloys that accumulate forever. Like Research, it's a trap district.
-**The fix:** Already designed — `reinforceColony` spends 100 alloys for +5 housing (max 3 per colony, +15 total). Simple, immediate, gives alloys purpose.
-**Why it matters:** With Housing at 10 base + 5 per Housing district, a 16-slot colony can house ~25 pops with 3 Housing districts. Reinforcement adds an alternative path to +15 housing through Industrial → alloys → reinforce, competing with direct Housing districts. This creates a genuine choice: "Housing district (instant +5 housing, costs 100 minerals, takes a slot) vs Industrial+reinforce (eventually +5 housing, costs 200 minerals + 100 alloys, takes a slot but also produces alloys)."
-**Design nuance:** The Industrial path is slower but multi-purpose (alloys for reinforcement AND future ships). The Housing path is direct and slot-efficient. Good tradeoff.
+**Design details:**
+- Colony ship should be buildable from the existing build queue (no shipyard prerequisite) — this keeps the barrier minimal
+- 200 alloys means ~50 months of a single Industrial district. At 1x speed, that's ~8 minutes. First colony ship arrives around minute 10 in a 20-minute match — good pacing
+- New colonies start with 2 pops, no pre-built districts, but get the first-3-districts 50% build discount
+- Colony list sidebar: clickable list on left side, shows colony name + pop count + key status icon (growth/starvation/construction)
+- Multi-colony resource pooling: all colonies share the same resource stockpile (Stellaris model), but each colony has its own build queue
 
-#### 3.4 — Surface Anomalies (Spatial Discovery)
+#### R22-2: Planet Type Signature Bonuses — Make Geography Matter
 
-**Impact:** High (makes district placement a puzzle, adds per-game variety)
-**Effort:** Medium
-**Category:** Core Mechanic / Content
-
-**The problem:** Colony grids are blank canvases. District placement is "pick the type you need" with zero spatial reasoning.
-**The fix:** Already designed in Phase 1 — 1-3 random anomalies per colony grid. Mineral Vein, Thermal Vent, Fertile Soil (tile-specific production bonuses), Ancient Ruins and Alien Artifact (one-time choices).
-**Why it matters:** This is the cheapest way to add exploration and replayability to the current single-colony scope. "Where should I place my mining district?" becomes a real question when one tile has a +50% bonus. Combined with the isometric 3D view, anomaly markers would add visual variety to the otherwise uniform grid.
-**Visual suggestion:** Render anomalies as subtle glowing crystals/runes embedded in the ground tile — visible but not obtrusive. When a player builds a district on an anomaly tile, the bonus should be clearly shown in the district info panel.
-
-#### 3.5 — Score Timer Victory (Give Matches an Ending)
-
-**Impact:** High (transforms sandbox into game)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Games don't end. There's no victory condition, no score, no reason to play optimally.
-**The fix:** Already designed — configurable timer, VP formula (pops×2 + districts×1 + alloys/50 + research/100), countdown with warnings.
-**Why it matters:** Even in single-player, beating your previous score adds replayability. In multiplayer, the timer creates urgency that transforms every district placement into a strategic decision. "Do I build Housing for more pops (VP) or Research for the multiplier?"
-
-#### 3.6 — Energy Deficit Consequences (Complete the Constraint Loop)
-
-**Impact:** Medium (adds meaningful punishment for over-expansion)
+**Impact:** High (strategic variety)
 **Effort:** Low
 **Category:** Core Mechanic / Balance
 
-**The problem:** Energy is nominally a constraint but going negative has no consequence. Players can build unlimited Industrial/Research districts without worrying about power. This undermines the entire energy economy.
-**The fix:** Already designed and next in queue — auto-disable highest-consuming districts when energy is negative.
-**Why it matters:** Consequences make constraints real. Without them, Generator districts are optional after you have "enough" energy. With auto-disable, there's a tangible fear: "If I build that 3rd Industrial, will I go negative and lose a district?" This creates the tension that makes the Generator vs other-district tradeoff meaningful.
+**The problem:** Continental, Ocean, Arctic, Desert — the labels are flavor text. All planets play identically. The planet generation system creates rich variety that's mechanically invisible.
 
-#### 3.7 — Opening Hands (Starting Variety)
+**The fix:** Already specified. Per-planet-type bonuses to specific district outputs:
+- Continental: +1 food/Agri, +1 mineral/Mining (balanced generalist)
+- Ocean: +2 food/Agri (food specialist)
+- Tropical: +1 food/Agri, +1 energy/Generator (warm climate = growth + power)
+- Arctic: +2 research/Research (harsh environment = scientific focus, a la Antarctica bases)
+- Desert: +2 mineral/Mining (rich mineral deposits, think Arrakis)
+- Arid: +1 energy/Generator, +1 alloy/Industrial (efficient manufacturing)
 
-**Impact:** Medium (per-game variety without galaxy infrastructure)
-**Effort:** Medium
-**Category:** Content / Replayability
+**Why it matters:** Even before colony ships, this changes how players read the galaxy map. "That Arctic world would be a research powerhouse" creates aspirational planning. When colony ships land, planet bonuses become the #1 driver of expansion decisions — do you grab the nearby Arid world for alloys, or push further for the Arctic research hub? This makes each game's galaxy feel unique.
 
-**The problem:** Every game starts identically — same planet, same districts, same resources.
-**The fix:** Already designed in Phase 2 — draft 1 of 3 random starting conditions (Industrial Start, Frontier Start, Research Rush, Mining Boom, Population Boom, Energy Surplus).
-**Why it matters:** Starting variety is the cheapest path to replayability. "This game I got Population Boom, so I'll lean into a housing-heavy strategy" creates differentiated sessions. The 30-second draft timer adds a decision moment right at the start.
+**Design note:** These bonuses should be visible in the system panel (galaxy view) as bonus tags. Show "+2 Mining" next to Desert planets so players can scout before committing.
 
-#### 3.8 — Edict System (Influence Spending)
+#### R22-3: Fog of War — Turn the Atlas Into a Frontier
 
-**Impact:** Medium (gives the last dead resource a purpose)
-**Effort:** Low
+**Impact:** High (exploration gameplay)
+**Effort:** Low (client-only)
 **Category:** Core Mechanic
 
-**The problem:** Influence sits at 100 forever. Players see it in the resource list and wonder what it's for.
-**The fix:** Already designed — 4 edicts spending influence for temporary bonuses. Limited supply (100 total) makes each activation a weighty choice.
-**Why it matters:** Edicts are "panic buttons" that add tactical depth. "I'm about to hit housing cap — do I pop Population Drive now?" This is the kind of reactive decision-making that keeps players engaged between construction decisions.
+**The problem:** Complete information kills mystery. Every system is fully visible from turn 1. There's no "unknown" in the galaxy — no frontier to push into, no surprise around the corner.
 
----
+**The fix:** Already specified (R17-4). Three visibility tiers computed client-side:
+- **Known** (within 2 hyperlane hops of owned systems): full-color star, name on hover, hyperlanes visible, planet list in system panel
+- **Unknown**: dim gray dot (opacity 0.2), no name, no planet details, hyperlanes shown as faded/dashed
+- Starting system + direct neighbors always fully visible
+- Other players' owned systems always visible as colored dots (but no planet details unless within your known range)
 
-### 4. Balance Snapshot
+**Why it matters:** Fog of war is the cheapest way to transform the galaxy from a solved map into a frontier. Combined with colony ships, it creates the classic 4X "push into the unknown" — you know there are systems beyond your borders but don't know if they hold that Desert mining world you need. Client-only implementation means zero server cost.
 
-#### Resource Flow Analysis (Starting → 5 minutes)
+#### R22-4: In-Game Chat — Give Multiplayer a Voice
 
-| Metric | Value | Assessment |
-|--------|-------|-----------|
-| Starting minerals | 300 | 3 basic districts immediately — satisfying opening agency |
-| Mining income | 6/month (1 district) | 100 minerals in 16.7 months (2.8 min) — acceptable |
-| Generator income | 6/month (1 district) | Powers 2 Industrial OR 1.5 Research — clean ratio |
-| Food surplus (start) | +4/month (12 prod - 8 consumption) | First pop at 40 sec, housing-gated at ~80 sec — crisp early pacing |
-| Alloy production | 3/month (1 Industrial) | Dead. No sink. Accumulates uselessly |
-| Research production | 7/7/7 (3 from district + 4 unemployed) | Dead. No sink. Accumulates uselessly |
-| Influence | 100 (flat, no income) | Dead. No sink. Confuses players |
-
-**Critical insight:** 3 of 6 resource types are non-functional. This means half the economy the game presents to players is a lie — it looks like there are choices but there aren't. Fixing alloys (reinforcement), research (tech tree), and influence (edicts) should be treated as balance-critical, not feature work.
-
-#### District Cost-Effectiveness (updated)
-
-| District | Cost | Monthly Output | Payback | Current Rating | With Fixes |
-|----------|------|---------------|---------|----------------|------------|
-| Mining | 100 min | +6 minerals | 16.7 mo | Essential | Essential |
-| Generator | 100 min | +6 energy | N/A | Essential | Essential |
-| Agriculture | 100 min | +6 food | N/A | Essential early | Essential early |
-| Housing | 100 min | +5 housing, -1 energy | N/A | Critical at cap | Critical at cap |
-| Industrial | 200 min | +3 alloys, -3 energy | ∞ (no sink) | **Trap** | Viable (reinforce) |
-| Research | 200 min + 20 energy | +3/3/3, -4 energy | ∞ (no sink) | **Trap** | Core (tech tree) |
-
-#### Recommended Number Changes
-
-1. **Research output: 3/3/3 → 4/4/4** — Already in design.md. Implement alongside Mini Tech Tree. At 200 min + 20 energy cost, tier-2 districts need to clearly outperform tier-1. This makes Research districts attractive once tech exists.
-
-2. **Industrial output: 3 → 4 alloys** — Already in design.md. Same reasoning. Implement alongside Colony Reinforcement.
-
-3. **Starting alloys: 50 → 0** — Already in design.md. Remove confusion. No sink exists.
-
-4. **Keep starting minerals at 300** — Disagree with the design.md suggestion to reduce to 250. The 3-district opening is a satisfying moment of agency. Reduce only when tech tree adds a competing "save for research district" opening.
-
-5. **Energy deficit auto-disable: target highest-consuming first** — The design says "highest-energy-consuming district." Confirm this means Industrial (3 energy) > Research (4 energy) — wait, Research consumes MORE. So Research districts get disabled first, which is correct since they're the most expensive to power. This naturally protects the player's basic infrastructure.
-
-#### Projected Match Duration
-
-| Scenario | Duration | Notes |
-|----------|----------|-------|
-| Solo, fill 16 slots | 12-15 min | 4 pre-built + 12 to build, income ramps over time |
-| Solo, with tech + score | 15-20 min | Tech decisions slow optimal play slightly, score timer caps at 20 min |
-| Multiplayer (2p), current | N/A | No competitive interaction beyond chat |
-| Multiplayer (2p), with score timer | 20 min | Timer + VP creates race dynamic |
-| Blitz mode (3x speed) | 5-7 min | Speed Chess mode for quick sessions |
-
-**Target: 20 min multiplayer, 10 min practice.** Current pacing supports this if Score Timer is implemented.
-
----
-
-### 5. Content Wishlist ("Wouldn't it be cool if...")
-
-1. **Seasonal Weather System** — Each colony cycles through 4-month seasons: Spring (+25% food), Summer (normal), Autumn (+25% minerals), Winter (-25% food, +25% energy demand). Different planet types have different season weights — Arctic has long winters, Tropical has double springs. This adds temporal rhythm to the economic cycle without random events. Players learn to plan: "Winter is coming, I need food reserves." Inspired by Anno 1800's seasonal trade fluctuations.
-
-2. **Colony Elevation Map** — Instead of a flat grid, generate each colony with a randomized height map (hills, valleys). Districts built at higher elevation get +10% energy (solar exposure), districts in valleys get +10% mining (deeper deposits). The isometric 3D view already supports visual height variation — this would make each colony visually and strategically unique. Think SimCity terrain but at colony scale.
-
-3. **District Evolution** — After a district has been active for 10 months, it "evolves" to a Level 2 version with +25% output and a visual upgrade (taller, more detailed mesh). After 20 months, Level 3 at +50%. This rewards patience and long-term planning over constant rebuilding. Visually, watching your colony "grow up" over time would be deeply satisfying in the isometric view.
-
-4. **Power Grid Visualization** — Show energy flow as glowing lines connecting Generator districts to Industrial/Research/Housing consumers on the grid. When energy goes negative, the lines flicker and dim. This makes the energy constraint *visceral* rather than numerical. Three.js line geometry + emissive materials could make this visually stunning.
-
-5. **Colony Soundtrack** — Dynamically layer ambient music based on colony composition: industrial colonies get mechanical hums, research colonies get ethereal tones, agriculture colonies get organic sounds. Each district type adds an audio layer. A 16-district colony with diverse types would have a unique soundscape. Web Audio API makes this achievable with procedural audio mixing.
-
----
-
-### 6. Roadmap Updates
-
-Added to `devguide/design.md`:
-
-**Phase 1 additions:**
-- Build menu resource stockpile preview (show current minerals/energy in build menu header)
-
-**Phase 2 additions:**
-- Tech complete visual celebration (brief glow on affected districts when tech finishes)
-- Anomaly visual rendering on colony grid (glowing markers on anomaly tiles)
-
-**No structural roadmap changes needed.** The existing task order is well-aligned with game design priorities:
-1. Sprint 5/5 (information visibility) — **Critical gate**
-2. Energy deficit (complete the constraint) — **Enables Generator strategy**
-3. Surface Anomalies (spatial discovery) — **Per-game variety**
-4. Mini Tech Tree (research sink) — **Strategic depth unlock**
-5. Colony Reinforcement (alloy sink) — **Economy completeness**
-6. Score Timer (match structure) — **Game ending**
-7. Edicts (influence sink) — **Economy completeness**
-8. Opening Hands (starting variety) — **Replayability**
-
-The priority chain maximizes player experience improvement per task: make the game visible → make constraints real → add variety → add depth → add structure → add replayability.
-
----
-
-## Review #10 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 14/95 tasks complete (15%). Three.js isometric colony scene now renders with colored district boxes, camera controls (zoom/pan/WASD), shared geometry/material pools, FPS counter. Client fully stripped of RTS code. Colony 4X engine has 6 district types, pop growth with 3 speed tiers, variable build times, event notifications, practice mode. 111 tests passing. **The game is now visible but not yet interactive** — click interaction (Sprint 4/5) and HTML overlay UI (Sprint 5/5) are the next gates.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | = | District sequencing (Generator vs Mining vs Housing) remains the only real decision. One colony, no tech, no fleets, 3 dead resources. Strategy ceiling hits at ~3 minutes. Unchanged since last review. |
-| Pacing & Tension | 2.5/10 | +0.5 | Three.js scene adds visual feedback — seeing districts appear as colored boxes creates satisfaction beats. Pop growth tiers and build time variation provide a weak early arc. Still no escalation, crisis, timer, or opponent interaction. Game flatlines after housing cap. |
-| Economy & Production | 6.5/10 | = | Best pillar. Clean balance: uniform 100-mineral basic costs, 200-mineral tier-2 gate, energy as universal constraint. Food → growth speed tiers is elegant. Alloys, research, and influence remain dead resources with zero sinks. |
-| Exploration & Discovery | 0/10 | = | Nonexistent. No galaxy, no systems, no anomalies. Surface Anomalies on the colony grid (already designed in Phase 1) would bring discovery to the existing view immediately. |
-| Multiplayer Fairness | 3/10 | = | Identical starts are fair but narratively flat. No catch-up mechanics, no diplomacy, no competitive tension. Practice mode enables solo testing. |
-
-**Overall Score: 3.0/10** (average of pillars, up from 2.9 — Three.js scene moves pacing slightly)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can see my colony but I can't click anything."** The isometric scene renders districts beautifully but there's no interaction. You can't build, demolish, or select anything. Sprint 4/5 (raycaster click) is the highest priority — visual without interactive is a museum, not a game.
-
-2. **"There's no UI telling me my resources."** No resource bar, no production numbers, no build menu. The entire economy is invisible to the player. Sprint 5/5 (HTML overlay) makes the game actually playable as a 4X.
-
-3. **"Research points pile up but do nothing."** Research districts produce 3/3/3 per month that accumulates into a void. Mini Tech Tree is the most impactful single feature for converting a dead resource into strategic choices.
-
-4. **"I filled my grid. Now what?"** With 16 slots and no expansion, the game ends when you run out of tiles. No victory condition, no score, no next step. Score Timer Victory gives matches an endpoint and meaning.
-
-5. **"Every game is identical."** Same planet, same resources, same layout. No discovery, no variety, no asymmetry. Surface Anomalies + Opening Hands would make each match feel unique without requiring galaxy infrastructure.
-
----
-
-### 3. Recommendations
-
-#### 3.1 — Complete Click Interaction (Sprint 4/5)
-
-**Impact:** Critical (game is watchable but not playable)
-**Effort:** Medium
-**Category:** Core UX
-
-**The problem:** Players see their colony render in 3D but cannot interact with it. Building districts currently requires sending raw WebSocket commands — no mouse interaction exists.
-**The fix:** Already designed in Sprint 4/5 — add Three.js Raycaster on click, detect which grid tile was hit, emit build/info/demolish actions. Add selected tile highlight with emissive outline.
-**Why it matters:** The bridge between "tech demo" and "game." Without click interaction, all the economy work is invisible to the player. This is the single highest-impact item.
-
-#### 3.2 — HTML Overlay UI (Sprint 5/5)
-
-**Impact:** Critical (economy is invisible without it)
-**Effort:** Medium
-**Category:** Core UX
-
-**The problem:** Resources, production rates, build queue, pop count — everything the economy produces is hidden from the player. They can't make informed decisions.
-**The fix:** Already designed in Sprint 5/5 — resource bar (top), colony info panel (right), build menu (bottom on tile click). CSS dark space theme with backdrop-blur panels.
-**Why it matters:** A 4X game IS its economy UI. Without numbers visible, strategic decisions are impossible. The Civ VI/Stellaris lesson: surface complexity through clear UI, not hidden mechanics.
-
-#### 3.3 — Mini Tech Tree (Research Sink)
-
-**Impact:** High (turns dead resource into strategic decisions)
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Research districts produce 9 research/month (3 each type) that accumulates with zero purpose. Players learn quickly that Research districts are a waste of a slot.
-**The fix:** Already designed in Phase 2 — 2-tier, 3-track tech tree. Physics T1: Improved Power Plants (+25% Generator). Society T1: Frontier Medicine (+25% pop growth). Engineering T1: Improved Mining (+25% Mining). T2 techs at +50% with T1 prerequisite.
-**Why it matters:** Tech creates the first real strategic divergence. "Do I rush Generator efficiency or pop growth?" is the kind of question that makes 4X games replayable. Research costs tuned for 20-minute matches (T1=150, T2=500 at adjusted values already in design.md).
-**Design detail:** With 1 Research district producing 3/month, T1 completes in 50 months (~8 min). With 2 Research districts at 6/month, T1 in 25 months (~4 min). This rewards early research investment without trivializing it.
-
-#### 3.4 — Surface Anomalies (Colony Discovery)
-
-**Impact:** High (brings exploration to existing view)
-**Effort:** Medium
-**Category:** Core Mechanic / Content
-
-**The problem:** Every colony grid is a blank canvas. District placement is purely about type selection — no spatial reasoning, no discovery, no surprises.
-**The fix:** Already designed in Phase 1 — randomly place 1-3 anomalies on colony tiles. Mineral Vein (+50% mining on this tile), Thermal Vent (+50% generator), Fertile Soil (+50% agriculture), Ancient Ruins (choice: +500 research or +2 influence/month), Alien Artifact (choice: +200 alloys or +300 research).
-**Why it matters:** Transforms district placement from a menu selection into a spatial puzzle. "Should I build a Generator on the Thermal Vent or save that slot for later?" Brings exploration-like discovery to the colony view without needing galaxy infrastructure. Every colony becomes unique.
-**Design reference:** Anno 1800's fertility system — certain islands can grow certain crops. It's the same idea applied to a colony grid.
-
-#### 3.5 — Score Timer Victory
-
-**Impact:** High (gives matches an endpoint and meaning)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Games have no ending. Players fill their grid and then... nothing. No winner, no score, no resolution.
-**The fix:** Already designed in Phase 1 — configurable match timer (10/20/30 min). VP = pops×2 + districts×1 + alloys/50 + research/100. Timer countdown with 2-minute warning and 30-second final reveal of all scores. Default: 10 min practice, 20 min multiplayer.
-**Why it matters:** Victory conditions are what transform a sandbox into a game. The timer creates urgency ("I need to optimize NOW"), the VP formula rewards balanced play, and the final countdown creates a tension climax. Even in solo practice mode, beating your own score adds replayability.
-**Design reference:** Civilization VI's score victory — it's the fallback, but it works as a match structure.
-
-#### 3.6 — Colony Personality System
-
-**Impact:** Medium (rewards specialization, creates narrative)
-**Effort:** Low
-**Category:** Content / Mechanic
-
-**The problem:** Colonies have no identity. A colony with 4 Research districts plays the same as one with 4 Mining districts — there's no reward for specialization.
-**The fix:** Already designed in Phase 2 — when a colony has 4+ districts of one type, it earns a trait: "Academy World" (+10% research empire-wide), "Forge World" (+10% alloys), etc. Traits are badges that create narrative identity and stack across colonies.
-**Why it matters:** Specialization is a core 4X strategy. This system rewards it visually and mechanically, creating "build toward" goals. With a single colony, the trait becomes a medium-term objective (~6-8 minutes to reach 4 of one type). With multiple colonies (post-Phase 3), it becomes empire-level strategy.
-
-#### 3.7 — Edict System (Influence Spending)
-
-**Impact:** Medium (gives influence a purpose)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Influence starts at 100 and sits there forever. It's a dead resource that confuses players.
-**The fix:** Already designed in Phase 2 — 4 empire-wide edicts spending influence for temporary bonuses. "Mineral Rush" (50 influence, +50% mining for 5 months), "Population Drive" (75 influence, +100% pop growth for 5 months), "Research Grant" (50 influence, +50% research for 5 months), "Emergency Reserves" (25 influence, instant +100 of each basic resource).
-**Why it matters:** Edicts turn influence from dead weight into a strategic reserve. "Should I pop my Research Grant now to finish T1 tech, or save influence for an emergency?" The limited supply (100 total, no production yet) makes each activation a weighty decision.
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis (Starting → 5 minutes)
-
-| Metric | Value | Assessment |
-|--------|-------|-----------|
-| Starting minerals | 300 | Allows 3 basic districts immediately — good opening agency |
-| Mining income | 6/month (1 district) | 1 district → 100 minerals in 16.7 months (2.8 min) — acceptable |
-| Generator income | 6/month (1 district) | Powers 2 Industrial OR 1 Industrial + some Housing — clean ratio |
-| Food surplus (start) | +4/month (12 prod - 8 pops) | First pop in 40 sec, second in 40 sec, then housing-gated — good pacing |
-| Alloy production | 3/month (1 Industrial, costs 200 minerals) | First Industrial builds at ~3.3 min if all minerals go to mining first. 3 alloys/month accumulates with no sink — needs ship/reinforcement |
-| Research production | 3/3/3 + 4 unemployed = 7/7/7 per month | Research piles up with no sink. Mini Tech Tree at 150 cost would complete in ~21 months (~3.5 min) with starting research rate — good pacing |
-
-#### District Cost-Effectiveness
-
-| District | Cost | Monthly Output | Payback (months) | Rating |
-|----------|------|---------------|-------------------|--------|
-| Mining | 100 min | +6 minerals | 16.7 | Solid — enables further building |
-| Generator | 100 min | +6 energy | N/A (energy is constraint, not stockpile) | Essential — gating factor |
-| Agriculture | 100 min | +6 food | N/A (enables pop growth) | Essential early, diminishing later |
-| Housing | 100 min | +5 housing, -1 energy | N/A (enables growth) | Critical when housing-gated |
-| Industrial | 200 min | +3 alloys, -3 energy | 66.7 (if alloys worth minerals) | **Weak** — cost is 2x basic, output has no sink |
-| Research | 200 min + 20 energy | +3/3/3 research, -4 energy | N/A until tech exists | **Dead** — pure waste without tech tree |
-
-**Key finding:** Industrial and Research districts are traps right now. A rational player should never build them because alloys and research have no purpose. The Mini Tech Tree and Colony Reinforcement are not "nice to have" — they're required to make 2/6 district types functional.
-
-#### Recommended Number Tweaks
-
-1. **Research district output: 3/3/3 → 4/4/4** — At 200 minerals + 20 energy + 4 energy/month, Research should clearly outproduce the tier-1 alternatives. This is already in design.md as a balance tweak — implement it alongside Mini Tech Tree.
-
-2. **Industrial output: 3 → 4 alloys** — Same reasoning. Tier-2 cost should yield meaningfully more. Also already in design.md.
-
-3. **Starting alloys: 50 → 0** — No sink exists. Starting with 50 creates confusion ("what are these for?"). Remove until ships or reinforcement exists. Already in design.md.
-
-4. **Starting minerals: 300 → 250** (design.md suggests this) — I'd keep 300 for now. The opening choice of "3 basic districts" is a satisfying start. Reduce to 250 only when tech tree exists and there's a meaningful "save for research" alternative.
-
-#### Projected Game Length
-
-With current pacing: a solo player fills 16 district slots in approximately 12-15 minutes (4 pre-built + 12 to build at ~60-80 sec average considering income ramp). After that, the game has no objective. **Target of 20-40 minutes requires multiple colonies or a victory condition to pace toward.** Score Timer at 10 min (practice) / 20 min (multiplayer) is appropriate for current single-colony scope.
-
----
-
-### 5. Content Wishlist ("Wouldn't it be cool if...")
-
-1. **Colony Crisis Events** — At random intervals (every 5-8 months), a colony faces a crisis that demands response: "Seismic Activity" (choose: evacuate 2 pops to save buildings OR lose 1 random district), "Plague" (pop growth halted for 3 months unless you spend 50 food), "Power Surge" (generators produce 2x for 1 month but 1 might overload and be destroyed). Crises break the optimization monotony and force reactive play. Stellaris does this at the galactic scale — doing it at the colony scale is unique for a browser 4X.
-
-2. **Colony Architect Mode** — Let players drag-and-drop to rearrange built districts on the grid (costs 1 month of production halt per moved district). Combined with Surface Anomalies, this creates a spatial optimization meta-game. "I discovered a Thermal Vent under my Housing district — should I spend a month relocating it to build a Generator there?"
-
-3. **Spectator Replay** — After a match ends, let players scrub through a time-lapse of their colony growing. Districts appearing, pops increasing, resources flowing — compressed into 30 seconds. This is the "one more game" hook. Tiny feature, huge emotional payoff.
-
-4. **Colony Rivalry Ticker** — In multiplayer, constantly compare players: "Player B's colony just surpassed yours in population," "You have the most Research output in the galaxy." Creates competitive tension through social comparison even without direct interaction. Inspired by party games that keep everyone engaged through comparison.
-
-5. **District Adjacency Bonuses** — Districts next to matching types get +10% output (2 miners next to each other = +10% each). Creates a spatial puzzle layer on top of the type-selection puzzle. Anno 1800 does this with production chains; here it's simpler but still meaningful.
-
----
-
-### 6. Roadmap Updates
-
-Added to `devguide/design.md`:
-- Phase 1: District adjacency bonus (stretch, post-anomalies)
-- Phase 2: Colony crisis events (3 crisis types)
-- Phase 7: Spectator replay time-lapse, colony rivalry ticker
-
-**No changes to existing task ordering.** The current priority chain (Sprint 4/5 → Sprint 5/5 → Energy deficit → Surface anomalies → Mini Tech Tree) is correct from a game design perspective. The recommendations above reinforce rather than contradict the existing roadmap.
-
----
-
-## Review #9 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 14/93 tasks complete (15%). Colony 4X engine well-balanced with 6 district types, pop growth, variable build times, event notifications, practice mode. Client stripped of RTS code (Sprint 2/5 complete), but **no Three.js scene exists yet** — the game is currently invisible. 111 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | = | The district sequencing puzzle is solid for an opening — Generator vs Mining vs Housing is a real choice. But with only 1 colony, no tech, no fleets, and 3 dead-end resources (alloys, research, influence), strategy ceiling hits at ~3 minutes. The Mini Tech Tree in Phase 2 is critical to unlock the next layer. |
-| Pacing & Tension | 2/10 | = | Pop growth tiers (base/fast/fastest) and variable build times create a weak early arc. Event notifications (constructionComplete, housingFull) add feedback beats. But there's no escalation, no crisis, no timer, no opponent interaction. Game flatlines after the first housing cap is hit. |
-| Economy & Production | 6.5/10 | = | Best pillar. 6 balance passes produced clean numbers: uniform 100-mineral basic costs, clear 200-mineral tier-2 gate, energy as the universal constraint (1 Gen powers 2 Industrial). Food surplus → growth speed tiers is elegant. But alloys, research, and influence are dead resources — they accumulate with zero sink. This needs the Mini Tech Tree and Colony Reinforcement tasks urgently. |
-| Exploration & Discovery | 0/10 | = | Nonexistent. No galaxy, no systems, no fog of war, no anomalies. A 4X game without exploration is fundamentally incomplete. Phase 3 is far away — but Surface Anomalies (Phase 7) could bring discovery to the colony grid much sooner. |
-| Multiplayer Fairness | 3/10 | = | Identical starts (Continental, size 16, same resources) are fair but create no narrative differentiation. No catch-up mechanics, no diplomacy, no information asymmetry. Practice mode enables solo testing but multiplayer currently has nothing to compete over beyond district count. |
-
-**Overall Score: 2.9/10** (average of pillars)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"There's nothing on screen."** The client has been stripped of RTS rendering but Three.js isn't wired yet. Sprint 3/5 is the single highest priority in the entire project. Without visuals, nothing else matters — per the project's own feedback memory: "Never defer 3D rendering for HTML-only UI."
-
-2. **"I built some research districts but the research points don't do anything."** Research accumulates meaninglessly. The Mini Tech Tree (Phase 2) is the most impactful gameplay addition possible right now — it turns a dead resource into strategic decisions.
-
-3. **"I'm just stacking districts until the grid fills up. Then what?"** With 1 colony, 16 slots, and no expansion, the game ends when you fill your grid (~8-10 minutes of real play). There's no "what comes next" moment. Score Timer Victory or Colony Personality traits would give the endgame shape.
-
-4. **"My alloys keep going up but I can't spend them on anything."** Alloys have no sink until ships exist (Phase 5). Colony Reinforcement (spend alloys for +5 housing) is the designed stopgap but isn't implemented yet.
-
-5. **"Every game starts exactly the same."** No planet variety, no starting condition draft, no asymmetry. Opening Hands (choose from 3 random starting conditions) would make each match feel different with minimal effort.
-
----
-
-### 3. Recommendations
-
-#### 3.1 — Three.js Colony Scene (Sprint 3/5)
-
-**Impact:** Critical (game is unplayable without it)
-**Effort:** Medium
-**Category:** Core / UX
-
-**The problem:** The game engine works but is invisible. No player can interact with their colony.
-**The fix:** Already designed as Sprint 3/5. Implement the OrthographicCamera scene, terrain grid, camera controls, dark skybox. This is the critical path.
-**Why it matters:** Everything downstream depends on this. Balance tuning, multiplayer testing, and player feedback all require visual output.
-**Design details:**
-- Grid layout: planet.size slots in 4-column rows, ~1 unit tiles with 0.1 gap
-- Isometric camera: 35.264° pitch, 45° yaw
-- Controls: scroll zoom (ortho frustum), middle-drag/WASD pan
-- Background: #0a0a1a (dark space)
-
-#### 3.2 — Mini Tech Tree (Early Research Sink)
-
-**Impact:** High (turns a dead resource into strategic choices)
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Research districts produce physics/society/engineering that accumulate with zero purpose. Players quickly realize research is a waste of a district slot.
-**The fix:** Already designed in Phase 2 as "Mini tech tree." 2 tiers, 3 tracks, 6 techs total. Each provides a multiplicative production bonus.
-**Why it matters:** This single feature transforms research from a dead resource into the most strategically interesting decision in the game. "Do I invest early in Improved Power Plants to compound energy, or rush Frontier Medicine for faster pop growth?" This is the kind of tension that makes 4X games compelling.
-**Design details:**
-- Physics T1: Improved Power Plants (+25% Generator, 500 cost) → T2: Advanced Reactors (+50%, 1000)
-- Society T1: Frontier Medicine (+25% pop growth, 500) → T2: Gene Crops (+50% Agriculture, 1000)
-- Engineering T1: Improved Mining (+25% Mining, 500) → T2: Deep Mining (+50% Mining, 1000)
-- One active research per track. Progress deducted from accumulated research each tick.
-- Completion broadcasts `researchComplete` event. Modifiers are multiplicative.
-- Reference: Stellaris tech tree pacing — T1 should complete in ~3-4 months (300-400 research at 3/tick from 1 district = ~167 ticks per point, so ~500/(3*1) = ~167 months... that's too slow). **Balance concern:** At 3 research/month from one Research district, T1 takes 167 months. Need either lower costs (200-300) or the task's values assume multiple research districts. Recommend: T1 = 300, T2 = 800. With 2 research districts (6 research/month), T1 takes 50 months (~8 min), T2 takes ~133 months. Still long. Consider T1 = 150, T2 = 500 for a 20-min match format.
-
-#### 3.3 — Colony Reinforcement (Alloy Sink)
-
-**Impact:** Medium-High (gives alloys a purpose before ships exist)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Alloys accumulate from Industrial districts with nowhere to spend them. Players stop building Industrial districts once they realize this.
-**The fix:** Already designed: `reinforceColony` command spends 100 alloys for +5 housing. Max 3 per colony (+15 total).
-**Why it matters:** Creates a meaningful alloy→housing→growth pipeline. Industrial districts now have clear purpose: "I need alloys to reinforce, which gives housing, which lets me grow pops, which fills more districts." This is a proper production chain.
-
-#### 3.4 — Score Timer Victory Condition
-
-**Impact:** High (gives the game an ending and a goal)
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** The game has no win condition, no timer, no goal. Players build districts until they get bored.
-**The fix:** Already designed: configurable match timer (10/20/30 min). VP formula: pops×2 + districts×1 + alloys/50 + research/100. Highest VP wins at timer expiry.
-**Why it matters:** A ticking clock transforms aimless optimization into strategic pressure. "I have 8 minutes left — do I invest in another Research district for VP, or build Housing to grow pops for more VP?" Every decision gains urgency. The 2-minute warning and 30-second countdown create a climactic ending.
-**Design details:**
-- Default: 10 min practice, 20 min multiplayer
-- VP visible on Tab scoreboard throughout
-- Final 30 seconds: all scores visible to create tension
-- Reference: Anno 1800 campaign objectives, Civilization score victory
-
-#### 3.5 — Opening Hands (Starting Condition Draft)
-
-**Impact:** Medium (adds replayability and narrative)
-**Effort:** Medium
-**Category:** Content
-
-**The problem:** Every game starts identically. No narrative differentiation, no asymmetry, no "this time I'll try..."
-**The fix:** Already designed: 3 random starting conditions from a pool of 6. 30-second draft timer.
-**Why it matters:** Replayability in 4X comes from varied starts creating different strategic puzzles. "Industrial Start" (+200 alloys, 1 Industrial district) pushes you toward reinforcement and housing. "Research Rush" (+500 physics, 1 Research district) pushes toward tech. Each start creates a different optimal opening, multiplying strategic depth.
-
-#### 3.6 — Surface Anomalies on Colony Grid
-
-**Impact:** Medium (brings discovery to the one screen that exists)
-**Effort:** Medium
-**Category:** Content / Exploration
-
-**The problem:** Exploration score is 0/10 and Phase 3 (galaxy) is far away. The colony grid is static and predictable.
-**The fix:** Already designed in Phase 7: 1-3 tile anomalies per colony ("Mineral Vein" +50% Mining on that tile, "Ancient Ruins" excavate for research vs preserve for influence, etc.).
-**Why it matters:** This brings the exploration pillar to the colony view without requiring the galaxy. Each colony becomes a spatial puzzle: "The Mineral Vein is on tile 7 — I should put my Mining district there." It makes district placement a meaningful positional decision rather than just "pick a type."
-**Recommendation:** Move this from Phase 7 to Phase 2 — it can be implemented as soon as the Three.js grid is rendering.
-
-#### 3.7 — Colony Mood System
-
-**Impact:** Medium (adds colony nurturing and risk management)
-**Effort:** Medium
-**Category:** Core Mechanic / Depth
-
-**The problem:** Colonies are pure optimization puzzles with no personality or feedback loop beyond resource numbers.
-**The fix:** Already designed in Phase 2: Thriving/Content/Restless/Rebellious states based on housing ratio, food surplus, and district variety. Thriving = +10% output, Rebellious = -25% and eventual destruction.
-**Why it matters:** Creates an emotional relationship with colonies (Tropico-style). The district variety requirement rewards diverse colonies over monocultures, adding a meaningful trade-off against Colony Personality traits (which reward specialization). This tension — specialize for empire bonuses vs diversify for mood — is exactly the kind of competing priority that makes 4X interesting.
-
-#### 3.8 — In-Game Chat Extension
-
-**Impact:** Low-Medium (high social value, very low effort)
-**Effort:** Very Low
-**Category:** Polish / Multiplayer
-
-**The problem:** Chat works in the lobby/room but stops during gameplay. Multiplayer with no communication is isolating.
-**The fix:** Route chat messages to room members during gameplay. Show collapsible chat overlay on game screen.
-**Why it matters:** Social interaction is the cheapest way to make multiplayer feel alive. "Nice colony!" or "I'm going for research" creates informal diplomacy before formal systems exist.
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow (Month 1 — starting state, 8 pops)
-
-| Resource | Production | Consumption | Net | Stockpile |
-|----------|-----------|-------------|-----|-----------|
-| Energy | +6 (1 Gen) | -1 (Housing) | **+5** | 100 |
-| Minerals | +6 (1 Mining) | 0 | **+6** | 300 |
-| Food | +12 (2 Agri) | -8 (8 pops) | **+4** | 100 |
-| Alloys | 0 | 0 | **0** | 50 |
-| Research | +4/+4/+4 (unemployed) | 0 | **+4 each** | 0 |
-| Influence | 0 | 0 | **0** | 100 |
-
-**Assessment:** Starting economy is well-tuned. +5 energy provides a buffer for 1-2 Housing districts before needing another Generator. +6 minerals funds one basic district per ~17 months (not great — opening builds come from stockpile). +4 food drives base growth rate. Good.
-
-#### Opening Play (~5 minutes)
-
-Optimal opening (assuming 300 starting minerals):
-1. Build Housing (100 min, 200 ticks) — unlocks growth past 10 pops
-2. Build Generator (100 min, 300 ticks) — offsets Housing energy cost + funds Industrial
-3. Build Mining (100 min, 300 ticks) — minerals income for sustained building
-
-After 3 builds: 0 minerals remaining, +11 energy, +12 minerals, +12 food, 8→12 pops (if housing keeps up).
-
-**Issue:** The opening is solved. There's one clearly optimal sequence (Housing → Generator → Mining) because Housing is always needed first (8/10 cap), Generator is always needed second (energy for tier-2), and Mining third (fund next builds). Consider: making the opening less deterministic via Starting Condition Draft (section 3.5) or by giving different planet types different starting districts.
-
-#### District Value Analysis
-
-| District | Cost | Monthly Output | Payback Time | Energy Net |
-|----------|------|---------------|-------------|------------|
-| Housing | 100 min | +5 housing (indirect: +pop→+job) | N/A (enabler) | -1/mo |
-| Generator | 100 min | +6 energy | 100/6 = 17 months | **+6/mo** |
-| Mining | 100 min | +6 minerals | 100/6 = 17 months | 0 |
-| Agriculture | 100 min | +6 food | N/A (enables growth) | 0 |
-| Industrial | 200 min | +3 alloys | N/A (no sink yet) | -3/mo |
-| Research | 200 min + 20 energy | +3/3/3 research | N/A (no sink yet) | -4/mo |
-
-**Issue: Industrial and Research are traps.** Until alloy sinks and tech trees exist, building these districts is actively harmful — they consume energy without producing anything useful. A playtester who builds an Industrial district is punished with -3 energy/month for zero benefit. **Fix priority:** Mini Tech Tree and Colony Reinforcement must ship before or alongside the visual client, or players will correctly learn to never build tier-2 districts.
-
-#### Pop Growth Pacing
-
-| Food Surplus | Growth Rate | Time to +1 Pop |
-|-------------|------------|----------------|
-| 1-5 | Base | 400 ticks = 40 sec |
-| 6-10 | Fast | 300 ticks = 30 sec |
-| 11+ | Fastest | 200 ticks = 20 sec |
-
-**Assessment:** Good pacing. With starting +4 surplus, first pop at 40 sec. To reach "fast" growth, need +6 surplus → 3 Agriculture districts (18 food) - 10 pops (10 food) = +8 surplus. But spending 3 slots on Agriculture is a heavy investment. This creates genuine tension: "Do I sacrifice district slots for faster growth?"
-
-#### Game Length Estimate
-
-With 16 district slots, 300 starting minerals, and ~6 minerals/month income:
-- Stockpile builds: 3 districts in first ~5 minutes (built from reserves)
-- Income builds: 100 minerals / 6 per month = ~17 months per build = ~170 seconds
-- Remaining 9 districts: 9 × 170 = 1530 seconds ≈ 25 minutes
-- Total to fill colony: ~30 minutes
-
-**Assessment:** 30 minutes to fill one colony is within the 20-40 minute target range. With a 20-minute timer and Score Victory, players would complete roughly 60-70% of their colony — good stopping point that leaves strategic room.
-
----
-
-### 5. Content Wishlist (Aspirational)
-
-1. **Orbital Mechanics Mini-Game:** Each colony has an orbital slot system where players can build space stations that provide empire-wide bonuses. A Research Station in orbit provides +15% research to ALL colonies. A Trade Hub provides +10% minerals. Limited to 2-3 orbital slots per colony. Creates a spatial puzzle separate from the surface grid. No other 4X does colony management at both surface AND orbital layers simultaneously.
-
-2. **Cultural Drift Events:** When two players' colonies are in adjacent systems, a "Cultural Exchange" event can fire — both players vote on how to resolve it. Options: "Open Borders" (both get +5% research for 3 months), "Cultural Embargo" (both get +10% influence for 3 months), or "Hostile Posturing" (both get +5% alloys but -5% food for 3 months). Creates emergent diplomacy without formal systems.
-
-3. **Colony Legends with Narrative AI:** Extend Colony Legends (already designed) with procedurally generated narrative summaries at game end. "The colony of New Helsinki endured the Great Mineral Scarcity of Month 14, emerged as a Forge World by Month 22, and ultimately contributed 40% of the empire's alloy production." Makes each match feel like a unique story worth retelling.
-
-4. **Spectator Mode with Commentary:** Allow eliminated players or observers to watch ongoing games with an automated commentary system. "Player X is falling behind in minerals — they haven't built a Mining district in 5 months." Creates an esports-lite viewing experience for browser-based 4X.
-
-5. **Planetary Weather System:** Each colony experiences procedural weather that affects production for 1-2 months. "Ion Storm: -25% energy production" or "Bumper Harvest: +50% food this month." Weather is visible on the isometric colony view as particle effects (rain, dust, aurora). Creates short-term tactical decisions layered on top of long-term strategic ones.
-
----
-
-### 6. Critical Path for Fun
-
-The shortest path to a "fun playable game" from current state:
-
-1. **Sprint 3/5** — Three.js scene (can see the colony)
-2. **Sprint 4/5** — 3D district rendering (can see what you built)
-3. **Sprint 5/5** — HTML overlay UI (can see resources, build things)
-4. **Mini Tech Tree** — research becomes meaningful
-5. **Colony Reinforcement** — alloys become meaningful
-6. **Score Timer Victory** — game has an ending
-7. **In-game chat** — multiplayer feels social
-
-Steps 1-3 make the game *visible*. Steps 4-6 make it *meaningful*. Step 7 makes it *social*. All 7 are achievable in the near term and together would transform the game from "engine simulation" to "playable 4X."
-
----
-
-## Review #8 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 13/91 tasks complete (14%). Colony 4X engine solid with 6 balance passes, pop growth, variable build times, event notifications, practice mode. Client still has old RTS Canvas 2D — no visual representation of 4X state. 111 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | = | Six district types with clear tier separation and energy gating create a decent opening puzzle. But the entire decision space is single-colony district sequencing. No tech tree means research is a dead-end resource. No fleets, no expansion, no alternative strategies. Strategy ceiling hit in ~3 minutes. |
-| Pacing & Tension | 2/10 | = | Pop growth (8→10 in ~80 sec) and variable build times (20/30/40 sec) create a weak early arc. Event notifications add feedback pulses. But no mid-game escalation, no crisis, no timer, no opponent pressure, no climax. Game flatlines after minute 3-4. |
-| Economy & Production | 6.5/10 | = | Strongest pillar. Uniform 100-mineral basic costs, clear 200-mineral tier 2 gate, energy tension (1 Generator powers 2 Industrial OR 1.5 Research), food surplus driving growth speed tiers. Well-tuned after 6 balance iterations. But 3 of 6 resources (alloys, research, influence) have no sink — they accumulate meaninglessly. |
-| Exploration & Discovery | 0/10 | = | Does not exist. No galaxy, no systems, no surveying, no anomalies, no fog of war. Single colony on a single planet with no way to expand. This is the biggest missing pillar for a 4X game. |
-| Multiplayer Fairness | 3/10 | = | All players start identical (Continental, size 16, same resources). That's fair but boring — symmetric starts with no variation create no narrative. No catch-up mechanics, no information asymmetry, no diplomacy. Practice mode enables solo testing but multiplayer has nothing to compete over. |
-
-**Overall Score: 2.9/10** (average of pillars)
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can't see my game."** The client still shows Gold/Wood/Stone and an RTS canvas with unit selection. The colony 4X engine is invisible. This is the #1 blocker — everything else is academic until players can see and interact with their colony.
-
-2. **"My research is piling up but doing nothing."** Research districts produce physics/society/engineering every month, but there's no tech tree. The numbers go up with no payoff. Same for alloys (no ships) and influence (no edicts or claims). Three resource types are meaningless.
-
-3. **"I filled my planet. Now what?"** A size-16 planet fills in ~6 minutes of active building. After that, there's nothing to do — no second colony, no expansion, no galaxy. The game effectively ends but doesn't know it.
-
-4. **"There's no way to win or lose."** No victory condition, no timer, no score. The game runs forever with no climax. Even in multiplayer, there's nothing to compete over.
-
-5. **"Every game is identical."** Same planet type, same size, same starting resources, same opening build order. No variation between sessions — no replayability hook.
-
----
-
-### 3. Recommendations
-
-#### 3.1 Visual Client (Three.js Colony View)
-
-**Impact:** Critical (game is unplayable without it)
-**Effort:** High
-**Category:** Core / UX
-
-**The problem:** 13 server-side features exist that no player can see or interact with. The client still renders an RTS grid with Gold/Wood/Stone.
-**The fix:** This is already planned as Client UX Sprints 2-5. The recommendation is to **prioritize these above all other work** — no more server-side balance tweaks or features until the visual client exists.
-**Why it matters:** A game you can't see isn't a game. Every additional server feature built without a visual client is wasted work from a player experience perspective. The feedback memory for this project already notes: "Never defer 3D rendering for HTML-only UI. Visuals are core, not polish."
-**Design details:**
-- Sprint 2 (stale cleanup) and Sprint 3 (Three.js scene) should be treated as a single unbreakable unit
-- Even a simple colored-box colony grid would make the game 10x more engaging than invisible server state
-- Prioritize: resource bar, build menu, district grid. Colony info panel can come after.
-
-#### 3.2 Mini Tech Tree (Research Sink)
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Research districts produce 3/3/3 per type per month, but the research stockpile does nothing. Players learn quickly that Research districts are a trap — they cost 200 minerals, consume 4 energy, and produce a resource with no value.
-**The fix:** Already planned in Phase 2 as "Mini tech tree (early deliverable)" — a 2-tier, 3-track system. This should be pulled forward and implemented immediately after the visual client.
-**Why it matters:** Gives research immediate value and creates the first real strategic branching — do I boost energy (Physics T1), food (Society T1), or minerals (Engineering T1)? In Stellaris and Civ, tech choices are the most impactful decisions. Even 6 techs would transform the strategic depth.
-**Design details:**
-- T1: 500 research cost, +25% output to one district type. At 3 research/month from one Research district, that's ~167 months or ~28 minutes. Two Research districts cut it to ~14 minutes — reasonable for a 20-minute match.
-- T2: 1000 research cost, +50% output. Requires T1. Realistic only in longer games or with 3+ Research districts.
-- This single feature would raise Strategic Depth from 3/10 to 5/10.
-
-#### 3.3 Score Timer Victory Condition
-
-**Impact:** High
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Games never end. There's no goal, no tension, no climax. Players have no reason to optimize or compete.
-**The fix:** Already planned in Phase 1. Configurable match timer (10/20/30 min). VP = pops×2 + districts×1 + alloys/50 + total_research/100. Timer creates urgency; VP formula rewards efficient economy management.
-**Why it matters:** A timer instantly creates pacing tension. "I have 5 minutes left — should I build another Research district for VP or squeeze out one more Housing for pop growth?" Every 4X game needs a finish line. Without one, optimization is pointless.
-**Design details:**
-- 10 minutes for practice, 20 for multiplayer, 30 for long games
-- VP visible on Tab scoreboard
-- 2-minute warning and 30-second countdown create late-game tension
-- This single feature would raise Pacing & Tension from 2/10 to 4/10
-
-#### 3.4 Edict System (Influence Sink)
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Players start with 100 influence and have no way to spend it. It's a dead resource cluttering the UI.
-**The fix:** Already planned in Phase 2. 4 edicts spending influence for temporary bonuses. "Mineral Rush" (50 influence, +50% mining for 5 months), "Population Drive" (75 influence, +100% growth for 5 months), "Research Grant" (50 influence, +50% research for 5 months), "Emergency Reserves" (25 influence, instant +100 energy/minerals/food).
-**Why it matters:** Edicts create tactical timing decisions. Do I use "Population Drive" early for maximum compound growth, or save influence for a late "Research Grant" to rush a tech completion before the timer? With only 100 influence and no production, these are one-shot strategic bets. In Stellaris, edicts are a key mid-game lever.
-**Design details:**
-- Max 1 active edict at a time prevents stacking
-- 100 influence budget = 1-2 edicts per game, making the choice meaningful
-- "Emergency Reserves" as a panic button for recovering from bad economy
-
-#### 3.5 Colony Personality System (Specialization Reward)
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Content / Depth
-
-**The problem:** All colonies play identically. There's no reward for specialization — 4 Mining districts and 4 Agriculture districts produce the same total output regardless of distribution.
-**The fix:** Already planned in Phase 2. When a colony has 4+ districts of the same type, it earns a trait providing +10% empire-wide bonus. "Forge World" (4+ Industrial), "Academy World" (4+ Research), etc.
-**Why it matters:** Creates a meaningful choice between balanced and specialized colonies. In Anno 1800 and Stellaris, planet/island specialization is one of the most satisfying optimization puzzles. It rewards planning and makes each colony feel unique. Colony personality traits also give players narrative attachment — "my Forge World" vs "my Breadbasket."
-**Design details:**
-- Threshold of 4 is reachable by mid-game (~2 minutes of building)
-- +10% stacking across colonies incentivizes expansion (when it exists)
-- Only one trait per colony (highest count) prevents gaming the system
-- Show trait badge prominently in colony panel
-
-#### 3.6 Starting Condition Draft ("Opening Hands")
-
-**Impact:** Medium
-**Effort:** Medium
-**Category:** Replayability
-
-**The problem:** Every game starts identically. Same planet, same resources, same build order. No replayability.
-**The fix:** Already planned in Phase 2. At game start, present 3 random starting conditions to choose from: "Industrial Start," "Research Rush," "Population Boom," etc. Each gives different bonus districts and resources.
-**Why it matters:** This is the cheapest way to create replayability and early-game variety. Different starts create different opening puzzles and optimal strategies. In Endless Space 2, faction selection is half the fun. Opening Hands brings that energy to a game without factions.
-**Design details:**
-- 30-second draft timer prevents analysis paralysis
-- 6 options in pool, 3 presented = ~20 possible starts
-- Asymmetric starts in multiplayer create natural narrative tension
-
-#### 3.7 Planet Type Signature Bonuses
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Depth / Content
-
-**The problem:** Planet type is stored but has no mechanical effect. Continental, Ocean, Arctic — all play identically. Habitability exists but doesn't affect gameplay.
-**The fix:** Already planned in Phase 1. Each type gets a distinct bonus: Continental (+1 all district output), Ocean (+50% Agriculture, +2 max districts), Arctic (+50% Research), Desert (+50% Mining, +25% Energy), etc.
-**Why it matters:** Makes planet type a meaningful strategic consideration. Combined with starting planet variety, this creates different opening economies per game. An Arctic start emphasizes research; a Desert start emphasizes industry. This is one of the cheapest high-impact features.
-**Design details:**
-- Bonuses applied as multipliers in `_calcProduction`
-- Show bonuses prominently in colony panel so players understand their advantage
-- Prerequisite for meaningful galaxy exploration (when planets actually differ, exploring matters)
-
-#### 3.8 Scarcity Seasons (Dynamic Tension)
-
-**Impact:** Medium
-**Effort:** Medium
-**Category:** Pacing / Tension
-
-**The problem:** The economy is static. Once optimized, nothing disrupts it. No external pressure forces adaptation.
-**The fix:** Already planned (moved to Phase 2). Every 8-12 months, one resource gets a galaxy-wide -25% production for 3 months. Pre-warning 1 month in advance.
-**Why it matters:** Scarcity seasons are the cheapest way to add mid-game tension to a colony sim. They reward diversified economies, create stockpiling decisions, and generate dramatic moments ("mineral scarcity — good thing I over-invested in mining"). In Anno 1800, supply chain disruptions are some of the most memorable moments. The 1-month warning turns it from frustration into strategic opportunity.
-**Design details:**
-- 8-12 month randomized interval = one scarcity per ~2-3 minutes
-- -25% production is noticeable but not devastating
-- Only affects energy/minerals/food/alloys (not research)
-- Warning event enables proactive response
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow (Early Game)
-
-| Resource | Starting | Monthly Income | Monthly Cost | Net | Time to Fund 1 Basic District |
-|----------|----------|---------------|--------------|-----|-------------------------------|
-| Energy | 100 | +6 (gen) | -1 (housing) | +5 | N/A (not a build cost) |
-| Minerals | 300 | +6 (mine) | 0 | +6 | 100/6 = 16.7 months (~2.8 min) |
-| Food | 100 | +12 (2× agri) | -8 (8 pops) | +4 | N/A |
-| Alloys | 50 | 0 | 0 | 0 | No sink exists |
-| Research | 0 | +4/4/4 (unemployed) | 0 | +4 each | No sink exists |
-| Influence | 100 | 0 | 0 | 0 | No sink exists |
-
-**Assessment:** Starting 300 minerals enables 3 immediate builds. After that, 16.7 months per build from mining income alone — roughly 2.8 minutes between funded builds. This is on the edge of being too slow for browser play. The planned balance tweak reducing to 250 minerals is wrong — it would make the mineral wall worse. **Recommendation: keep 300 starting minerals.**
-
-#### District Balance
-
-| District | Cost | Build Time | Output | Energy Cost | Value Rating |
-|----------|------|------------|--------|-------------|--------------|
-| Housing | 100 | 20 sec | +5 housing | -1/month | Essential (growth gate) |
-| Generator | 100 | 30 sec | +6 energy | 0 | High (powers everything) |
-| Mining | 100 | 30 sec | +6 minerals | 0 | High (funds everything) |
-| Agriculture | 100 | 30 sec | +6 food | 0 | Medium (surplus → faster growth) |
-| Industrial | 200 | 40 sec | +3 alloys | -3/month | **Useless** (no alloy sink) |
-| Research | 200 | 40 sec | +3/3/3 research | -4/month | **Useless** (no research sink) |
-
-**Assessment:** The 4 basic districts are well-balanced. Industrial and Research are correctly priced at tier 2 but currently produce resources with no purpose. The planned Research/Industrial output bump (+3→+4) should wait until sinks exist — the problem isn't output, it's that the output is worthless.
-
-#### Game Length Estimation
-
-With current mechanics (single colony, no win condition):
-- **Active play window:** ~3-4 minutes (build 3 starting districts, grow pops to housing cap, build housing, repeat)
-- **Colony saturation:** ~6-8 minutes (fill 16 district slots)
-- **After saturation:** Nothing to do. Game effectively over.
-- **Target:** 20-40 minutes
-
-**Gap:** 12-34 minutes of dead time after the colony saturates. This is filled by: tech tree (ongoing research decisions), expansion (new colonies), military (fleet building), and victory timer (countdown tension). Without these, game length is ~5 minutes of meaningful play.
-
-#### Specific Number Tweaks
-
-1. **Keep starting minerals at 300** (not 250) — 3 immediate builds is the right opening tempo for browser play
-2. **Keep starting alloys at 50** even though no sink exists — it primes players for the alloy economy when ships/reinforcement arrive. Removing it (as planned) and then re-adding it is churn.
-3. **Research district output should stay at 3/3/3** until the mini tech tree exists. Buffing to 4/4/4 makes the already-meaningless resource accumulate faster.
-4. **Industrial output should stay at 3 alloys** until colony reinforcement or ships exist.
-5. **Pop growth base rate (400 ticks = 40 sec) feels right** for the current single-colony game. When expansion exists, consider reducing to 300 ticks base to speed up new colony bootstrapping.
-
----
-
-### 5. Content Wishlist ("Wouldn't It Be Cool If...")
-
-1. **Colony Moods** — Instead of just population numbers, colonies develop a mood (Thriving/Content/Restless/Rebellious) based on housing ratio, food surplus, and variety of districts. A Thriving colony (+80% housing, +food, 4+ district types) gets +10% all output. A Rebellious colony (overcrowded, starving, mono-economy) gets -25% and a timer to "colony revolt" which destroys a random district. Creates a nurturing relationship with your colony rather than pure optimization. Inspired by Tropico's satisfaction system.
-
-2. **Colony Legends** — After certain milestones, colonies generate one-line "history entries" that persist: "Founded by Commander [player] on Month 1", "Survived the Great Mineral Scarcity of Month 14", "Became the empire's first Forge World on Month 22". At game end, show each colony's legend as a narrative recap. Makes each match feel like a unique story. Inspired by Dwarf Fortress legends.
-
-3. **Asymmetric Planet Puzzles** — Instead of uniform grid slots, each planet has a fixed "terrain map" with pre-placed features: mountains (mining bonus tiles), rivers (agriculture bonus tiles), geothermal vents (energy bonus tiles), ruins (one-time research excavation). Players must solve a spatial optimization puzzle: which districts go where to maximize bonuses? Combined with surface anomalies (already planned), this makes each colony a unique puzzle. Inspired by Civ VI district placement adjacency bonuses.
-
-4. **"The Signal"** — A late-game shared event: at minute 15, all players receive a mysterious signal from the edge of the galaxy. A countdown begins (5 minutes). Players can choose to invest research into decoding it (cooperative) or ignore it (safe). If decoded before the countdown, the signal reveals a precursor technology vault — all players who contributed get a choice of powerful unique tech. If not decoded, a hostile fleet arrives instead. Creates a shared narrative moment and forces a cooperation/competition decision. Inspired by Stellaris crisis events.
-
-5. **Economic Espionage** — In multiplayer, spend influence to "scan" an opponent's colony, revealing their district layout, resource stockpile, and build queue for 30 seconds. Creates information asymmetry decisions and a use for influence in competitive play. Knowing your opponent has 4 Research districts (rushing tech) vs 4 Mining districts (preparing for expansion) changes your strategy completely.
-
----
-
-### 6. Priority-Ordered Next Steps
-
-1. **CLIENT UX SPRINTS 2-5** — Make the game visible and playable (Critical)
-2. **Score timer victory condition** — Give the game an ending (High, Low effort)
-3. **Mini tech tree** — Give research meaning (High, Medium effort)
-4. **Edict system** — Give influence meaning (Medium, Low effort)
-5. **Colony personality traits** — Reward specialization (Medium, Low effort)
-6. **Planet type bonuses** — Add starting variety (Medium, Low effort)
-7. **Scarcity seasons** — Add mid-game tension (Medium, Medium effort)
-8. **Opening Hands draft** — Add replayability (Medium, Medium effort)
-
----
-
-## Review #7 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 12/86 tasks complete (14%). Colony 4X engine solid with 6 balance passes, pop growth system, variable build times, practice mode. Client still has old RTS Canvas 2D — no visual representation of 4X state. 101 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | = | Six district types with clear tier separation and energy gating. The entire decision space remains single-colony district sequencing. No tech, no fleets, no expansion, no alternative win paths. Strategy ceiling hit in ~3 minutes of play. |
-| Pacing & Tension | 2/10 | = | Pop growth (8→10 in ~80 sec) creates a weak early arc. Variable build times (20/30/40 sec) add anticipation tiers. Monthly economic cycles give rhythm. But no mid-game escalation, no crisis, no timer, no climax. Game flatlines after minute 5. |
-| Economy & Production | 6.5/10 | ↑ | The strongest pillar and improving. Uniform 100-mineral basic costs, clear 200-mineral tier 2 gate, energy tension (1 Generator powers 2 Industrial OR 1.5 Research), food surplus driving growth speed tiers, variable build times creating decision weight. Well-tuned after 6 balance iterations. Economy works — it just has nowhere to go. |
-| Exploration & Discovery | 0/10 | = | Nothing implemented. No galaxy, no systems, no surveying, no anomalies. Zero exploration content. |
-| Multiplayer Fairness | 1/10 | = | All players start identical (inherently fair). Practice mode enables solo testing. But no comeback mechanics, no information sharing, no diplomacy, no player interaction whatsoever. Multiplayer is technically functional but experientially absent. |
-
-**Overall: 2.5/10** (average of pillars)
-
----
-
-### 2. Top 5 Playtester Gaps
-
-These are what a player would notice within 60 seconds of trying to play:
-
-1. **"I can't see my colony."** — The client is still RTS code with Canvas 2D, unit diamonds, minimap, and gold/wood/stone HUD. The gameInit/gameState messages arrive with colony data, but nothing renders it. The game is invisible.
-
-2. **"What am I trying to do?"** — No win condition, no score, no timer, no objective. The game runs indefinitely with no purpose. Players build districts into the void.
-
-3. **"My research numbers go up but nothing happens."** — Research accumulates across three tracks (physics/society/engineering) but there's nothing to spend it on. No tech tree exists. Research districts feel like a waste of energy.
-
-4. **"I filled my planet, now what?"** — 16 district slots fill in ~12-15 minutes. After that, the game is over in practice but not in theory. No second colony, no expansion, no next-phase gameplay.
-
-5. **"Is anyone else even playing?"** — In multiplayer, players share a server but have zero interaction. No chat during gameplay, no shared events, no diplomacy, no combat, no visibility into other players' progress.
-
----
-
-### 3. Recommendations
-
-#### 3.1 Client Visual Sprint (Three.js + HTML Overlay)
-
-**Impact:** CRITICAL | **Effort:** High | **Category:** Core UX
-
-**The problem:** The game literally cannot be played. The server engine works beautifully but the client renders an RTS that no longer exists. This is the single biggest blocker to everything.
-
-**The fix:** Execute Client UX Sprints 2-5 already in the roadmap. Strip RTS code, add Three.js scene with isometric camera, render districts as colored 3D geometry on a grid, build HTML overlay for resources/build menu/colony info.
-
-**Why it matters:** Nothing else matters until players can see and interact with their colony. Every other recommendation depends on this. Per the project's own memory: "Never defer 3D rendering for HTML-only UI. Visuals are core, not polish."
-
-**Design details:**
-- Sprint 2: Strip stale RTS code, add colony 4X containers (~1 session)
-- Sprint 3: Three.js scene, isometric camera, terrain grid (~1 session)
-- Sprint 4: 3D district rendering with click interaction (~1 session)
-- Sprint 5: HTML overlay — resources, build menu, colony info (~1 session)
-- Reference: Stellaris colony view (grid of districts with colored icons), Anno 1800 (production overlay on 3D view)
-
----
-
-#### 3.2 Score Timer Victory Condition
-
-**Impact:** High | **Effort:** Low | **Category:** Core Mechanic
-
-**The problem:** The game has no endpoint. Players build districts with no goal, no tension, no climax. There's no reason to optimize or rush.
-
-**The fix:** Configurable match timer (10/20/30 min). When timer expires, highest VP wins. VP = pops×2 + districts×1 + alloys/50 + total_research/100. Show live VP on a Tab-key scoreboard. 2-minute warning and 30-second final countdown with all scores revealed.
-
-**Why it matters:** A timer transforms aimless building into urgent optimization. Every district choice becomes "is this the highest-VP move in the time remaining?" The countdown creates a natural climax that the game currently lacks entirely.
-
-**Design details:**
-- Default: 10 min practice, 20 min multiplayer
-- VP formula weights pops highest (growth strategy), districts second (expansion), alloys/research as tiebreakers
-- Final 30-second score reveal creates dramatic tension — "am I winning?"
-- Reference: Civ VI score victory, Stellaris victory year, Anno 1800 investor milestones
-
----
-
-#### 3.3 Mini Tech Tree (3-Track, 2-Tier)
-
-**Impact:** High | **Effort:** Medium | **Category:** Core Mechanic
-
-**The problem:** Research districts produce research that accumulates uselessly. Three resource tracks (physics/society/engineering) exist with no consumer. Players learn quickly that Research districts are a trap — they cost energy and produce nothing actionable.
-
-**The fix:** Lightweight 2-tier, 3-track tech tree. Each track has a Tier 1 tech (+25% output, 500 research) and Tier 2 tech (+50% output, 1000 research, requires T1). Players choose one active research per track. Research points per tick reduce remaining cost.
-
-**Why it matters:** Makes Research districts immediately valuable. Creates mid-game decision points (which track to prioritize?). Multiplied output from techs creates a satisfying power curve. Players who invest in research early gain compounding returns — classic 4X tech-rush strategy.
-
-**Design details:**
-- Physics T1: Improved Power Plants (+25% Generator), T2: Advanced Reactors (+50% Generator)
-- Society T1: Frontier Medicine (+25% pop growth), T2: Gene Crops (+50% Agriculture)
-- Engineering T1: Improved Mining (+25% Mining), T2: Deep Mining (+50% Mining)
-- Research deducted per tick from accumulated stockpile
-- Multiplicative modifiers applied in `_calcProduction`
-- Reference: Stellaris tech cards, Civ VI eureka moments (simpler version)
-
----
-
-#### 3.4 Colony Personality System
-
-**Impact:** Medium | **Effort:** Low | **Category:** Content / Depth
-
-**The problem:** All colonies feel identical. There's no reward for specialization beyond raw resource output. Building 4 mining districts feels the same as building a diversified colony.
-
-**The fix:** When a colony has 4+ districts of the same type, it earns a trait: "Forge World" (4+ Industrial: +10% alloys empire-wide), "Academy World" (4+ Research: +10% research), etc. Only one trait per colony (highest count). Empire bonuses stack across colonies.
-
-**Why it matters:** Creates colony identity and rewards strategic specialization. Players talk about "my Forge World" not "colony 2." Empire-wide bonuses mean colony specialization has cascading benefits, encouraging the "tall vs. wide" strategic tension.
-
-**Design details:**
-- Threshold: 4+ same-type districts
-- Bonus: +10% empire-wide for that resource
-- Stacks across colonies (2 Forge Worlds = +20% alloys)
-- Show trait badge on colony list
-- Reference: Stellaris planet designations, Endless Space 2 system improvements
-
----
-
-#### 3.5 Edict System (Influence Spending)
-
-**Impact:** Medium | **Effort:** Low | **Category:** Core Mechanic
-
-**The problem:** Influence (starting 100) has no purpose. It's a dead resource with no production and no consumption. Players ignore it completely.
-
-**The fix:** 4 empire-wide edicts spending influence for temporary bonuses. "Mineral Rush" (50 influence, +50% mining 5 months), "Population Drive" (75 influence, +100% growth 5 months), "Research Grant" (50 influence, +50% research 5 months), "Emergency Reserves" (25 influence, instant +100 energy/minerals/food). Max 1 active edict.
-
-**Why it matters:** Gives influence immediate strategic value. Creates tactical timing decisions — when to pop your edict for maximum impact. With 100 starting influence and no production, it's a limited resource that forces hard choices. "Do I save influence for a late-game research push or spend it now on minerals?"
-
-**Design details:**
-- Max 1 active edict at a time
-- Duration: 5 months (500 ticks = ~50 seconds)
-- No influence production until diplomacy — 100 is your total budget
-- Emergency Reserves is the "panic button" — cheap but doesn't scale
-- Reference: Stellaris edicts, Civ VI policy cards
-
----
-
-#### 3.6 Scarcity Seasons
-
-**Impact:** Medium | **Effort:** Low | **Category:** Balance / Tension
-
-**The problem:** The economy is stable and predictable. Once you've built your districts, income is constant. There's no external pressure or variability to force adaptation.
-
-**The fix:** Every 8-12 months (randomized), one resource gets a galaxy-wide -25% production for 3 months. Pre-warning 1 month before. Affects energy/minerals/food/alloys (not research).
-
-**Why it matters:** Punishes over-specialization, rewards diversified economies. Creates shared tension in multiplayer ("mineral scarcity incoming — do I stockpile or pivot?"). The warning period turns scarcity from frustration into strategic opportunity.
-
-**Design details:**
-- Interval: 800-1200 ticks between scarcities (randomized)
-- Duration: 300 ticks (3 months)
-- Warning: 100 ticks (1 month) before onset
-- Multiplier: 0.75 on affected resource production
-- Never hits research (to avoid punishing the tech strategy)
-- Reference: Anno 1800 fertility zones, Stellaris galactic events
-
----
-
-#### 3.7 Opening Hands (Starting Condition Draft)
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Content / Replayability
-
-**The problem:** Every game starts identically. Same planet, same districts, same resources. After 2-3 games, the optimal opening is solved and every game feels the same.
-
-**The fix:** At game start, present 3 randomly-selected starting conditions. Players pick one within 30 seconds. Options: "Industrial Start" (+200 alloys, 1 Industrial), "Research Rush" (+500 physics, 1 Research), "Mining Boom" (+200 minerals, 1 Mining), "Population Boom" (+4 pops, 1 Housing), "Energy Surplus" (+200 energy, 1 Generator), "Frontier Start" (+100 influence, colony ship token).
-
-**Why it matters:** Different starts create different stories. "I went Research Rush and teched into Advanced Reactors by minute 5" vs "I went Population Boom and had 20 pops by minute 3." Replayability through asymmetric openings — a proven 4X design pattern.
-
-**Design details:**
-- 30-second draft timer, auto-select first option if no choice
-- 6 options in pool, 3 shown per game
-- In multiplayer, all players draft simultaneously (hidden choices)
-- Reference: Stellaris origin system, TFT item carousel, MTG draft
-
----
-
-#### 3.8 In-Game Chat + Event Ticker
-
-**Impact:** Medium | **Effort:** Low | **Category:** Multiplayer UX
-
-**The problem:** Players in the same game have zero awareness of each other. No chat, no notifications, no shared events. Multiplayer feels like parallel single-player.
-
-**The fix:** Extend lobby chat to work during gameplay. Add event ticker narrating significant actions: "Player X built a Research district", "Player Y reached 20 pops", "ALERT: Mineral scarcity in 1 month." Collapsible overlay on game screen.
-
-**Why it matters:** Social presence is what makes multiplayer worth playing. Even without direct interaction mechanics, knowing what others are doing creates competitive pressure and social dynamics.
-
-**Design details:**
-- Chat: same WebSocket channel, collapsible panel
-- Ticker: server broadcasts `gameEvent` on construction complete, pop milestones (every 5), scarcity warnings
-- Rate-limited to avoid spam (max 1 event per player per 10 seconds in ticker)
-- Reference: Stellaris notification log, Civ VI "X has built Y" alerts
-
----
-
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis (Starting State: 8 pops, 4 districts)
-
-| Resource | Production | Consumption | Net/Month | Assessment |
-|----------|-----------|-------------|-----------|------------|
-| Energy | +6 (gen) | -1 (housing) | **+5** | Healthy. Room for 1 Industrial (costs 3) or 1 Research (costs 4). |
-| Minerals | +6 (mining) | 0 | **+6** | Tight. 100/6 = 16.7 months (~2.8 min) per district from income. Starting 300 gives 3 immediate builds. |
-| Food | +12 (2 agri) | -8 (pops) | **+4** | Good. Base growth rate. Second housing district pushes to 15 pops before food constrains (12 food, 15 pops = -3 deficit). |
-| Alloys | 0 | 0 | **0** | Dead resource. 50 starting stockpile with no sink. Needs tech tree or reinforcement mechanic. |
-| Research | +4 each (unemployed) | 0 | **+4 each** | Dead accumulation. Needs mini tech tree urgently. |
-| Influence | 0 | 0 | **0** | Dead. 100 starting, no production, no sink. Needs edicts. |
-
-#### Early Game Timeline
-
-| Time | Event | Player Action |
-|------|-------|---------------|
-| 0:00 | Game start. 300 minerals, 8 pops, 4 districts. | Queue 3 districts (spend 300 minerals). |
-| 0:20 | Housing completes (200 ticks). | Pop growth resumes (was at cap? No — 8/10, growing). |
-| 0:30 | First basic district completes (300 ticks). | — |
-| 0:40 | Second district completes, pop hits 10 (housing cap). | Need housing to continue growing. |
-| 0:50 | Third district completes. Mining income funding next build. | Queue next district when minerals reach 100 (~16 months from mining). |
-| 2:50 | ~12 months of mining income = ~72 minerals + 100 from food savings. | Can afford another district. Pace: ~1 district every 2-3 minutes from income. |
-| 5:00 | ~8-9 districts built, ~14-16 pops. | Mid-game. Colony starting to fill. |
-| 10:00 | ~12-14 districts, planet nearing capacity. | Late game. Optimization phase. |
-| 15:00 | Planet full (16 districts). Nothing left to do. | **STALL.** Game needs to end here or offer expansion. |
-
-#### Specific Number Tweaks
-
-1. **Starting minerals 300 → 250:** Currently 300 lets you queue 3 districts instantly with nothing left over. 250 forces a choice: 2 districts + 50 buffer, or save for a 200-mineral advanced district. More interesting opening.
-
-2. **Alloy starting stockpile 50 → 0:** Alloys have no use. Having 50 sitting there is confusing. Set to 0 until alloy sinks exist (tech tree Industrial buildings, colony reinforcement, or ships).
-
-3. **Research district output 3/3/3 → 4/4/4:** At 200 minerals + 4 energy/month, research districts are clearly worse than their cost suggests. Bumping to 4 each makes the tech-rush strategy viable once mini tech tree exists.
-
-4. **Industrial district output 3 alloys → 4 alloys:** Same logic — at 200 minerals + 3 energy/month, industrials should produce meaningfully more than basic districts to justify their tier-2 cost.
-
-#### Target Match Length
-
-Current pacing supports a **10-15 minute match** for single-colony gameplay. This aligns well with the browser-based multiplayer target. With expansion (Phase 3), matches should extend to 20-30 minutes. The score timer victory should default to 10 minutes for practice, 20 for multiplayer.
-
----
-
-### 5. Content Wishlist (Aspirational)
-
-1. **Colony Evolution Visuals** — As colonies grow from 2-3 districts to 16, their 3D appearance evolves: small outposts with scattered buildings → mid-size settlements with connecting paths and ambient lighting → large developed colonies glowing with energy and activity. Visual progression creates pride and emotional attachment to colonies. Think SimCity zone development stages.
-
-2. **Surface Anomalies** — Random tile-based anomalies on the colony grid itself. "Ancient ruins" on tile 7 (excavate for +500 research), "mineral vein" on tile 3 (+50% output to adjacent mining districts), "thermal vent" (+25% energy to adjacent generators). Makes each colony spatially unique and creates a puzzle in district placement. Reference: Anno 1800 island fertilities.
-
-3. **Galactic Radio** — A shared "news broadcast" ticker narrating all player actions in dramatic in-character style. "BREAKING: Commander Zhang reports unprecedented mineral yields on Kepler-7b." "ALERT: Energy crisis grips the Orion sector — generators running at 75%." Creates shared narrative and personality without requiring complex diplomacy systems.
-
-4. **Colony Naming Ceremonies** — Procedural name generation based on planet type with brief flavor text. Arctic: "New Helsinki — a frozen frontier where only the bold survive." Desert: "Dusthaven — the sands hide treasures for those patient enough to dig." Creates memorable moments at colony founding.
-
-5. **Speed Chess Mode** — A 5-minute blitz format where everything runs at 3x speed. Districts build in 7-13 seconds, months pass every 3.3 seconds. Forces rapid decision-making and rewards intuitive play over careful optimization. Perfect for quick browser sessions and tournament play.
-
----
-
-### 6. Priority Implementation Order
-
-For maximum player experience improvement per development session:
-
-1. **Client UX Sprint 2-5** (CRITICAL — game is unplayable without this)
-2. **Score timer victory** (gives the game purpose — low effort, high impact)
-3. **Mini tech tree** (makes research valuable — medium effort, high impact)
-4. **Colony idle events + energy deficit** (already next in queue — finishes Phase 1)
-5. **Edict system** (influence sink — low effort)
-6. **Colony personality** (specialization reward — low effort)
-7. **Scarcity seasons** (economy variability — low effort)
-8. **Opening hands draft** (replayability — medium effort)
-9. **In-game chat + event ticker** (multiplayer awareness — low effort)
-10. **Balance tweaks** (starting minerals, research/industrial output — trivial)
-
----
-
-## Review #6 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 10/81 tasks complete (12%). Colony 4X engine solid with 6 balance passes, pop growth system, practice mode. Client still has old RTS Canvas 2D — no visual representation of 4X state. 96 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Trend | Notes |
-|--------|-------|-------|-------|
-| Strategic Depth | 3/10 | = | Six district types with clear tier separation. Energy gating creates real tension. But the entire decision space is single-colony district sequencing. No tech, no fleets, no expansion, no alternative win paths. Strategy ceiling hit in 3 minutes. |
-| Pacing & Tension | 2.5/10 | = | Pop growth (8→10 in ~80 sec) creates a weak early arc. Monthly economic cycles give rhythm. But no mid-game escalation, no crisis, no timer, no climax. Game flatlines after minute 5. |
-| Economy & Production | 6/10 | = | The strongest pillar. Uniform 100-mineral basic costs, clear 200-mineral tier 2 gate, energy tension (1 Generator powers 2 Industrial OR 1.5 Research), food surplus driving growth speed. Well-tuned after 6 balance iterations. Economy works — it just has nowhere to go. |
-| Exploration & Discovery | 0/10 | = | Nothing exists. No galaxy, no systems, no surveying, no anomalies, no fog of war. The entire Explore pillar is absent. |
-| Multiplayer Fairness | 1/10 | +0.5 | Practice mode added — solo play now works. But multiplayer has identical starts, no catch-up mechanics, no scoring, no win condition. "Fairness" is trivially achieved by having nothing to compete over. |
-| **Overall** | **2.5/10** | = | |
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can't see anything."** — The client renders an RTS game with gold/wood/stone and unit diamonds. The colony 4X engine is invisible. This is the #1 blocker to any meaningful playtest. No amount of server-side balance tuning matters if players can't see their colony.
-
-2. **"What am I trying to do?"** — No win condition, no score, no timer. There's no goal. Even a simple "highest population after 10 minutes wins" would transform the experience from a sandbox into a game.
-
-3. **"I built some districts and now... nothing?"** — After building 4-5 districts, there's nothing new to do. No tech to research, no ships to build, no planets to explore. The game runs out of decisions in 2-3 minutes.
-
-4. **"All my resources are piling up with nowhere to spend them."** — Minerals, alloys, and research accumulate with no sinks. Alloys have zero use. Research has zero use. Influence has zero use. Only minerals and food matter, and only until you've filled your colony.
-
-5. **"Is this multiplayer? I can't tell the other player exists."** — No shared visibility, no scoreboard, no event ticker, no diplomacy. Two players in the same game are playing parallel single-player with no interaction.
-
-### 3. Recommendations
-
-#### 3.1 — Visual Client (Three.js Colony View)
-
-**Impact:** Critical (without this, the game doesn't exist for players)
-**Effort:** High (3-5 sprints already planned)
-**Category:** Core UX
-
-**The problem:** Players see an RTS with Canvas 2D diamonds, gold/wood/stone, and a minimap. The colony 4X engine is completely invisible.
-**The fix:** Already planned as CLIENT UX SPRINT 2-5. This is correctly prioritized. No changes to the plan needed — just execute it.
-**Why it matters:** Every other recommendation is meaningless without visual feedback. A beautiful economy that players can't see doesn't create fun.
-**Design details:**
-- Prioritize Sprint 2 (stale cleanup) and Sprint 3 (Three.js scene) as a single atomic deliverable — don't ship one without the other
-- The isometric colony view should feel alive immediately: subtle idle animations, construction scaffolding, pop indicators
-- Reference: Anno 1800's island view — players should feel pride looking at their colony
-
-#### 3.2 — Mini Tech Tree (Immediate Research Sink)
-
-**Impact:** High (transforms research from useless to strategic)
-**Effort:** Medium (already specced in Phase 2)
-**Category:** Core Mechanic
-
-**The problem:** Research districts produce physics/society/engineering that go into a black hole. Players who build Research districts are literally wasting a district slot.
-**The fix:** Already designed in design.md under Phase 2 as "Mini tech tree." 2-tier, 3-track tree with percentage bonuses. This should be pulled forward to execute immediately after the visual client.
-**Why it matters:** Makes Research districts valuable, adds mid-game decisions ("do I boost generators or mining first?"), and creates divergent strategies between players. In Stellaris, the tech tree is what separates a good player from a great one.
-**Design details:**
-- 6 techs total: T1 costs 500, T2 costs 1000 (requires T1)
-- Physics: Improved Power Plants (+25%), Advanced Reactors (+50%)
-- Society: Frontier Medicine (+25% growth), Gene Crops (+50% agriculture)
-- Engineering: Improved Mining (+25%), Deep Mining (+50%)
-- At base research output (3/type/month from 1 Research district), T1 takes ~167 months = ~28 min. Two Research districts = ~14 min. This pacing is good for a 20-min match — T1 should land around minute 10-14 if you invest early
-
-#### 3.3 — Score Timer Victory Condition
-
-**Impact:** High (transforms sandbox into a game)
-**Effort:** Low-Medium (already specced in Phase 1)
-**Category:** Core Mechanic
-
-**The problem:** There's no reason to play. No win condition means no tension, no time pressure, no climax.
-**The fix:** Already designed in design.md. Configurable match timer with VP formula. Default 10 min practice, 20 min multiplayer.
-**Why it matters:** A timer creates urgency. VP scoring creates strategy ("do I maximize pops or stockpile alloys?"). A 2-minute warning creates a climax. This is the cheapest way to make ColonyGame feel like a real game.
-**Design details:**
-- VP formula: pops×2 + districts×1 + alloys/50 + total_research/100
-- At current balance with 1 colony: 20 pops (40) + 12 districts (12) + ~200 alloys (4) + ~3000 research (30) = ~86 VP at 20 min
-- Show live VP on Tab scoreboard — creates competitive awareness
-- The 30-second "final countdown" with visible scores is brilliant — keep this
-
-#### 3.4 — Edict System (Influence Spending)
-
-**Impact:** Medium-High (gives influence a use, adds tactical layer)
-**Effort:** Low (already specced in Phase 2)
-**Category:** Core Mechanic
-
-**The problem:** Influence starts at 100 and sits there forever. It's a resource with no purpose.
-**The fix:** Already designed — 4 edicts spending influence for temporary bonuses. "Mineral Rush," "Population Drive," "Research Grant," "Emergency Reserves."
-**Why it matters:** Influence becomes a strategic reserve — do you spend it early for a mineral rush opening, or save it for a population drive mid-game? Creates timing decisions and player expression. In Stellaris, edicts are how you react to opportunities and crises.
-**Design details:**
-- Max 1 active edict at a time forces meaningful choice
-- 100 starting influence = 1-2 edicts total (budget is entire supply until diplomacy adds production)
-- "Emergency Reserves" (25 influence) is the panic button — cheap but less efficient
-- "Population Drive" (75 influence, +100% growth for 5 months) is the investment play
-
-#### 3.5 — Colony Personality System
-
-**Impact:** Medium (creates specialization identity, replayability)
-**Effort:** Low (already specced in Phase 2)
-**Category:** Content / Depth
-
-**The problem:** Colonies are interchangeable. There's no reason to specialize because no bonus rewards it.
-**The fix:** Already designed — colonies with 4+ districts of the same type earn traits. "Forge World" (+10% alloys empire-wide), etc.
-**Why it matters:** Creates identity and pride ("my Forge World is pumping out alloys"). Creates divergent strategies ("do I go wide with generalist colonies or tall with specialists?"). In Civ VI, district adjacency bonuses serve the same purpose — rewarding thoughtful placement.
-**Design details:**
-- Threshold of 4 means 25% of a 16-slot planet must be dedicated — a real commitment
-- Empire-wide bonuses that stack (2 Forge Worlds = +20%) incentivize multiple colonies of the same type
-- Show trait badge prominently in colony list — it should feel like an achievement
-
-#### 3.6 — Event Ticker for Multiplayer Awareness
-
-**Impact:** Medium (creates social layer without galaxy view)
-**Effort:** Low (already specced in Phase 1)
+**Impact:** Medium (social gameplay)
+**Effort:** Low (infrastructure exists)
 **Category:** UX / Multiplayer
 
-**The problem:** In multiplayer, you have zero awareness of other players. Two people in the same game might as well be playing separate instances.
-**The fix:** Already designed — scrolling text ticker narrating player actions: "Player X built a Research district," "Player Y's colony reached 20 pops."
-**Why it matters:** Before galaxy view exists, this is the only way players know they're competing. Creates awareness, comparison, and urgency. "Player X just hit 20 pops and I'm at 14 — I need to focus on growth." In Stellaris, the notification feed creates a living galaxy even when you're zoomed into one planet.
+**The problem:** Players in a match cannot communicate. Lobby chat vanishes on game start. Multiplayer without communication is just synchronized single-player.
 
-#### 3.7 — Scarcity Seasons (Dynamic Economy Disruption)
+**The fix:** Collapsible chat overlay at bottom-left of game screen. Reuse existing WebSocket chat infrastructure (already handles `chat` messages). Player names colored by player color. Toggle with Enter key or click. Minimize to just an unread-message indicator.
 
-**Impact:** Medium (breaks monotony, rewards diversification)
-**Effort:** Medium (already specced in Phase 2)
-**Category:** Balance / Depth
+**Why it matters:** Even without formal diplomacy, chat enables emergent social dynamics: "Stay away from Kepler-7" / "Want to coordinate research?" / "GG". It's the minimum viable multiplayer feature. Chat also creates awareness of other players — seeing messages reminds you this isn't single-player.
 
-**The problem:** Once you figure out the optimal build order, every game plays the same. There's no variation or disruption.
-**The fix:** Already designed — every 8-12 months, one resource gets -25% production galaxy-wide for 3 months.
-**Why it matters:** Forces adaptation. A mineral scarcity when you're mid-build is a crisis. An energy scarcity when you're running 4 Industrial districts is devastating. Rewards players who diversify vs. players who over-specialize. In Anno 1800, supply chain disruptions create the most memorable moments.
-**Design details:**
-- 8-12 month random interval at 100 ticks/month means first scarcity hits ~80-120 seconds in
-- -25% is noticeable but survivable — creates pressure without being game-ending
-- Announce 1 month early: "WARNING: Mineral scarcity detected — mining output will drop 25% next month" — gives players time to react
+#### R22-5: Colony Switcher & Multi-Colony UI — Support Expansion
 
-### 4. Balance Snapshot
-
-#### Resource Flow Analysis (Current State)
-
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| Starting minerals | 300 | Good — enables 3 immediate builds |
-| Starting energy | 100 | Good — comfortable buffer |
-| Starting food | 100 | Good — large buffer against early mistakes |
-| Starting alloys | 50 | Dead resource — no use case exists |
-| Starting influence | 100 | Dead resource — no use case exists |
-| Mining income | 6/month (10 sec) | Good — 16.7 months to fund a mining district |
-| Generator income | 6/month | Good — 1 Generator powers 2 Industrial |
-| Agriculture income | 6/month | Good — feeds 6 pops per farm |
-| Pop growth time | 40 sec (base) | Reasonable — 2 growth cycles before housing cap |
-
-#### Colony Saturation Timeline (Single Colony, Optimal Play)
-
-| Time | State | Action |
-|------|-------|--------|
-| 0:00 | 8 pops, 4 districts, 300 minerals | Build Mining + Housing + Generator (300 minerals spent) |
-| 0:30 | 8 pops, 5 districts (Mining done) | Income: +12 minerals/month |
-| 0:40 | 9 pops | Natural growth |
-| 0:50 | 9 pops, 6 districts (Housing done) | Housing now 15, growth uncapped |
-| 1:00 | 9 pops, 7 districts (Generator done) | Energy comfortable |
-| 1:20 | 10 pops | Natural growth |
-| ~2:00 | 10 pops, ~8 districts | Start building Industrial/Research (200 minerals) |
-| ~5:00 | 12-14 pops, 10-12 districts | Colony approaching saturation |
-| ~8:00 | 16 pops, 14-16 districts | Colony fully saturated |
-
-**Assessment:** Colony saturates at ~8 minutes on a size-16 planet. For a 20-minute game, this means ~12 minutes of dead time with nothing to do. The mini tech tree and edicts would fill minutes 5-15. Multi-colony expansion (Phase 3) fills minutes 10-20. The pacing needs these systems urgently.
-
-#### District Dominance Check
-
-| District | Output/Cost Ratio | Assessment |
-|----------|-------------------|------------|
-| Mining | 6 minerals / 100 minerals = 16.7 month payback | Baseline — good |
-| Generator | 6 energy / 100 minerals | Good — enables tier 2 districts |
-| Agriculture | 6 food / 100 minerals | Good — required for growth |
-| Housing | 5 housing / 100 minerals | Essential — no housing = no growth |
-| Industrial | 3 alloys / 200 minerals (−3 energy) | Weak — alloys have no use. Will improve with ships |
-| Research | 9 total research / 200 minerals + 20 energy (−4 energy) | Weak — research has no use. Will improve with tech tree |
-
-**Key insight:** Industrial and Research are correctly positioned as "investments for the future" — but without the future systems (ships, tech tree), they're traps that waste resources. The mini tech tree is the single most important next system for economy health.
-
-### 5. Content Wishlist — "Wouldn't It Be Cool If..."
-
-1. **Colony Governors with Personality:** Each colony gets a randomly-assigned governor NPC with a personality trait that provides a small bonus but also a quirk. "Admiral Chen" gives +10% alloy production but occasionally demands 50 minerals for "defense projects." "Dr. Voss" gives +15% research but reduces pop growth by 10% ("too busy in the lab"). Creates narrative attachment to colonies and emergent storytelling. Inspired by Stellaris leaders but adapted for shorter match times.
-
-2. **Galactic Market Price Fluctuation:** A shared market where all players can buy/sell resources at prices that fluctuate based on supply and demand. If everyone is dumping minerals, mineral price drops. If no one is producing alloys, alloy price spikes. Creates economic interconnection without requiring formal diplomacy. Inspired by Anno 1800's trading system but galaxy-scale.
-
-3. **Orbital Bombardment Visible from Colony View:** When an enemy fleet bombards your colony, the isometric colony view shows explosions, fires, and districts taking damage in real-time. Your beautiful city getting wrecked should feel visceral and motivating. The player should *want* to build a fleet to stop it. Most 4X games abstract combat into numbers — showing it on the colony you built creates emotional stakes.
-
-4. **"Galactic Wonders" Mega-Projects:** End-game colony buildings that take 5+ minutes to build but provide game-changing effects visible from space. "Dyson Sphere Frame" (unlimited energy), "Galactic Assembly" (diplomatic victory accelerator), "Matter Decompressor" (unlimited minerals). Only one per galaxy — first to complete it gets it. Creates a dramatic end-game race visible to all players on the galaxy map.
-
-5. **Procedural Colony Crises:** At random intervals, colonies face unique crises that require player choice: "Plague outbreak — quarantine (lose 3 pops, save the rest) or treat (spend 200 research, 50% chance of cure, 50% chance it spreads)." "Rebel faction — grant autonomy (-20% production for 3 months) or suppress (spend 50 influence, lose 2 pops)." Creates narrative moments and meaningful decisions within colony management. Inspired by Stellaris events but tuned for faster pace.
-
-### 6. Summary
-
-The engine is well-tuned but the game doesn't exist yet for players. The economy balance work has been thorough and correct — all the fundamentals are solid. The critical path is now:
-
-1. **Visual client** (Sprints 2-5) — make the game visible
-2. **Mini tech tree** — make Research districts matter
-3. **Score timer victory** — give the game a goal
-4. **Edicts + Colony personalities** — give the game depth
-5. **Scarcity seasons + Event ticker** — give the game dynamism
-
-The design.md roadmap already has most of these specced. Execution priority should follow impact-to-effort ratio, and the visual client is the gating factor for everything else.
-
----
-
-## Review #5 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 10/82 tasks complete (12%). Colony 4X engine with 6 balance passes complete. Economy fundamentals are solid. Client still has old RTS Canvas 2D code — zero visual representation of 4X state. 89 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3/10 | Six district types with real energy trade-offs and two clear tiers (100 vs 200 minerals). District sequencing on a single colony is the entire decision space. No tech tree, no fleet composition, no expansion dilemma, no alternative victory paths. The strategy ceiling is hit in ~3 minutes. |
-| Pacing & Tension | 2.5/10 | Pop growth (8→10 in ~80 sec) creates a natural early arc. Monthly cycles give rhythm. Variable food surplus tiers create meaningful growth speed differences. But no mid-game escalation, no crisis, no win condition, no climax. The game flatlines after minute 5. Up slightly from 2.0 — pop growth adds a weak but real forward pull. |
-| Economy & Production | 6/10 | The strongest pillar and genuinely well-tuned after 6 balance iterations. Uniform 100-mineral basic costs simplify early decisions. Energy gating on Industrial/Research creates real tension (1 Generator powers 2 Industrial OR 1.5 Research). Food surplus of +4 drives base growth at 40-sec intervals. Housing headroom (8/10 pops) teaches the mechanic naturally. The economy *works* — it just has nowhere to go after the opening. Up from 5.0 — cost parity, mineral pacing, and pop/housing tuning have eliminated all early-game friction. |
-| Exploration & Discovery | 0/10 | Completely absent. No galaxy, no systems, no fog of war, no surveying, no anomalies. |
-| Multiplayer Fairness | 3/10 | Symmetric starts, solid lobby system. But no solo mode, no scoreboard, no interaction during gameplay, no catch-up mechanics. |
-
-**Overall: 2.9/10** — Unchanged from Review #4. The economy engine is polished but the game remains invisible and single-dimensional. The balance work has hit diminishing returns — the engine doesn't need more tuning, it needs *systems built on top of it*.
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I literally cannot play this game."** The client renders medieval RTS units with gold/wood/stone. The 4X engine is invisible. This is not a "polish" issue — the game is non-functional for players.
-
-2. **"I solved it in 2 minutes."** Build Mining → Housing → Agriculture → Generator → Industrial. That's the optimal opening. With one colony, no tech, no opponents, and no randomness, there's no reason to deviate. The game is a solved puzzle.
-
-3. **"What's the point?"** No win condition, no score, no timer. Resources accumulate infinitely. There's no tension because there's nothing at stake.
-
-4. **"I can't test alone."** `canLaunch` still requires 2 players. This blocks all solo iteration.
-
-5. **"Nothing ever surprises me."** No events, no notifications, no opponent actions. Districts complete silently. Pops grow silently. The game gives zero feedback.
-
----
-
-### 3. Deep Analysis
-
-#### The Diminishing Returns Problem
-
-The last 3 development entries (7, 8, 9) were all balance fixes on an economy that was already functional. Generator cost 150→100, starting pops 10→8, mining output 4→6 — these are marginal improvements to a system that already works.
-
-**The economy engine no longer needs balance passes.** It needs:
-- A *visual client* so players can interact with it
-- *Resource sinks* so accumulation creates strategic pressure
-- A *win condition* so optimization has a goal
-- *Variety* so games don't feel identical
-
-Every additional balance fix on the existing system has lower marginal value than building the next system layer.
-
-#### Economy Health Check (Post-6 Balance Passes)
-
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| Starting minerals | 300 | Perfect — 3 immediate builds |
-| Basic district cost | 100 (uniform) | Perfect — clean tier |
-| Advanced district cost | 200 | Good — clear progression |
-| Mining output | 6/month | Good — 16.7 month ROI |
-| Generator output | 6/month | Good — powers 2 Industrial |
-| Food surplus at start | +4/month | Good — comfortable, drives base growth |
-| Pop growth rate | 40 sec/pop (base) | Good — noticeable, not instant |
-| Housing headroom | 2 slots (8/10) | Good — teaches mechanic |
-| Energy budget | 6 prod / 3+4 consume | Tight and meaningful |
-
-**Verdict: Economy is ready. Stop tuning it. Build on it.**
-
-#### Where Player Time Goes (20-Minute Session Projection)
-
-| Phase | Time | Activity | Fun? |
-|-------|------|----------|------|
-| Opening | 0-2 min | Spend 300 minerals on 3 districts, watch pop growth | Yes — active, novel |
-| Early | 2-5 min | Mine for next district, hit housing cap, build Housing | OK — slower but purposeful |
-| Mid | 5-10 min | Colony filling up, resources accumulating with no sink | No — decision desert |
-| Late | 10-20 min | Colony full, nothing to do, game doesn't end | Dead time |
-
-The game provides ~5 minutes of engagement. The target is 20-40 minutes. The gap is closed by: tech tree (minutes 5-15), galaxy expansion (minutes 8-20), win condition (creates urgency throughout), events (break monotony).
-
----
-
-### 4. Recommendations
-
-#### R1: STOP BALANCE WORK — Ship the Client
-
-**Impact:** Critical
-**Effort:** High (but already well-designed as 5-part sprint)
-**Category:** Core / UX
-
-**The problem:** 6 of 10 completed tasks are economy balance fixes. The economy is done. Meanwhile, the client still renders an obsolete RTS from 2 iterations ago. No player can experience any of the work that's been done.
-
-**The fix:** The next 5 development iterations should be:
-1. Solo/Practice mode (Sprint 1/3)
-2. Stale client cleanup (Sprint 2/5)
-3. Three.js scene + isometric view (Sprint 3/5)
-4. 3D district rendering (Sprint 4/5)
-5. HTML overlay UI (Sprint 5/5)
-
-**No more server-side-only work until the client can render colonies.** Variable build times, energy deficit consequences, and event notifications are nice server features — but they're invisible without a client. Implement them *after* the visual layer exists.
-
-**Why it matters:** The memory feedback says it clearly: "Never defer 3D rendering for HTML-only UI. Visuals are core, not polish." The project has been doing exactly what this feedback warns against — building invisible mechanics. Time to course-correct.
-
----
-
-#### R2: Mini Tech Tree as First Resource Sink
-
-**Impact:** High (doubles strategic depth, gives research + alloys purpose)
+**Impact:** High (required for colony ships to work)
 **Effort:** Medium
-**Category:** Core Mechanic
+**Category:** UX
 
-**The problem:** Research and alloys accumulate with zero purpose. 2 of 6 district types (Industrial, Research) are objectively bad choices because their outputs are wasted. This makes the strategy space smaller than the 6 district types suggest.
-
-**The fix:** The mini tech tree (already designed in Phase 2 of design.md) should be the first post-client feature:
-- 3 tracks × 2 tiers = 6 techs
-- Tier 1: 500 research, Tier 2: 1000 research
-- Immediate gameplay impact: "+25% Mining output" transforms Research districts from waste to investment
-
-**Why it matters:** In every great 4X, the tech tree is the spine of long-term strategy. "Which tech should I rush?" is the question that makes a 20-minute session feel different each time. Right now there is no such question.
-
----
-
-#### R3: Score Timer Victory
-
-**Impact:** High (gives the game a purpose)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** The game runs forever with no objective.
-
-**The fix:** Already fully designed in Phase 1 of design.md. Configurable timer (10/20/30 min). VP formula: pops×2 + districts×1 + alloys/50 + research/100.
-
-**Why it matters:** A timer + score converts "aimless sandbox" into "optimization race." Even the current one-colony depth becomes engaging when you have 10 minutes to maximize score.
-
----
-
-#### R4: Colony Personality Traits
-
-**Impact:** Medium (makes specialization rewarding)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** The optimal play is always a balanced district mix. There's no reward for specialization.
-
-**The fix:** Already designed in Phase 2: 4+ same-type districts earns a named trait with empire-wide +10% bonus. "Forge World," "Academy World," "Mining Colony."
-
-**Why it matters:** Creates the signature 4X dilemma of specialization vs. self-sufficiency. Stacking bonuses across multiple colonies (once expansion exists) rewards going wide.
-
----
-
-#### R5: Scarcity Seasons
-
-**Impact:** Medium (breaks monotony, rewards diversification)
-**Effort:** Low
-**Category:** Content / Balance
-
-**The problem:** The economy is completely predictable. Nothing ever disrupts it. Players who find the optimal build order never need to adapt.
-
-**The fix:** Already designed in Phase 7 — every 8-12 months, one resource gets -25% production for 3 months. Galaxy-wide, affects all players.
-
-**Why it matters:** Scarcity seasons are the cheapest way to add dynamism to a static economy. A mineral scarcity mid-game forces players to adapt their build plan. An energy scarcity with lots of Industrial districts creates a genuine crisis. This is the simplest mechanic that makes each game *feel different*.
-
-**Design consideration:** Move this from Phase 7 to Phase 2. It requires only `_processMonthlyResources` changes and a random timer — no client rendering needed. It's a server-side feature that creates real gameplay variety.
-
----
-
-#### R6: Expanded Opening Variety — Starting Planet Randomization
-
-**Impact:** Medium (makes each game feel different from turn 1)
-**Effort:** Low
-**Category:** Content
-
-**The problem:** Every game starts identically — Continental, size 16, 8 pops, same districts. The first minute is rote.
-
-**The fix:** Already designed in Phase 1 — random habitable planet type and size (12-20). Requires planet type bonuses (also Phase 1) to be meaningful. In multiplayer fairness mode, all players get the same random type/size.
-
-**Why it matters:** The opening is the most-replayed part of any 4X game. If every opening is identical, replayability dies. Random starts create "this game I have a Desert world so I should lean Mining" moments from turn 1.
-
----
-
-### 5. Balance Snapshot
-
-**Economy status: COMPLETE.** No further balance work recommended until new systems (tech, ships, multi-colony) are added.
-
-| Parameter | Current Value | Status |
-|-----------|--------------|--------|
-| Basic district cost | 100 minerals (uniform) | Finalized |
-| Advanced district cost | 200 minerals | Finalized |
-| Build times | 300 ticks (uniform) | Ready for tiering (200/300/400) but not urgent |
-| Generator output | 6 energy/month | Finalized |
-| Mining output | 6 minerals/month | Finalized |
-| Agriculture output | 6 food/month | Finalized |
-| Industrial output | 3 alloys/month | Finalized |
-| Research output | 3×3/month | Finalized |
-| Starting resources | 100E/300M/100F/50A/100I | Finalized |
-| Starting pops | 8 (housing cap 10) | Finalized |
-| Pop growth | 40/30/20 sec tiers | Finalized |
-| Food surplus at start | +4/month | Finalized |
-
-**Target match duration:** 10 min (practice), 20 min (multiplayer). Current single-colony depth supports ~5 min of engagement. Tech tree + expansion + win condition needed to fill the remaining time.
-
----
-
-### 6. Content Wishlist
-
-1. **"Opening Hands"** — At game start, present 3 random "starting conditions" to choose from (like Slay the Spire's card draft): e.g., "Industrial Start: +200 alloys, start with 1 Industrial district" vs "Frontier Start: +100 influence, smaller planet but 2 colony ships" vs "Research Rush: +500 physics, start with 1 Research district." Creates asymmetric openings and replayability without complex faction design.
-
-2. **"The Galactic Bazaar"** — A shared NPC market where players trade surplus resources at fluctuating prices. Prices adjust based on all players' production: if everyone mines minerals, mineral prices crash. Selling alloys when nobody produces them yields huge returns. Creates emergent economic strategy without direct player-to-player diplomacy. Simpler than EVE but same principle.
-
-3. **"Colony Traditions"** — As colonies age, they develop random "traditions" based on their history: a colony that survived a food shortage gains "Rationing Culture" (+20% food efficiency forever). A colony that built 3 Research districts in a row gains "Academic Heritage" (+10% research speed). Makes every colony feel unique and rewards varied play styles.
-
-4. **"Expedition Mode"** — A solo roguelike mode: given a random planet, random starting conditions, and a series of escalating challenges (asteroid impact at month 5, pirate raid at month 10, plague at month 15), survive as long as possible. High scores on a leaderboard. Perfect for the browser format — quick sessions, high replayability, solo-friendly.
-
-5. **"Whisper Network"** — Anonymous multiplayer messaging. Send secret messages like "The player in the east is building alloys — prepare for war." Recipients don't know who sent it. Creates paranoia and social dynamics that named chat can't. Perfect for short browser matches where deep diplomacy isn't feasible.
-
----
-
-### 7. Roadmap Updates
-
-**Changes to design.md:**
-- Added Phase 2 task: "Scarcity seasons" (moved from Phase 7 for earlier delivery as it only needs server-side monthly processing changes)
-- Added Phase 2 task: "Opening Hands" starting condition draft for game variety
-
----
-
-### 8. Priority Ranking for Next Development Sprint
-
-1. **Solo/Practice Mode** (Sprint 1/3 — unblocks everything)
-2. **Stale Client Cleanup** (Sprint 2/5 — remove RTS code)
-3. **Three.js Scene + Isometric Colony View** (Sprint 3/5 — make the game visible)
-4. **3D District Rendering** (Sprint 4/5 — make the game interactive)
-5. **HTML Overlay UI** (Sprint 5/5 — make the game informative)
-6. **Variable Build Times** (quick server fix, now visible via UI)
-7. **Event Notifications** (now visible via toast UI)
-8. **Score Timer Victory** (gives the game a point)
-9. **Mini Tech Tree** (doubles strategic depth)
-10. **Colony Personality Traits** (rewards specialization)
-
-**Critical path: Solo → Cleanup → Three.js → Districts → UI.** The client sprint is non-negotiable. Everything else is invisible without it.
-
----
-
-## Review #2 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 9/78 tasks complete (12%). Colony 4X engine operational, economy loop running, 6 balance passes done. Client still has old RTS renderer — no visual representation of 4X state.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3/10 | Players can choose which districts to build and in what order, creating basic economic trade-offs (energy vs minerals vs food vs growth). But there's only one colony, no tech tree, no fleet composition, no diplomacy, no alternative win paths. The "opening build order" is currently the entire strategy space. |
-| Pacing & Tension | 2/10 | Pop growth creates a natural early arc (build agriculture → grow pops → need housing → expand). Monthly resource ticks give rhythm. But there's no mid-game escalation, no crisis, no win condition. The game runs indefinitely with no climax. |
-| Economy & Production | 5/10 | The strongest pillar. Six resource types with real production chains. District costs create genuine trade-offs (100 minerals for basics, 200 for advanced). Energy consumption gates Industrial/Research. Food surplus drives pop growth speed. Housing caps create expansion pressure. The fundamentals are solid and well-balanced after 6 iterations. |
-| Exploration & Discovery | 0/10 | No galaxy. No systems. No fog of war. No surveying. No anomalies. The entire exploration pillar is unimplemented. |
-| Multiplayer Fairness | 3/10 | Lobby works, symmetric starts (everyone gets Continental size 16 with identical districts). But can't solo test (requires 2 players), no catch-up mechanics, no scoreboard, no way to gauge relative position. |
-
-**Overall: 2.6/10** — Up from 1.6. The economy engine is genuinely good, but the game is invisible (no client) and has no strategic variety beyond district sequencing.
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can't see anything."** The client still renders an RTS with medieval units, selection boxes, gold/wood/stone HUD. The colony 4X engine is running server-side but the client shows *nothing* from it. This is the single biggest gap — the game is literally unplayable.
-
-2. **"There's only one thing to do."** The entire game is "pick which district to build next on your one colony." No tech to research, no ships to build, no planets to explore, no enemies to fight. The build order puzzle gets stale within 3 minutes.
-
-3. **"When does this end?"** No win condition, no score, no timer. The game runs forever. Players have no goal to pursue and no way to know if they're winning.
-
-4. **"I can't play alone."** `canLaunch` requires 2 players. There's no practice/solo mode. Iterating on gameplay requires finding another person every time. This kills development velocity.
-
-5. **"Nothing ever happens."** No events, no notifications, no surprises. Districts complete silently. Pops grow silently. Food deficits kill pops silently. There's no feedback loop telling the player what's going on.
-
----
-
-### 3. Deep Analysis
-
-#### Economy Health Check
-
-The economy is in good shape after 6 balance passes:
-
-| Metric | Value | Assessment |
-|--------|-------|------------|
-| Starting minerals | 300 | Good — 3 immediate builds at 100 each |
-| Basic district cost | 100 minerals | Good — uniform, simple |
-| Advanced district cost | 200 minerals | Good — clear tier distinction |
-| Mining output | 6/month | Good — funds a basic district every 16.7 months (2.8 minutes) |
-| Generator output | 6 energy/month | Good — powers 2 Industrial or 1.5 Research |
-| Food surplus at start | +4/month (12 prod - 8 consume) | Good — comfortable but not wasteful |
-| Pop growth at start | 1 pop per 40 sec (base rate, surplus=4) | Good — noticeable but not instant |
-| Housing headroom | 2 slots (8/10) | Good — teaches housing mechanics |
-| Generator cost | **150 minerals** | **Problem — only district still at 150, breaks cost parity** |
-
-**Key tension:** The economy works well for the first 3-5 minutes. After that, players hit a choice desert — they've built their opening districts and have nothing else to spend on. The game needs a resource sink (tech, ships, buildings, edicts) to create mid-game economic pressure.
-
-#### District Balance
-
-| District | Cost | Output | ROI (months) | Assessment |
-|----------|------|--------|--------------|------------|
-| Housing | 100 | 5 housing, -1 energy | N/A (enabling) | Good — necessary for growth |
-| Generator | 150 | 6 energy | — | **Overpriced vs peers** |
-| Mining | 100 | 6 minerals | 16.7 | Good baseline |
-| Agriculture | 100 | 6 food | — | Good — enables growth |
-| Industrial | 200 | 3 alloys, -3 energy | — | Fine — alloys have no use yet |
-| Research | 200 + 20E | 3×3 research, -4 energy | — | Fine — research has no use yet |
-
-**Problem:** Alloys and research are produced but have zero sinks. No tech tree consumes research. No shipyard consumes alloys. Players building Industrial or Research districts are wasting resources. This makes the "interesting choice" space smaller than it looks — optimal play is Housing/Mining/Agriculture/Generator only.
-
-#### Pacing Arc
-
-| Phase | Time | What Happens | Player Feeling |
-|-------|------|-------------|----------------|
-| Opening (0-2 min) | Ticks 0-1200 | Spend 300 starting minerals on 3 districts. Watch pops grow 8→10. | Good — active decisions |
-| Early (2-5 min) | Ticks 1200-3000 | Mining income funds ~1 district per 2.8 min. Pops hit housing cap. Build housing → more growth. | OK — slower but logical |
-| Mid (5+ min) | Ticks 3000+ | **Nothing new happens.** Same loop: mine → build → grow. No tech, no events, no new systems unlock. | **Boredom — game stalls** |
-
-The game needs a mid-game inflection point. In Stellaris, that's first contact + expansion. In Civ, it's meeting other civs + choosing a victory path. Here, there's nothing.
-
----
-
-### 4. Recommendations
-
-#### R1: Visual Client (Three.js Colony View)
-
-**Impact:** Critical (game is literally unplayable without it)
-**Effort:** High (3-part sprint already planned)
-**Category:** Core / UX
-
-**The problem:** The game engine runs but players can't see it. The client renders an obsolete RTS. This blocks all playtesting.
-
-**The fix:** Execute the CLIENT UX SPRINT (tasks 2-5 in Phase 1). This is already well-designed in the roadmap. The key priority order should be:
-1. Solo mode (unblocks testing)
-2. Stale code cleanup (remove RTS renderer)
-3. Three.js scene + isometric view
-4. 3D district rendering
-5. HTML overlay UI
-
-**Why it matters:** Until players can see and interact with colonies, nothing else matters. Every other recommendation depends on this.
-
-**Design details:**
-- Prioritize *information density* over beauty. A player needs to see at a glance: what's built, what's building, resource rates, pop status.
-- Reference: Anno 1800's island view — functional first, pretty second.
-
----
-
-#### R2: Solo/Practice Mode
-
-**Impact:** High (unblocks all playtesting and development iteration)
-**Effort:** Low (modify one function + add button)
-**Category:** UX / Core
-
-**The problem:** `canLaunch` requires 2 players. Developers and playtesters can't test the game alone.
-
-**The fix:** Already designed (Sprint 1/3). Allow `maxPlayers=1` to bypass ready check.
-
-**Why it matters:** This is a force multiplier for everything else. Every subsequent feature can be tested 10x faster with solo mode.
-
----
-
-#### R3: Resource Sinks — Make Alloys and Research Useful
-
-**Impact:** High (doubles the strategy space overnight)
-**Effort:** Medium (tech tree is Phase 4, but a lightweight version could ship sooner)
-
-**The problem:** Alloys and research accumulate with no purpose. 2 of 6 district types are effectively dead choices. Players who build Industrial or Research are making a suboptimal play.
-
-**The fix:** Implement the **edict system** (Phase 2) as the first resource sink — influence buys temporary empire bonuses. Then implement a **mini tech tree** (3 techs per track, 2 tiers) as the first real research sink. Even simple techs like "+25% Mining output" transform research districts from waste to investment.
-
-**Why it matters:** In Civ VI, the moment you start researching your first tech, the game transforms from "place tiles" to "pursue a strategy." Same principle here.
-
-**Design details:**
-- Tier 1 techs should cost ~500 research total (achievable in ~3 minutes with 1 Research district)
-- Each tech should visibly change gameplay: new district type, output bonus, or unlock
-- Alloy sink: even before ships, allow "Reinforce Colony" (spend 100 alloys for +5 housing, simulating building upgrades). Gives alloys immediate value
-
----
-
-#### R4: Event Notifications and Feedback Loop
-
-**Impact:** High (transforms silent simulation into responsive game)
-**Effort:** Low (server-side event emitter + client toast system)
-**Category:** UX / Polish
-
-**The problem:** Everything happens silently. Districts complete, pops grow, food runs out — the player gets zero feedback. In Stellaris, every completed construction triggers a sound + notification + popup. Here, nothing.
-
-**The fix:** Implement the colony idle event notifications (already designed in Phase 1). Key events:
-- Construction complete (with district name)
-- Build queue empty ("Colony idle — nothing being built")
-- Pop milestone (every 5 pops)
-- Housing full warning
-- Food deficit alert
-
-**Why it matters:** Games communicate through feedback loops. Build → wait → *notification* → decide → build. Without the notification step, the loop is broken and players disengage.
-
-**Design details:**
-- Events should be brief, non-blocking (toast notification, not modal)
-- Sound cue on construction complete (even a simple beep) massively improves feel
-- Rate-limit to prevent spam: max 1 notification per 2 seconds
-
----
-
-#### R5: Win Condition — Score Timer
-
-**Impact:** High (gives the game a point)
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** The game runs forever with no objective. Players have no reason to optimize.
-
-**The fix:** Add a simple score-based victory with a configurable timer. When the timer expires, highest score wins.
-
-**Scoring:**
-- Pops: 2 VP each
-- Districts built: 1 VP each
-- Alloys stockpiled: 1 VP per 50
-- Research accumulated: 1 VP per 100 (total across all types)
-
-**Why it matters:** A timer + score transforms an aimless sandbox into a competitive optimization puzzle. "Get the highest score in 10 minutes" is a complete game loop even with just colony management.
-
-**Design details:**
-- Default timer: 10 minutes for quick matches, 20 minutes for standard
-- Show live score on Tab scoreboard
-- 2-minute warning notification
-- Final 30 seconds: score visible to all players (creates tension)
-- Reference: Factorio's speedrun community shows that optimization against a clock is deeply engaging even without combat
-
----
-
-#### R6: Colony Specialization Rewards
-
-**Impact:** Medium (adds strategic depth to district placement)
-**Effort:** Low
-**Category:** Core Mechanic / Content
-
-**The problem:** All colonies play identically. There's no reason to specialize — you always want a balanced mix of districts.
-
-**The fix:** Implement the colony personality system (already in Phase 2): 4+ districts of the same type earns a trait with an empire-wide bonus (+10% to that resource type).
-
-**Why it matters:** This creates a genuine strategic dilemma: do you build a balanced colony that's self-sufficient, or specialize for the empire-wide bonus and accept local deficits? This is the kind of "meaningful choice" that defines good 4X games.
-
-**Design details:**
-- Trait names add personality: "Forge World," "Breadbasket," "Academy World"
-- Stacking across colonies rewards expansion
-- Show trait badge prominently in colony list
-- Reference: Stellaris planet designations, which create the same specialization-vs-balance tension
-
----
-
-#### R7: Planet Type Bonuses
-
-**Impact:** Medium (makes colony location matter)
-**Effort:** Low
-**Category:** Content / Strategy
-
-**The problem:** All planets are functionally identical. Continental, Ocean, Desert — same districts, same output, same strategy.
-
-**The fix:** Already designed in Phase 1: each planet type gets distinct mechanical bonuses (Continental +1 all, Ocean +50% Agri +2 slots, Desert +50% Mining +25% Energy, etc.)
-
-**Why it matters:** When planets differ, expansion becomes strategic. "Should I colonize the Ocean world for food or the Desert world for minerals?" is exactly the kind of choice that makes 4X games engaging.
-
----
-
-#### R8: Build Queue QoL
-
-**Impact:** Medium (reduces frustration, increases engagement)
-**Effort:** Low
-**Category:** UX / Polish
-
-**The problem:** Players can't see total costs of queued items, can't cancel efficiently, can't estimate completion times.
-
-**The fix:** Already designed in Phase 2 — show total mineral cost, warn on overspend, 50% refund on cancel, estimated time display.
-
-**Why it matters:** Every friction point in the build loop is a moment where a player might disengage. Smooth UX keeps players in flow state.
-
----
-
-### 5. Balance Snapshot
-
-#### Current Numbers Assessment
-
-| Parameter | Current | Recommended | Reasoning |
-|-----------|---------|-------------|-----------|
-| Generator cost | 150 minerals | **100 minerals** | Only basic district not at 100. Break cost parity. Already flagged as next fix. |
-| Build times (all) | 300 ticks (30 sec) | **Tiered: 200/300/400** | Housing should be fast (unlocks growth), advanced should feel weighty. Already planned. |
-| Starting resources | 100E/300M/100F/50A/100I | Good | 300 minerals for 3 immediate builds is well-calibrated |
-| Pop growth (base) | 400 ticks (40 sec) | Good | First pop at ~40 sec feels right — noticeable but earned |
-| Housing base | 10 | Good | 2 headroom from 8 starting pops teaches the mechanic |
-| Monthly cycle | 100 ticks (10 sec) | Good | Fast enough to feel active, slow enough for planning |
-
-#### Target Match Duration Analysis
-
-With current systems, a 20-minute match would look like:
-- **0-2 min:** 3 opening builds from starting minerals
-- **2-8 min:** ~2 more districts from mining income, pops growing to ~15-18
-- **8-15 min:** ~3 more districts, pops at ~20-25, some specialization emerging
-- **15-20 min:** Colony near full (12-14 districts on size 16 planet)
-
-**Problem:** With only one colony and no other systems, the game runs out of meaningful decisions by minute 10. The target 20-40 minute match requires either multiple colonies (galaxy + expansion) or deeper single-colony mechanics (tech + buildings + edicts).
-
-**Short-term fix:** A 10-minute score timer makes the current depth sufficient. A single colony with 10 minutes of optimization is a tight, engaging puzzle.
-
----
-
-### 6. Content Wishlist
-
-1. **"Sector Crises"** — Every few minutes, a random crisis hits: pirate raid (lose a district if you don't have military), solar storm (generators offline for 30 sec), plague (pop growth halted for 1 minute). Creates moments of reactive play in what's otherwise a pure builder. Unlike Stellaris's endgame crisis, these are small, frequent, and test preparedness rather than military strength.
-
-2. **"Colony DNA"** — Each colony develops a randomly-generated "trait chain" based on the first 5 districts built. Build 3 Mining first? Colony becomes a "Deep Core Extraction Site" with unique bonuses and visual identity. This makes build order feel like character creation rather than optimization. No other 4X does this — colonies are usually blank slates.
-
-3. **"The Galactic Market"** — Instead of direct player-to-player trade, implement a shared market where surplus resources are "sold" and scarce resources cost more. Price fluctuates based on all players' production. Creates emergent economic warfare: if you corner the mineral market, everyone else's builds slow down. Reference: EVE Online's player market, simplified for short matches.
-
-4. **"Terraform Chains"** — Allow players to change planet types through expensive, multi-step projects. Desert → Arid → Continental takes 3 research tiers and enormous resources but transforms a mediocre world into a powerhouse. Creates a long-term investment arc that competes with expansion (go wide vs go tall).
-
-5. **"Whisper Diplomacy"** — In multiplayer, allow anonymous messages: "Someone is willing to trade 500 minerals for a ceasefire." Recipients don't know who sent it. Creates intrigue and bluffing in a way that named diplomacy can't. Perfect for browser-game social dynamics.
-
----
-
-### 7. Roadmap Updates
-
-Added to design.md:
-- Phase 1: Score timer victory condition (configurable, VP-based)
-- Phase 2: Lightweight mini tech tree (2 tiers, 3 techs per track) as an early deliverable before full Phase 4
-- Phase 2: Alloy spending via colony reinforcement
-
-See design.md for specific task entries.
-
----
-
-### 8. Priority Ranking for Next Development Sprint
-
-1. **Solo/Practice Mode** (unblocks everything)
-2. **Stale Client Cleanup** (remove RTS code)
-3. **Three.js Scene + Colony View** (make the game visible)
-4. **Event Notifications** (make the game communicative)
-5. **Score Timer** (give the game a point)
-6. **Generator cost parity** (quick balance fix)
-7. **Variable build times** (quick pacing fix)
-8. **Colony personality traits** (strategic depth)
-
-The critical path is **Solo Mode → Client Cleanup → Three.js → Overlay UI**. Everything else can be interleaved but nothing matters until players can see and play the game.
-
----
-
-## Review #1 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** Pre-implementation (0/50 tasks complete, codebase still contains old RTS)
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 2/10 | Design doc outlines good systems (districts, tech, fleets, diplomacy) but nothing is implemented. The existing RTS code has zero strategic choices — just move units. |
-| Pacing & Tension | 1/10 | No game arc exists. No win conditions, no crisis moments, no escalation curve. |
-| Economy & Production | 1/10 | Old RTS has gold/wood/stone with no production or spending mechanics. The *designed* 6-resource system is solid on paper but untested. |
-| Exploration & Discovery | 1/10 | No galaxy, no fog of war, no surveying. Flat 50x50 grid. |
-| Multiplayer Fairness | 3/10 | Lobby/room system works. Symmetric spawn points exist. But no game to be fair *in*. |
-
-**Overall: 1.6/10** — Expected for a freshly-pivoted project with no implementation.
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"There's no game here."** Launching a match drops you into an RTS with medieval units on a flat grid. No colonies, no galaxy, no 4X loop.
-2. **"I can't build anything."** No construction, no economy, no resource production. You have gold/wood/stone that can't be spent.
-3. **"Where's the map?"** No galaxy to explore, no star systems, no planets. Just a blank isometric grid.
-4. **"What am I supposed to do?"** No objectives, no tutorial, no win condition. No UI guidance.
-5. **"It looks like a prototype."** Canvas 2D diamonds and rectangles. No visual identity suggesting space or colonies.
-
----
-
-### 3. Recommendations
-
-*(Recommendations from Review #1 omitted for brevity — see git history. Many were adopted in Entry 3.)*
-
----
-
-## Review #2 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 4/59 tasks complete (7%). Colony 4X engine implemented server-side. Client still renders old RTS.
-
-*(Full Review #2 omitted for brevity — see git history. Key recs: fix energy balance, fix food deficit, make game visible with HTML UI, implement pop growth, planet type bonuses. Energy balance was fixed in Entry 4.)*
-
----
-
-## Review #3 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 5/65 tasks complete (8%). Colony 4X engine with rebalanced energy economy. No visual client.
-
-*(Full Review #3 omitted for brevity — see git history. Key recs: HTML colony UI, pop growth, planet bonuses, colony personality traits, game speed controls, stale client cleanup, build discount fix. Food deficit and housing were fixed in Entry 5.)*
-
----
-
-## Review #4 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 5/64 tasks complete (8%). Colony 4X engine with balanced energy economy, fixed food surplus, correct housing. No visual client. 69 tests passing.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3/10 | Six district types with real energy trade-offs. Generator-to-consumer ratio (1:2 for Industrial, 1:1.5 for Research) creates genuine tension. But only one decision axis — district selection on a single colony. No tech, no fleet composition, no expansion-vs-consolidation dilemma. A 4X needs at least three competing systems to generate strategic depth. |
-| Pacing & Tension | 2/10 | Monthly economic cycle (10s) and 30s build times provide rhythm. Food surplus (+2/month) gives a stable start. But no pop growth means no escalation, no events disrupt the economy, no opponents interact, no win condition creates urgency. The game is a pleasant but static optimization. |
-| Economy & Production | 5.5/10 | **Best pillar.** Energy budget is tight and meaningful — building Industrial or Research requires planning Generator capacity first. Food is balanced (12 production vs 10 consumption). Housing (base 10) matches starting pops exactly, creating a clear "build Housing to grow" signal once pop growth exists. Build costs are tiered sensibly (100 for basics, 200 for advanced). **Missing:** pop growth (the engine that makes economy matter), planet bonuses (the thing that makes economies differ), and any resource sinks beyond construction. |
-| Exploration & Discovery | 1/10 | Completely absent. No galaxy, no systems, no surveying, no anomalies. The single starting colony is the entire universe. |
-| Multiplayer Fairness | 3/10 | Symmetric Continental size-16 starts with identical resources. Lobby/room system is solid. But zero interaction during gameplay — no shared map, no diplomacy, no awareness of other players. Fairness is trivially achieved when players can't affect each other. |
-
-**Overall: 2.9/10** — The economy engine is becoming genuinely well-tuned, but the game remains invisible and single-dimensional. The gap between "engine quality" and "player experience" is the widest it's been — the foundation is sound, but nothing is built on it yet.
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I can't see anything."** The client still renders the old RTS — Canvas 2D with units, buildings, Projection module, gold/wood/stone HUD, minimap. The colony 4X engine runs silently on the server. A player who launches a game sees medieval diamond-shaped units on a grid while their colony economy ticks away invisibly. This is the single biggest blocker to any form of playtesting or fun.
-
-2. **"Nothing grows."** Pop growth is not implemented. Starting 10 pops stay at 10 forever. After building ~6 districts (one per worker beyond the 4 pre-built), every meaningful decision is exhausted within 3-4 minutes. There's no "next thing" pulling the player forward. The economy produces resources that accumulate with nothing to spend them on.
-
-3. **"Every session is identical."** One colony, one planet type (Continental, size 16), same starting resources, no tech tree, no opponents. The optimal build order is solvable in a single session and never varies: build Mining → build Industrial → build Generator → repeat. There are no external pressures to force adaptation.
-
-4. **"Where's the other player?"** Two or more players connect to the same server but have zero awareness of each other. No shared map, no notifications, no in-game chat. It's parallel solitaire. The multiplayer infrastructure is solid (rooms, readying, launching), but the game it launches is completely isolated per player.
-
-5. **"There's no goal."** No win condition, no score, no timer. The game never ends. Resources accumulate infinitely. A player who perfectly optimizes their colony has no reward, no "you win" moment, no comparison to others. Without a goal, there's no tension and no reason to make trade-offs.
-
----
-
-### 3. Recommendations
-
-Ordered by impact-to-effort ratio. The first two are **existential** — without them, nothing else can be evaluated.
-
-#### 3.1 Stale Client Cleanup + HTML Colony UI — Make the Game Exist
-
-**Impact:** Critical (blocks ALL playtesting)
-**Effort:** Medium (two connected tasks, one session)
-**Category:** UX / Foundation
-
-**The problem:** The client renders a dead RTS. The colony engine is invisible. No amount of server-side balance work matters if nobody can see or interact with the game.
-
-**The fix (two steps):**
-
-**Step A — Strip RTS client code:**
-- Remove Canvas 2D game renderer, Projection module references, unit selection/movement, minimap, gold/wood/stone HUD from `app.js`
-- Update `gameInit` handler to parse colony 4X state: `{ colonies, players, yourPlayerId, tick }`
-- Update `gameState` handler to receive `{ tick, players, colonies }` with resource/production data
-- Remove `projection.js` script tag from `index.html` (if present)
-
-**Step B — Build HTML colony UI overlay:**
-- **Resource bar** (top): 6 resource types — Energy (⚡ yellow), Minerals (⛏ gray), Food (🌾 green), Alloys (⚙ orange), Research (🔬 blue), Influence (👑 purple). Each shows: stockpile count + net income/month in green (+) or red (−).
-- **Colony panel** (center): district grid as clickable colored tiles. Built districts are filled tiles, empty slots are dark outlines. Color by type: green=agriculture, yellow=generator, gray=mining, blue=industrial, purple=research, white=housing.
-- **Build menu**: click empty slot → dropdown/panel with district options. Gray out unaffordable options. Show cost, build time, and production preview for each.
-- **Info sidebar**: pop count (employed/unemployed), housing (used/capacity), month counter (tick/100), construction queue with progress bars and cancel buttons.
-- **Wire commands**: district option click → `buildDistrict` message. Built district click → demolish option → `demolish` message.
-
-**Why it matters:** This is the difference between "a server that runs math" and "a game." Dwarf Fortress proved that function over form works — an ASCII interface is infinitely better than no interface. Until this exists, every other recommendation is theoretical. This unblocks balance testing, pacing evaluation, and multiplayer interaction design.
-
-**Design details:**
-- Use pure HTML/CSS positioned over the game screen div — no Three.js needed yet
-- Resource colors: energy=#f1c40f, minerals=#95a5a6, food=#2ecc71, alloys=#e67e22, research=#3498db, influence=#9b59b6
-- Show month number prominently (players need temporal orientation)
-- Construction progress as percentage or "12s remaining"
-
-#### 3.2 Pop Growth — The Engine That Makes Everything Matter
-
-**Impact:** Critical (without this, the economy is static and finite)
-**Effort:** Low (small code addition to game-engine.js)
-**Category:** Core Mechanic
-
-**The problem:** 10 pops forever. After building 6 more districts (one per available worker), the game is "solved." There's no growth, no pressure, no escalation. The economy produces surplus resources that pile up with nothing to spend them on. Pop growth transforms a static puzzle into a dynamic engine.
+**The problem:** The UI assumes one colony. Colony ships create 2-5 colonies. Without a colony switcher, players can't manage their empire.
 
 **The fix:**
-- Add `colony.growthProgress` counter, incrementing each tick when food surplus > 0
-- Base growth: +1 pop every 400 ticks (40 seconds real-time) when food surplus > 0
-- Accelerated: surplus > 5 → every 300 ticks, surplus > 10 → every 200 ticks
-- Housing cap: pops cannot exceed `_calcHousing()`. Growth halts at cap. This makes Housing districts meaningful.
-- Overcrowding: if pops somehow exceed housing (shouldn't happen with cap), -50% production penalty as a safety valve
-- Existing starvation mechanic (pop death at food < 0) stays as-is
+- Left sidebar colony list (appears when 2+ colonies): colony name, pop count, status icon (growth/building/starvation/idle)
+- Click colony to switch the colony view to that colony
+- Resource bar already shows pooled resources (correct for multi-colony)
+- Colony panel title shows current colony name
+- Keyboard shortcut: 1-5 to switch between colonies
+- Status bar shows "Colony 2/3" indicator
 
-**Why it matters:** Pop growth is the flywheel of every 4X economy. Build Agriculture → food surplus → pops grow → need more Housing → build Housing → need more jobs → build districts → need more food → loop. Without this flywheel, the game is a spreadsheet exercise with a known optimal answer. With it, every decision creates downstream consequences that force further decisions.
+**Why it matters:** This is the required companion to colony ships. Without it, colony ships are unshippable. Build this alongside or immediately after colony ships.
 
-**Design details:**
-- Starting state: 10 pops, 10 housing, +2 food/month surplus
-- First new pop at ~40 seconds. By minute 5: ~17 pops (need 2 Housing districts by then)
-- At 17 pops with 20 housing (base 10 + 2 Housing districts): 17 workers, 13 job districts + 2 Housing = 15 total districts. Colony is nearing its 16-slot capacity.
-- This creates a natural early-game arc: minutes 0-1 (build), 1-3 (optimize), 3-5 (housing crunch), 5+ (need second colony)
-- Reference: Stellaris pop growth drives all mid-game decisions; Civ VI population growth gates district construction
+#### R22-6: Alloy Sink — Military Outpost (Pre-Fleet Territorial Marker)
 
-#### 3.3 Early Mineral Pacing — Remove the Waiting Wall
-
-**Impact:** High (directly affects moment-to-moment fun in minutes 2-8)
-**Effort:** Low (number changes only)
-**Category:** Balance
-
-**The problem:** After spending the starting 200 minerals on 1-2 builds, Mining output of 4/month means waiting 25-50 seconds (2.5-5 months) per 100-mineral build funded purely by income. In a browser game targeting 20-40 minute sessions, a 50-second wait between meaningful actions in the early game is lethal. Players will tab away.
-
-**The fix:**
-- Increase Mining district output: 4 → 6 minerals/month
-- Increase starting minerals: 200 → 300 (funds 2-3 immediate builds instead of 1-2)
-- Reduce Mining build cost: 150 → 100 minerals (same tier as Agriculture/Housing)
-
-**Why it matters:** The early game is the tutorial. If a player's first 5 minutes are "click, wait, wait, wait, click," they leave. Mining at 6/month with 300 starting minerals means: build 3 cheap districts immediately, then Mining income funds a new build every ~17 seconds (1.7 months). That's an action every 17 seconds — close to the sweet spot for browser 4X.
-
-**Design details:**
-- Mining at 6/month pays back its 100-mineral cost in 16.7 months = 167 seconds ≈ 2.8 minutes (was 6.25 minutes). Acceptable.
-- 300 starting minerals allows: immediate Mining (100) + Agriculture (100) + 100 reserve. Or: Mining + Housing (100) + 100 reserve. Meaningful opening choice.
-- Generator stays at 150 minerals — it should be slightly more expensive since energy is the enabling resource.
-
-#### 3.4 Planet Type Bonuses — Why Colonization Will Matter
-
-**Impact:** High (prerequisite for interesting expansion decisions)
-**Effort:** Low-Medium (multiplier logic in `_calcProduction`)
+**Impact:** Medium (fixes dead resource, adds spatial strategy)
+**Effort:** Low-Medium
 **Category:** Core Mechanic
 
-**The problem:** Planet types exist in `PLANET_TYPES` but have no mechanical effect beyond habitability. When galaxy/colonization arrives, without bonuses the decision is always "pick the biggest planet." Zero strategic nuance.
+**The problem:** Alloys accumulate with no active use. They passively convert to VP but the player never *spends* them on anything meaningful. This makes Industrial districts feel pointless to build.
 
-**The fix:** Each habitable type gets a production bonus applied as a multiplier in `_calcProduction`:
+**The fix:** Before full fleet/combat: add a "Military Outpost" buildable at owned systems for 100 alloys. Outposts claim the system (prevents other players from colonizing planets there), provide +1 influence/month, and extend fog-of-war visibility by 1 additional hop. Max 3 outposts per player. Build via galaxy map: click owned system → "Build Outpost" button.
 
-| Planet Type | Bonus | Strategic Identity |
-|-------------|-------|--------------------|
-| Continental | +1 to all district base output (flat, not %) | Best generalist, ideal capital |
-| Ocean | +50% Agriculture, +2 max district slots | Food powerhouse, wide builder |
-| Tropical | +25% Agriculture, +25% Research | Balanced science/breadbasket |
-| Arctic | +50% Research | Dedicated science world |
-| Desert | +50% Mining, +25% Energy | Industrial backbone |
-| Arid | +25% Mining, +25% Alloy output | Military forge world |
-
-**Why it matters:** This is the answer to "where should I expand?" Without bonuses, colonization is solved (biggest = best). With bonuses, an Arctic size-10 world might be better for a tech-rush player than a Continental size-14. It enables player archetypes and replayability. Endless Space 2's system resource distribution serves the same design purpose.
+**Why it matters:** Outposts create a lightweight territorial game without requiring combat. They give alloys a purpose (100 alloys = ~25 months of Industrial production = meaningful cost). They make influence dynamic (income from outposts). They extend vision (strategic advantage from fog of war). They create territorial tension in multiplayer ("they built an outpost near my border"). All of this without implementing ships, fleets, or combat. Think of it as Stellaris starbases without the military component.
 
 **Design details:**
-- Store bonuses in `PLANET_TYPES`: `continental: { bonuses: { all: 1 } }`, `ocean: { bonuses: { agriculture: 1.5 }, extraSlots: 2 }`, etc.
-- Apply in `_calcProduction` after base output, before consumption
-- Continental's +1 is additive (6 energy → 7, 4 minerals → 5), all others are multiplicative
-- Show planet bonuses in colony panel and future colonization target list
+- Cost: 100 alloys (significant but not prohibitive)
+- Build time: 200 ticks (20 sec at 1x)
+- Effect: Claims system, +1 influence/month, +1 fog-of-war hop range
+- Limitation: Only in systems within 2 hops of an owned system (must be "known")
+- Destruction: If another player colonizes a planet in the system, outpost ownership transfers (colonization > claim)
+- VP: +3 VP per outpost (incentivizes territorial play)
 
-#### 3.5 Colony Personality Traits — Reward Specialization
+#### R22-7: Surface Anomalies — Colony-Level Discovery
 
-**Impact:** Medium (adds strategic layer and narrative)
+**Impact:** Medium (replayability, spatial puzzle)
 **Effort:** Medium
 **Category:** Content / Core Mechanic
 
-**The problem:** Building 6 Mining districts feels the same as building 3 Mining + 3 Generator. Raw numbers change, but there's no emergent identity or empire-wide consequence for specialization.
+**The problem:** Every colony grid is identical — 16 empty slots. There's no reason to care about *which* tile you build on. District placement is arbitrary.
 
-**The fix:** When a colony reaches 4+ districts of a single type, it earns a personality trait:
+**The fix:** Already specified in roadmap. When founding a colony, place 1-3 tile anomalies randomly:
+- "Mineral Vein": +50% output to Mining district built on this tile
+- "Thermal Vent": +50% output to Generator on this tile
+- "Fertile Soil": +50% output to Agriculture on this tile
+- "Ancient Ruins": one-time choice: excavate (+500 research) or preserve (+2 influence/month)
+- "Alien Artifact": one-time choice: +200 alloys or +300 research
 
-| Trait | Trigger | Empire-Wide Bonus |
-|-------|---------|-------------------|
-| Academy World | 4+ Research | +10% research all colonies |
-| Forge World | 4+ Industrial | +10% alloy production all colonies |
-| Breadbasket | 4+ Agriculture | +10% food all colonies |
-| Power Hub | 4+ Generator | +10% energy all colonies |
-| Mining Colony | 4+ Mining | +10% mineral production all colonies |
+**Why it matters:** Anomalies make each colony a unique spatial puzzle. "Do I build Mining on the Mineral Vein tile, or do I need a Generator there for energy?" Combined with planet bonuses, this creates genuine colony specialization. Each planet becomes a unique strategic problem rather than a blank canvas.
 
-- One trait per colony (highest district count wins)
-- Empire bonuses stack across colonies (2 Forge Worlds = +20% alloys)
-- Trait badge visible in colony list and colony panel
-- Trait lost if district count drops below 4 (demolish)
+#### R22-8: T3 Tech Expansion — Late-Game Power Spike
 
-**Why it matters:** Traits name player strategy and reward commitment. "I'm building a Forge World" is more motivating than "I'm stacking Industrial districts." It creates a meta-optimization layer: generalize for resilience or specialize for empire bonuses? Civ VI's district adjacency bonuses serve this same purpose.
-
-#### 3.6 Game Speed Controls + Match Timer — Flexible Sessions
-
-**Impact:** Medium
+**Impact:** Medium (strategic depth, late-game goals)
 **Effort:** Low
-**Category:** UX / Multiplayer
+**Category:** Content / Balance
 
-**The problem:** All games run at fixed speed with no end condition. Browser games need flexible match lengths. A 30-minute session is too long for some, too short for others.
+**The problem:** The tech tree has 6 techs across 2 tiers. A player with 2 Research districts finishes everything by minute 10. After that, research points accumulate with no purpose — another dead resource.
 
-**The fix:**
-- Speed multiplier modifies `MONTH_TICKS`: Speed 1 = 200 (slow), Speed 3 = 100 (default), Speed 5 = 50 (fast)
-- Host sets speed in room creation, can change during gameplay
-- Pause toggle (host only)
-- Optional match timer (15/30/45/60 min, or unlimited) set in room creation
-- At timer expiry, highest VP wins: VP = colonies×10 + techs×5 + fleets×2
+**The fix:** Already specified (R17-5). Add 3 Tier 3 techs:
+- Physics T3: Fusion Reactors (+100% Generator output + generators produce +1 alloy/month, cost 1000)
+- Society T3: Genetic Engineering (+100% Agriculture + pop growth time halved, cost 1000)
+- Engineering T3: Automated Mining (+100% Mining + mining districts cost 0 jobs, cost 1000)
 
-**Why it matters:** Speed 5 enables 10-15 minute lunch-break games. Speed 1 enables hour-long epics. A timer creates urgency and a guaranteed end point — essential for multiplayer where one player might stall.
-
-#### 3.7 Visible Multiplayer — Break the Solitaire
-
-**Impact:** Medium-High (transforms the experience from solo to social)
-**Effort:** Low-Medium
-**Category:** Multiplayer / UX
-
-**The problem:** Players in the same game have zero awareness of each other. It's parallel solitaire. Even before fleets, combat, or diplomacy, players should *know* opponents exist and feel competitive pressure.
-
-**The fix — implement in order:**
-1. **In-game chat:** Extend the existing lobby chat to work during gameplay. Simple text chat visible to all players in the room. Low effort, high social value.
-2. **Scoreboard overlay** (Tab key): show all players with colony count, total pops, resource income rates, month counter. No secrets — in a 20-minute browser game, information asymmetry isn't the fun part; outplaying with the same info is.
-3. **Event ticker:** "Player X built their 5th Mining district" / "Player Y's colony reached 20 pops." Narrates the game, creates awareness, drives competitive impulse.
-4. **Simple resource gifting:** Send resources to another player via a UI button. Enables informal cooperation before formal diplomacy. Already in design.md.
-
-**Why it matters:** Multiplayer games live or die on player interaction. Even the minimal version — chat + scoreboard — transforms "I'm optimizing my economy" into "I'm optimizing my economy and she's ahead on alloys, I need to pivot." The scoreboard alone adds a win condition without any complex victory logic.
+**Why it matters:** T3 at 1000 cost with 2 Research districts takes ~125 months (~20 min). This is unreachable without heavy research investment, making "tech rush" a distinct strategy. T3 effects are transformative — Fusion Reactors makes generators produce alloys, Automated Mining frees pops from mining jobs. These create genuine strategic divergence in the late game.
 
 ---
 
-### 4. Balance Snapshot
+### 4. Revised Priority Order
 
-#### Current Economy (Post-Entry 5 Fixes)
+The R21 order put colony ships at #3. I'm moving them to #1. Speed controls shipped. The game needs agency, not more polish.
 
-| District | Produces | Consumes | Build Cost | Build Time |
-|----------|----------|----------|------------|------------|
-| Housing | 5 housing | 1 energy/month | 100 minerals | 300 ticks (30s) |
-| Generator | 6 energy | — | 150 minerals | 300 ticks |
-| Mining | 4 minerals | — | 150 minerals | 300 ticks |
-| Agriculture | 6 food | — | 100 minerals | 300 ticks |
-| Industrial | 3 alloys | 3 energy/month | 200 minerals | 300 ticks |
-| Research | 3 phy/soc/eng | 4 energy/month | 200 minerals + 20 energy | 300 ticks |
-
-**Starting State:**
-- Resources: 100 energy, 200 minerals, 100 food, 50 alloys, 100 influence
-- Colony: Continental, size 16, 10 pops, 10 housing (base)
-- Pre-built: 1 Generator (6 energy), 1 Mining (4 minerals), 2 Agriculture (12 food)
-- Net/month: +5 energy, +4 minerals, +2 food, 0 alloys. 6 unemployed pops → +6 research each type
-- 4 workers employed (4 districts), 6 unemployed, 12 district slots remaining
-
-**Energy Budget (the key constraint) — Still Sound:**
-- 1 Generator (6 energy) powers: 2 Industrial (6 energy) OR 1 Research + 2 Housing (4+2 energy)
-- Late-game 16-slot colony: ~3 Generator, 3 Industrial, 2 Research, 2 Housing, 3 Mining, 2 Agriculture, 1 flex = 16 slots. Energy: 18 produced, 15 consumed. Viable. ✓
-
-**Mineral Economy — Too Slow:**
-- Mining at 4/month means 37.5 seconds per 100-mineral build from income alone
-- After spending starting 200 on 2 builds, players wait ~38 seconds before their next action
-- **Recommended fix:** Mining → 6/month, starting minerals → 300, Mining build cost → 100. This cuts the gap between actions to ~17 seconds. See Rec 3.3.
-
-**Food Economy — Stable but Thin:**
-- +2 food/month surplus with 10 pops. Works for now.
-- Once pop growth exists, each new pop adds 1 food consumption. At 12 pops: 12-12 = 0 net. Player must build 3rd Agriculture before pop 13.
-- This creates a good "I'm about to outgrow my food supply" pressure moment. ✓
-
-**Housing Economy — Clean Design:**
-- Base 10 housing = 10 pops. Perfect starting match.
-- Each Housing district adds 5 housing for 100 minerals + 1 energy/month.
-- Player hits housing cap at pop 10, needs Housing before pop 11 (once growth exists).
-- First Housing district at pop 10 → capacity 15. Second at pop 15 → capacity 20. Colony maxes out around 16-20 pops depending on layout.
-
-**Projected Match Pacing (with recommended fixes):**
-- Minutes 0-2: Spend 300 starting minerals on 3 districts. Immediate choices.
-- Minutes 2-5: Mining income (6/month) funds a new build every ~17s. Pops growing toward 15.
-- Minutes 5-10: Housing pressure, energy budgeting, colony nearing capacity. Mid-game.
-- Minutes 10-15: Colony saturated at 16 districts. Need second colony (once expansion exists) or tech bonuses.
-- Minutes 15-30: Multi-colony management, fleet building, diplomacy. Late game.
-- This is a healthy arc for a 20-40 minute browser game. ✓
+1. **Colony ships + colony list UI** — the watershed. Ship them together as one unit of work.
+2. **Planet type bonuses** — makes colony ship destination choices meaningful
+3. **Fog of war** — now layered on expansion, creates frontier
+4. **In-game chat** — multiplayer pulse
+5. **Military outposts** — alloy sink, territorial game
+6. **Surface anomalies** — colony-level discovery
+7. **T3 tech expansion** — late-game strategic depth
+8. **Edict system** — influence purpose (deprioritized since outposts now generate influence income)
 
 ---
 
-### 5. Content Wishlist — Making ColonyGame Distinctive
+### 5. Balance Snapshot
 
-#### 5.1 "Living Colonies" — Environmental Storytelling Through Economy
+#### Resource Flow (unchanged from R21 — no economy changes)
 
-Instead of static district tiles, let colony events emerge from economic states. A colony with 5+ Agriculture districts occasionally spawns a "Harvest Festival" event (+10% food for 3 months). A colony with energy deficit gets "Rolling Blackouts" (visual flickering, -20% research for 2 months). These are cheap to implement (just conditional checks on existing state) but make colonies feel alive rather than spreadsheet rows. Anno 1800's production chain events serve this role.
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| Starting minerals | 300 | 3 basic districts immediately — good |
+| Starting energy | 100 | 16+ months buffer — comfortable |
+| Mineral income (1 Mining) | +6/month | 100m district every ~17s — slightly slow but OK |
+| Food surplus (2 Agri, 8 pops) | +4/month | Slow growth tier — intentional |
+| Energy margin (1 Gen) | +5/month | Thin — one Industrial = +2. Good tension |
 
-#### 5.2 "Galactic Radio" — Shared Narrative Ticker
+#### Colony Ship Economics (projected)
 
-Already in design.md Phase 7, but should be prioritized much earlier. A scrolling ticker at the top of screen narrating galaxy events in-character: "BREAKING: Commander Vex reports mineral boom on Kepler-7b." Turns raw game events into shared story. Even with just colony events (pre-galaxy): "NEW: Player Vex's colony 'Dusthaven' declared a Forge World." Creates multiplayer awareness for almost zero implementation cost.
+| Metric | Value |
+|--------|-------|
+| Colony ship cost | 200 minerals + 100 food + 100 alloys |
+| Time to accumulate 100 alloys (1 Industrial) | ~25 months = 250 ticks = 25 sec at 1x |
+| Realistic first colony ship | ~month 40-50 (~7-8 min at 1x) |
+| Travel time (avg 3 hops) | 150 ticks = 15 sec |
+| New colony bootstrapping | 2 pops, no districts, 50% build discount on first 3 |
+| Second colony break-even | ~5 minutes after founding (builds 3 districts, grows to 5 pops) |
 
-#### 5.3 "Colony DNA" — Procedural Names and Personality
+**Assessment:** Colony ship timing is well-paced for 20-minute matches. First expansion at minute 7-8, colony becomes productive by minute 12-13. Creates a clear early→mid→late arc: opener (0-3 min), accumulate (3-8), expand (8-13), optimize empire (13-20). This is the pacing arc the game desperately needs.
 
-When founding a colony, generate a name based on planet type: Arctic → "New Helsinki" / "Frostheim" / "Boreas Station." Desert → "Dusthaven" / "Sunward" / "Dune Prime." Players remember "Frostheim fell" more than "Colony e7 was conquered." Combined with personality traits, colonies become characters in the game's story.
+#### Game Length Target
 
-#### 5.4 "Scarcity Seasons" — Periodic Economic Disruption
+With colony ships, a 20-minute match would look like:
+- Minutes 0-3: Opening build rush (active decisions)
+- Minutes 3-7: Economy optimization + alloy accumulation (moderate activity, sped up with speed controls)
+- Minutes 7-9: Colony ship launch — galaxy map becomes active, destination choice
+- Minutes 9-14: Multi-colony management — build second colony, manage two economies
+- Minutes 14-18: Optimization sprint — maximize VP across colonies, possible third expansion
+- Minutes 18-20: Final countdown tension
 
-Every 8-12 months (randomized), one resource gets a galaxy-wide scarcity modifier (-25% production for 3 months). All players must adapt simultaneously. "The Mineral Drought of Month 47" becomes shared story and competitive opportunity. Simple conditional in `_processMonthlyResources`, high drama. This is the 4X equivalent of a market crash — it rewards diversified economies and punishes over-specialization.
+This is a dramatically better arc than the current one-phase game.
 
-#### 5.5 "Quick Match" Preset — 15-Minute Browser Sessions
+#### Recommended Number Tweaks
 
-Pre-configured mode: start with 2 colonies, Speed 5, 15-minute timer, VP scoring, small galaxy (20 systems), no tech tree beyond Tier 2. For lunch-break games. Browser 4X games *must* have a quick-play option or they lose the casual audience entirely. Most Slither.io sessions are 5-15 minutes — that's the competition for attention.
-
----
-
-### 6. Priority Sequence
-
-The recommended implementation order for maximum player-experience impact:
-
-1. **Pop growth** (Rec 3.2) — 30 min. Adds the core growth loop that makes everything else matter.
-2. **Early mineral pacing** (Rec 3.3) — 15 min. Removes the early-game wait wall.
-3. **Build discount fix** — 15 min. Dead code cleanup, prepares for colonization.
-4. **Stale client cleanup** (Rec 3.1 Step A) — 1 hour. Removes RTS cruft from app.js.
-5. **HTML colony UI** (Rec 3.1 Step B) — 2 hours. Makes the game playable for the first time.
-6. **Planet type bonuses** (Rec 3.4) — 1 hour. Adds strategic variety.
-7. **Colony personality traits** (Rec 3.5) — 1 hour. Rewards specialization.
-8. **Game speed controls** (Rec 3.6) — 30 min. Enables flexible match lengths.
-9. **Visible multiplayer** (Rec 3.7) — 1-2 hours. Breaks the solitaire.
-
-Items 1-5 are the critical path to a playable game. Items 6-9 enrich the experience.
-
----
-
-### 7. Design Roadmap Updates
-
-Added to `devguide/design.md`:
-- Phase 1: In-game chat during gameplay, scoreboard overlay (Tab key), event ticker for player actions
-- Phase 2: Colony personality traits system (already existed but refined with stacking details)
-- Phase 6: Match timer with VP scoring, surrender vote
-- Phase 7: Galactic radio ticker (already existed), scarcity seasons event system, colony procedural naming
-
-See `devguide/design.md` for full task descriptions.
+1. **Colony ship alloy cost: 100 → 80 alloys** if playtesting shows first expansion is too late. Reserve 100 for multiplayer balance.
+2. **New colony starting pops: 2** (confirmed — low enough to feel like a frontier, high enough to build one district immediately)
+3. **Max colonies: 5** (confirmed — enough for strategy, not so many that management becomes tedious)
+4. **Outpost cost: 100 alloys** — half a colony ship, creates real choice between expanding vs. claiming
 
 ---
 
-## Review #5 — 2026-03-11
+### 6. Content Wishlist — "Wouldn't It Be Cool If..."
+
+1. **Supply Lines:** When you have 2+ colonies, draw faint animated lines along hyperlanes between them showing resource flow (energy = yellow particles, minerals = gray, food = green). These are purely cosmetic but create a visual sense of empire — your territory feels connected and alive. If a colony is in deficit, its supply line glows red. Inspired by Anno 1800's trade route visuals.
+
+2. **Colony Personality Events:** Each colony develops a "personality" based on its district composition. A mining-heavy colony generates "Miners' Strike" events (lose 1 Mining output for 5 months or pay 50 energy to settle). A research-heavy colony generates "Breakthrough" events (choose: publish for +200 research, or patent for +50 alloys). 3-4 events per archetype, triggered probabilistically based on district ratios. Makes colonies feel like living communities, not spreadsheets.
+
+3. **Galactic Archaeology:** When surveying systems (future feature), 5% chance to find a "Precursor Signal" pointing to another system. Following the chain (3-5 systems) leads to a Precursor Cache with a unique one-time reward: instant T2 tech, free colony ship, +500 of a random resource, or a unique building blueprint. Creates emergent quest chains across the galaxy. Inspired by Stellaris precursor event chains.
+
+4. **Economic Espionage:** In multiplayer, spend 25 influence to "scan" another player's colony. For 5 months, you see their district composition and resource income (but not stockpiles). This creates information asymmetry decisions: is it worth 25 influence to know if they're militarizing (alloy-heavy) or teching (research-heavy)? Counter: players can see when they've been scanned ("Intelligence Alert: Player X scanned your colony").
+
+5. **Resonance Districts (from R21):** Still a great idea. Special 7th district that copies the output of its most common neighbor type. 300 minerals + 50 energy, 600 ticks. Rewards spatial planning and district clustering. Unique to ColonyGame's grid-based colony system — no other 4X has this.
+
+---
+
+### 7. Summary
+
+**Overall Score: 4.4/10** — up 0.2 from speed controls improving pacing.
+
+**Top 3 recommendations:**
+1. Colony ships + colony list UI — the bridge between colony and galaxy
+2. Planet type bonuses — make geography strategic
+3. Fog of war — turn the atlas into a frontier
+
+**Most urgent balance fix:** Colony ship alloy cost should be playtested at both 100 and 80 to find the sweet spot for first-expansion timing (target: minute 7-8 at 1x speed).
+
+**Big idea:** Supply Lines — cosmetic animated resource flow between colonies along hyperlanes, turning your empire from scattered dots into a visible network.
+
+**New work items added to design.md:** 6 (military outpost system, colony ship priority reorder, outpost VP scoring, influence income from outposts, colony switcher keyboard shortcuts, anomaly bonus visibility in system panel)
+
+---
+
+## Review #21 — 2026-03-12 — The Paralysis of Potential
 
 **Reviewer:** Game Design Analyst (automated)
-**Build State:** 7/70 tasks complete (10%). Colony 4X engine with pop growth, balanced economy. No visual client. 79 tests passing.
+**Build State:** 38/131 tasks complete (29%). Isometric colony builder, galaxy map with Three.js, procedural galaxy (Poisson disc + RNG), mini tech tree (6 techs, 2 tiers), VP scoring with match timer, energy deficit system, event toast HUD, pop growth, demolition with refund. 319 tests passing. ~8,840 lines.
+
+**Key changes since Review #20:** First-3-districts build discount fix (was dead code on starting colonies due to `isStartingColony` flag). No new gameplay systems — strictly a balance/bug fix.
 
 ---
 
 ### 1. Pillar Scores
 
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3.5/10 | Six district types with energy trade-offs and pop growth creating a food/housing growth spiral. The economy has one genuine strategic loop: agriculture → growth → housing → jobs → energy budget. But only one colony, no tech choices, no opponents, no expansion-vs-consolidation dilemma. The growth loop adds dynamism but not depth — there's still one optimal build order per session. |
-| Pacing & Tension | 3/10 | Pop growth transforms the economy from static to dynamic. The game now has a natural arc: build → grow → housing crunch → food pressure → slot saturation. First pop arrives at ~40 seconds, housing cap hits around minute 5-6, colony maxes out at 16 districts around minute 8-10. This is a real early/mid-game arc. But no late game exists — once the colony saturates, there's nothing left to do. No crisis, no opponents, no win condition. |
-| Economy & Production | 6/10 | **Strongest pillar and improving.** The flywheel works: food surplus → pop growth → workers fill districts → need housing → housing costs energy → need generators. Energy budget is the binding constraint. Pop growth at 3 speed tiers (40s/30s/20s per pop) creates responsive feedback. Housing cap at base 10 forces an early Housing build. Food math is tight: 12 production at start, 10 consumed by starting pops, +2 surplus. Each new pop eats into that surplus, forcing Agriculture expansion at pop 12-13. **Remaining gaps:** mineral income too slow (4/month), no resource sinks beyond construction, no alloy spending, no tech to invest research into. |
-| Exploration & Discovery | 1/10 | Completely absent. Single starting colony is the entire universe. |
-| Multiplayer Fairness | 3/10 | Symmetric starts, solid lobby system. Zero in-game interaction. |
+| Pillar | Score | Trend | Notes |
+|--------|-------|-------|-------|
+| Strategic Depth | 3/10 | → | Single-colony optimization remains the entire game. Build order is the only strategic variable. Six techs in a linear tree don't offer branching paths. The galaxy exists but is a decoration — no spatial strategy, no expansion decisions, no fleet composition. Every match plays identically after the opener |
+| Pacing & Tension | 4/10 | → | Match timer provides end-game urgency. Energy deficit and food starvation create reactive moments. Toast notifications give feedback. But the game has one gear — there's no early/mid/late arc, no inflection where new systems unlock, no "oh god they're ahead of me" multiplayer pressure. Dead air dominates minutes 5-20 |
+| Economy & Production | 7/10 | → | The crown jewel. District trade-offs are genuine (energy headroom vs food vs growth vs research investment). Housing cap creates pressure. Energy deficit as consequence system works. Pop-job-production chain is elegant. But two resources are broken: alloys have no active sink (only passive VP banking) and influence is a dead number on the HUD |
+| Exploration & Discovery | 2/10 | → | Galaxy is fully visible, fully readable, and completely inert. No fog of war, no surveying, no science ships, no anomalies. Clicking a system shows planet stats but you cannot act on any of it. The contrast between the pretty galaxy map and the zero gameplay it offers is the game's most jarring moment |
+| Multiplayer Fairness | 5/10 | → | Starting positions are balanced via equidistant greedy spread. VP is transparent with scoreboard. But there is zero player interaction — no chat in-game, no trading, no combat, no diplomacy. Multiplayer is solitaire with a shared countdown. The "multi" in multiplayer is purely cosmetic |
 
-**Overall: 3.3/10** — Up from 2.9. Pop growth is the inflection point — the economy is now a living system rather than a static puzzle. But the gap between "engine quality" (solid) and "player experience" (nonexistent) is at maximum. The server has a genuinely interesting colony simulation running that no player can see or interact with.
+**Overall Score: 4.2/10** (unchanged from R20)
 
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"I still can't see anything."** The client renders medieval RTS — Canvas 2D diamonds, gold/wood/stone HUD, minimap, unit selection. The colony engine with pop growth, food pressure, and housing constraints runs invisibly on the server. This has been the #1 problem for 4 consecutive reviews. The server-side game is now interesting enough to play; the client is the only thing stopping it.
-
-2. **"The mineral wall is painful."** After spending 200 starting minerals on 2 builds (30 seconds of construction), Mining income of 4/month means 25+ seconds between actions. With pop growth now creating demand for Housing, Agriculture, and Generator districts, the mineral bottleneck is more frustrating than ever — the game creates urgency through growth but can't deliver the building speed to match.
-
-3. **"The colony filled up and then... nothing."** Pop growth creates a compelling 8-10 minute arc of growth and optimization. But once the colony hits 16 districts and ~16-20 pops, there's nowhere to go. Resources pile up. No second colony, no tech tree, no ships. The growth loop revs up and then slams into a wall with no off-ramp.
-
-4. **"Every game is the same."** Continental size-16 planet, same resources, no opponents, no events, no randomness. The optimal build order can be solved once and repeated forever. Planet type bonuses and multi-planet starts would add replayability, but currently there's zero variance between sessions.
-
-5. **"There's still no goal."** No win condition, no timer, no score. Resources accumulate, pops max out, and the game continues indefinitely. The growth loop needs somewhere to go.
+The score hasn't moved because no new systems were added — the build discount fix was a correctness issue. The game is in a holding pattern: the foundation is solid, the economy works, the galaxy is beautiful, but nothing connects them. The score will jump sharply when any of [colony ships, fog of war, in-game chat] lands.
 
 ---
 
-### 3. Recommendations
+### 2. The Core Problem: A Bridge to Nowhere
 
-The game's server-side economy is now genuinely well-designed. **The critical path is making it visible and playable.** All recommendations are ordered by impact-to-effort ratio.
+The game has built both shores but not the bridge:
 
-#### 3.1 Stale Client Cleanup + HTML Colony UI — The Only Thing That Matters
+**Shore 1 (Colony Management):** A well-balanced district economy with meaningful trade-offs, pop growth dynamics, housing pressure, energy crises, construction queues, tech research. This is a complete, playable city-builder.
 
-**Impact:** Critical (blocks ALL playtesting, ALL feedback, ALL fun)
-**Effort:** Medium (2-3 hours for both steps)
-**Category:** UX / Foundation
+**Shore 2 (Galaxy Map):** A procedurally generated galaxy with 50+ star systems, diverse planet types, hyperlane networks, star classifications, system detail panels, ownership visualization. This is a complete, navigable space map.
 
-**The problem:** This is Review #5 and the same recommendation is #1 for the fifth time. The server now has a genuine game — pop growth, food pressure, housing constraints, energy budgeting, construction queues. A player who could see and interact with this system would have 8-10 minutes of engaging colony management. But the client shows a dead RTS with gold/wood/stone and diamond-shaped units.
+**The Bridge (Missing):** Colony ships, science ships, fog of war, fleet movement, multi-colony management — the systems that make the galaxy *matter* to the colony and the colony *project* into the galaxy.
 
-**The fix:** Same as Review #4 Rec 3.1. Two steps:
-1. Strip RTS code from app.js (Projection, units, Canvas 2D renderer, minimap, gold/wood/stone)
-2. Build HTML overlay: resource bar, district grid, build menu, pop/housing display, construction queue
+Until that bridge exists, the game is two disconnected experiences: a SimCity on one screen and a Google Maps on the other.
 
-**Why it matters:** Every other recommendation is theoretical until players can see and click. The server-side game is "ready for alpha" — the client is "ready for deletion."
+---
 
-**Design notes for the HTML UI now that pop growth exists:**
-- Show growth progress bar (current growthProgress / growthTarget ticks) next to pop count
-- Show food surplus prominently — this is now the driver of growth speed
-- Indicate growth speed tier: "Growing (slow)" / "Growing (fast)" / "Growing (rapid)"
-- Show housing headroom: "Pops: 10/10 ⚠" when at cap, "Pops: 10/15" when room to grow
-- Color-code the food net income: green when surplus > 0 (pops growing), red when deficit (pops dying)
+### 3. Top 5 Things a Playtester Would Notice
 
-#### 3.2 Early Mineral Pacing — Feed the Growth Loop
+1. **"Why can I see 50 star systems if I can only play on one?"** The galaxy map is the game's biggest promise and biggest letdown. It has beautiful star rendering, clickable system panels, planet habitability data — all infrastructure for decisions you can never make. The cognitive dissonance between visual scope and mechanical scope is the #1 frustration.
 
-**Impact:** High (eliminates the early-game dead zone)
-**Effort:** Low (number changes + test updates)
-**Category:** Balance
+2. **"I figured out the optimal build order in one game."** Start: 2 Agriculture → 1 Generator → 1 Mining. Then: Research → Industrial → Housing as needed. Research Improved Power Plants first. Every game, every time. Without expansion, planet bonuses, events, or strategic variance, the optimal path is a solved puzzle.
 
-**The problem:** Pop growth made this worse. The engine now creates demand for districts (food, housing, generators) as pops grow, but mineral income (4/month = 1 build every 25-37s) can't keep up. The game says "you need to build!" while simultaneously saying "wait 30 seconds." That contradiction kills momentum.
+3. **"Minutes 5-20 are boring."** After the initial build rush (~2 minutes of active decisions), the game enters a long coast. Minerals accumulate slowly, pops grow on autopilot, research ticks down. The player has nothing to *do* except wait and occasionally click a build button. There's no second wave of decisions.
 
-**The fix:** Already in design.md — Mining 4→6, starting minerals 200→300, Mining cost 150→100.
+4. **"Alloys and influence are fake."** Two of six resources are non-functional. Alloys passively convert to VP (no ships, no colony ships, no buildings that need them). Influence displays a number that never changes and never matters. Players who discover this feel deceived by the resource bar's implied depth.
 
-**Why it matters more now:** With pop growth, the first pop arrives at tick 400 (~40s). At that point, a player with 1 Mining district has earned 16 minerals from income (4×4 months). Combined with whatever's left of starting minerals, they need to be able to build Housing (100) and Agriculture (100) in roughly that window. At 6/month mining + 300 starting minerals, this math works. At 4/month + 200 starting, it doesn't.
+5. **"I forgot other players existed."** No in-game communication, no visual presence (beyond ownership dots), no mechanical interaction. The only multiplayer signal is the VP scoreboard. A human opponent and a static AI would feel identical. This makes the multiplayer lobby feel like overhead, not a feature.
 
-#### 3.3 Single-Player Mode — Remove the 2-Player Launch Barrier
+---
 
-**Impact:** High (currently CANNOT playtest alone)
-**Effort:** Low (room manager change + optional AI stub)
-**Category:** UX / Development
+### 4. Recommendations
 
-**The problem:** `canLaunch` requires 2+ players with all non-hosts ready. A developer or solo tester cannot launch a game alone. This means every playtest session requires opening two browser tabs, entering two names, creating a room, joining, readying, then launching. For rapid iteration on balance and UI, this friction is unacceptable.
+#### 4.1 Game Speed Controls — Unlock Comfortable Play
 
-**The fix:**
-- Add a "Practice" or "Solo" mode: allow room creation with `minPlayers: 1` (or a "solo" flag)
-- Solo rooms can be launched immediately by the host without requiring a second player
-- Alternatively, add a `singlePlayer` option to room creation that bypasses the ready check
-- No AI needed — just running the economy solo is the immediate use case
+**Impact:** High (quality of life, enables playtesting)
+**Effort:** Low
+**Category:** UX
 
-**Why it matters:** Every developer, every playtester, every first-time player will want to try the game solo first. Requiring two clients to see your own colony manage is a dev-velocity killer.
+**The problem:** Fixed speed creates dead time. After the initial build rush, experienced players wait with nothing to do. New players can't pause to learn systems. Playtesters can't fast-forward to test late-game scenarios. The tick rate is hard-coded, making the game's pacing unadjustable.
 
-**Design details:**
-- Room creation dialog: add a "Practice Mode" checkbox that sets `maxPlayers: 1` and auto-launches
-- `canLaunch`: if `room.maxPlayers === 1` or `room.practiceMode`, skip the 2-player requirement
-- This also enables future single-player content (tutorial, scenarios)
+**The fix:** Already specified in roadmap (R19-5). 5 speed levels + pause. Speed 1 (0.5x) through Speed 5 (5x). Keyboard shortcuts +/-/Space. Host-only in multiplayer.
 
-#### 3.4 Planet Type Bonuses — Prerequisite for Meaningful Expansion
+**Why it matters:** This is pure QoL that costs almost nothing and improves every subsequent play session. It's the foundation for comfortable playtesting — without it, evaluating any future feature requires sitting through 20 minutes of real-time play. Should be the very next thing built.
 
-**Impact:** High (when galaxy/colonization arrives, this is what makes expansion interesting)
-**Effort:** Low (multiplier logic in _calcProduction)
+#### 4.2 Fog of War — Galaxy as Frontier
+
+**Impact:** High (transforms exploration pillar from 2/10 to ~4/10)
+**Effort:** Low (client-only, no server changes)
 **Category:** Core Mechanic
 
-**The problem:** Same as Review #4 — planet types have no mechanical effect. Now more urgent because the single-colony game is nearing its content ceiling. When multi-colony arrives, without bonuses every colony plays identically.
+**The problem:** Complete information kills exploration. Every system's planets, types, sizes, and habitability are visible from game start. There's no mystery, no discovery, no reason to "explore." The galaxy map is an atlas, not a frontier.
 
-**The fix:** Same as Review #4 Rec 3.4 — production multipliers per planet type.
+**The fix:** Already specified in roadmap (R17-4). Three tiers: Known (2 hops from owned systems), Surveyed (visited), Unknown (dim gray, no details). Purely client-side rendering change.
 
-#### 3.5 Colony Personality Traits — End-Game Goal for Single Colony
+**Why it matters:** Fog of war is the cheapest way to create exploration gameplay. It transforms the galaxy from a solved information problem into a mystery worth investigating. "What's beyond those dim stars?" becomes a real question. Combined with colony ships (when they arrive), fog creates the classic 4X "push into the unknown" tension. And it requires zero server changes — just conditional rendering.
 
-**Impact:** Medium-High (gives the saturated colony something to achieve)
+#### 4.3 Planet Type Bonuses — Make Location Strategic
+
+**Impact:** Medium-High (adds strategic variety to colony play)
+**Effort:** Low
+**Category:** Core Mechanic / Balance
+
+**The problem:** All habitable planets play identically. Continental, Ocean, Tropical, Arctic, Desert, Arid — the only difference is habitability %, which is mechanically invisible during gameplay. There's no reason to care about planet types. The elaborate planet generation system is wasted.
+
+**The fix:** Already specified (R19-4). Additive bonuses per district type based on planet: Continental +1 food/Agri, Ocean +1 food/Agri + +1 research/Research, Tropical +2 food/Agri, Arctic +1 mineral/Mining + +1 research/Research, Desert +2 mineral/Mining, Arid +1 energy/Generator + +1 alloy/Industrial.
+
+**Why it matters:** Planet bonuses make the galaxy map information-rich even before colony ships. "That Desert world would be an amazing mining colony" is already interesting to think about while managing your starting colony. When colony ships arrive, planet bonuses will be the primary driver of expansion decisions. This feature has almost zero downside — it adds complexity exactly where the game needs it (location mattering) without adding cognitive load (bonuses are visible in the UI).
+
+#### 4.4 Colony Ships — The Watershed Feature
+
+**Impact:** Critical (transforms game from city-builder to 4X)
 **Effort:** Medium
-**Category:** Core Mechanic / Content
+**Category:** Core Mechanic
 
-**The problem:** The colony fills up at 16 districts around minute 8-10. After that, nothing happens. With personality traits, a player has a goal: "specialize this colony to earn a trait." The trait's empire-wide bonus creates value even before multi-colony exists — it's a concrete achievement.
+**The problem:** The game is ColonyGame but players manage one colony. The galaxy, hyperlanes, planet diversity, starting position spread — all of this infrastructure exists for multi-colony gameplay that doesn't. The economy runs out of strategic depth at minute 5 because there's only one colony to optimize.
 
-**The fix:** Same as Review #4 Rec 3.5 — 4+ districts of one type triggers a named trait with empire-wide bonuses.
+**The fix:** Already specified (R18-8). Colony ship built from build queue (200 minerals, 100 food, 100 alloys). Moves along hyperlanes (50 ticks/hop = 5 sec). Consumed on arrival to found new colony with 2 pops. Max 5 colonies per player.
 
-**New design note:** With pop growth, getting 4+ districts of one type is a real commitment. On a 16-slot planet with 4 starting districts, the player builds 12 more. To get 4 Industrial: 4×3 = 12 energy consumed, requiring 2 Generators. That's 6 slots committed (4 Industrial + 2 Generator) for a Forge World trait. Trade-off: that's 6 slots NOT used for Mining/Agriculture/Housing, meaning slower growth, tighter food, or less raw minerals. This is a genuine strategic decision now.
+**Why it matters:** Colony ships bridge the two halves of the game. They make alloys meaningful (200 alloy cost = ~50 months of Industrial production), make the galaxy actionable (you go to those star systems), and create the central 4X tension: expand now (sacrifice resources, weaken current colony) or optimize first (risk falling behind). This single feature would move Strategic Depth from 3/10 to 5/10 and Exploration from 2/10 to 4/10.
 
-#### 3.6 Starting Planet Variety — Break Session Repetition
+**Design note:** Colony ships should land *before* fog of war for maximum impact. With visible galaxy + colony ships, players immediately get spatial strategy. Fog of war then layers mystery on top.
 
-**Impact:** Medium (replayability without galaxy generation)
-**Effort:** Low
-**Category:** Content / Replayability
+**Counter-argument to current roadmap order:** The R20 priority puts fog of war (#3) before colony ships (#5). I'd argue the reverse — colony ships without fog is fun (you can see and choose your targets), but fog without colony ships just makes an inert galaxy more mysterious. You're hiding information about a place you can't go. Colony ships should be #2 after game speed controls.
 
-**The problem:** Every game starts on Continental, size 16. No variance. With pop growth making each session play out a real 8-10 minute arc, the identical starting conditions mean that arc is always the same.
+#### 4.5 In-Game Chat — Multiplayer Needs a Pulse
 
-**The fix:**
-- On game start, randomly assign starting planet type from habitable types (Continental, Ocean, Tropical, Arctic, Desert, Arid)
-- Randomize planet size within a range: 12-20 district slots
-- Requires planet type bonuses (Rec 3.4) to be meaningful
-- Show planet type and size in the colony panel so players know what they're working with
-- In multiplayer, all players still get the same type/size for fairness (or allow asymmetric for more chaos)
+**Impact:** Medium (enables social gameplay)
+**Effort:** Low (infrastructure exists)
+**Category:** UX / Multiplayer
 
-**Why it matters:** This is the cheapest way to add replayability. An Arctic size-12 game plays completely differently from an Ocean size-20 game — different build orders, different pressures, different specialization paths. Combined with personality traits, this creates real variety.
+**The problem:** Players in a multiplayer match cannot communicate. Lobby chat disappears when the game starts. Without communication, multiplayer is single-player with network latency added.
 
-#### 3.7 Construction Queue QoL — Respect Player Time
+**The fix:** Already specified (R19-6). Collapsible chat panel at bottom-left of game screen. Reuse existing WebSocket chat infrastructure. Player names colored by player color.
 
-**Impact:** Medium
-**Effort:** Low
-**Category:** UX / Polish
+**Why it matters:** Chat is the cheapest social feature. "Nice colony" / "Stay away from my systems" / "Want to trade?" — even without formal trading, chat creates social dynamics. It's also the minimum requirement for multiplayer to feel multiplayer.
 
-**The problem:** With pop growth creating constant demand for new districts, players will be queuing builds frequently. The current system allows max 3 items in queue, which is fine. But there's no way to reorder the queue, and no visibility into what the queue will cost total. Players will queue 3 builds, run out of minerals for the 3rd, and wonder why nothing is building.
+#### 4.6 Edict System — Give Influence a Purpose
 
-**The fix:**
-- Show total queue cost in the build menu (minerals remaining after all queued builds)
-- Warn if queuing a build that will leave resources negative
-- Allow queue cancellation with partial refund (50% of spent resources returned)
-- Show estimated completion time for each queue item: "Done in 30s / 60s / 90s"
+**Impact:** Medium (fixes dead resource, adds tactical timing)
+**Effort:** Low-Medium
+**Category:** Core Mechanic
 
-**Design details:**
-- Current behavior: resources deducted on queue. This is correct — keeps the mental model clean
-- Partial refund on cancel prevents the "I queued the wrong thing and lost 200 minerals" feel-bad
-- Completion time estimates need to account for game speed (when speed controls arrive)
+**The problem:** Influence shows "100" on the resource bar and never changes. It's a promise of a system that doesn't exist. Players who notice this lose trust in the game's depth.
 
----
+**The fix:** Already specified in Phase 2. 4 edicts: Mineral Rush (50 influence, +50% mining 5 months), Population Drive (75 influence, +100% growth 5 months), Research Grant (50 influence, +50% research 5 months), Emergency Reserves (25 influence, instant +100 energy/minerals/food).
 
-### 4. Balance Snapshot
+**Why it matters:** With only 100 starting influence and no income, edicts become a one-time strategic choice: when and what to boost. "Do I pop drive early for growth, or save for a late-game research grant?" This adds a genuine strategic dimension with minimal implementation.
 
-#### Economy with Pop Growth (Post-Entry 6)
+#### 4.7 Revised Priority Order — Colony Ships Before Fog
 
-**Starting State (unchanged):**
-- Resources: 100 energy, 200 minerals, 100 food, 50 alloys, 100 influence
-- Colony: Continental, size 16, 10 pops, 10 housing
-- Pre-built: 1 Generator, 1 Mining, 2 Agriculture
-- Net/month: +5 energy, +4 minerals, +2 food, 0 alloys, +6 research each (from 6 unemployed)
+**Impact:** N/A (meta-recommendation on build order)
 
-**Growth Timeline (current values):**
-- Tick 0-400 (0-40s): 10 pops, food surplus +2 → base growth speed. First pop at tick 400.
-- Tick 400 (40s): 11 pops. Food surplus drops to +1. Still growing but slower demand headroom.
-- Tick 800 (80s): 12 pops. Food surplus = 0. **Growth halts.** Player must build 3rd Agriculture (cost: 100 minerals) to resume growth. At 4/month mining income, player has earned only 32 minerals from income by this point. Starting 200 minerals must fund this.
-- After 3rd Agriculture: 18 food production, 12 consumed → +6 surplus → **fast growth** (300 ticks/pop = 30s).
-- Tick ~1100 (110s): 13 pops. At +6 surplus, fast growth. But housing cap at 10 blocks this! **Player must have built Housing by now or growth stops at pop 10.**
+The current R20 priority order front-loads cheap wins then builds to colony ships. I agree with the philosophy but want to adjust the sequence:
 
-**Critical insight:** The housing cap of 10 means pop growth stops immediately unless the player builds Housing first. With 10 starting pops and 10 base housing, the VERY FIRST pop requires a Housing district. This creates a hard dependency: before any pop growth benefit, player must spend 100 minerals on Housing. Combined with the 4/month mining income, this means the first ~25 seconds are "build Housing or growth is wasted."
+1. **Game speed controls** — immediate QoL (unchanged)
+2. **Planet type bonuses** — adds variety now, pays off hugely when colony ships land (unchanged)
+3. **Colony ships** — MOVED UP from #5. The bridge feature. Fog of war on an inert galaxy is less valuable than colony ships on a visible galaxy. Players need agency before mystery.
+4. **Colony list sidebar** — MOVED UP, now required immediately (colony ships create multi-colony)
+5. **Fog of war** — now layered on top of expansion gameplay, making exploration meaningful
+6. **In-game chat** — enables social multiplayer alongside expansion
+7. **Surface anomalies** — colony-level discovery
+8. **Edict system** — influence purpose
 
-**This is actually good design** — it forces an early decision point. But it needs to be VISIBLE in the UI. A player who doesn't realize housing = 10/10 will wonder why their colony isn't growing.
-
-**Mineral Economy (still too slow):**
-- Optimal opening with 200 starting minerals: Housing (100) + Agriculture (100) = 0 remaining
-- Now entirely reliant on 4/month Mining income. Next build in 25-37 seconds depending on cost.
-- At 6/month Mining + 300 starting minerals (recommended fix): Housing (100) + Agriculture (100) + Mining (100) = 0 remaining, but now have 2 Mining districts producing 12/month. Next 100-mineral build in ~8.3 months = 83 seconds ≈ 1.4 minutes. Much better.
-
-**Projected Match Arc (with mineral fix applied):**
-| Phase | Time | Pops | Districts | Player Activity |
-|-------|------|------|-----------|-----------------|
-| Opening | 0-30s | 10 | 4→7 | Spend 300 minerals on Housing + Agriculture + Mining |
-| Early Growth | 30s-2m | 10→13 | 7→9 | Pops growing, build Generator + Industrial/Research |
-| Mid Game | 2-5m | 13→18 | 9→13 | Energy budgeting, choose specialization path |
-| Late Game | 5-8m | 18→20 | 13→16 | Colony saturating, optimize last slots, earn personality trait |
-| Post-Saturation | 8m+ | 20 | 16 | Colony maxed. Nothing to do (until second colony/tech exists) |
-
-This is a healthy 8-minute arc. The post-saturation problem (minute 8+) is solved by multi-colony expansion, which requires galaxy generation.
+This order maximizes "fun gained per feature shipped" by ensuring each feature has systems to interact with.
 
 ---
 
-### 5. Content Wishlist
+### 5. Balance Snapshot
 
-#### 5.1 "Colony Pressure Events"
+#### Resource Flow (Single Colony, Optimal Play)
 
-At key pop milestones, fire small event notifications: Pop 15 → "Colony growing rapidly — housing demand increasing." Pop 20 → "Colony at maximum capacity — expansion recommended." First Forge World trait → "Your industrial output attracts galactic attention." These cost almost nothing to implement (conditional checks on existing state) and create narrative beats in the growth arc.
+| Metric | Value | Assessment |
+|--------|-------|------------|
+| Starting minerals | 300 | Funds 3 basic districts immediately — good opening agency |
+| Starting food | 100 | 12.5 months of zero-production buffer — comfortable |
+| Mineral income (1 Mining) | +6/month (10s) | 100-mineral district every ~167 ticks (16.7s) — slightly slow |
+| Food surplus (2 Agri, 8 pops) | +4/month | Growth starts at "slow" tier — intentional early pressure |
+| Energy surplus (1 Gen) | +5/month (6 prod - 1 housing consumption) | Thin margin — one Industrial puts you at +2, two puts you negative. Good tension |
+| First Industrial break-even | Needs ~33 months of alloy production (133 alloys) to recoup 200m cost via VP | Long payback, but correct since alloys should feel like an investment |
+| First Research district | 200m + 20e, ~38 months to T1 completion | Heavy opportunity cost vs. economic districts. Creates genuine fork |
 
-#### 5.2 "Economic Dashboard"
+**Verdict:** Economy pacing is solid for the first 3-5 minutes. The opening build order has real trade-offs. The problem is that after the opener resolves, the player enters coast mode.
 
-A toggleable panel showing production/consumption graphs over time. X-axis = months, Y-axis = resource amounts. Players can see their energy budget tightening, food surplus narrowing, mineral income growing. Gives the economy a visual heartbeat. Spreadsheet players (a huge 4X demographic) will love this.
+#### District Balance
 
-#### 5.3 "Colony Challenges"
+All basic districts (100m) are well-balanced against each other. The advanced districts (200m) are appropriately premium. Key observations:
 
-Per-session micro-objectives: "Reach 20 pops in 5 minutes," "Build a Forge World before month 30," "Maintain food surplus > 5 for 10 consecutive months." Rewards: cosmetic badge, bonus starting resources next match. Adds replayability and goals even in single-colony mode. Idle games like Cookie Clicker use achievement systems to sustain engagement — same principle applied to 4X.
+- **Housing is undervalued**: 5 housing for 100m. With base 10 housing and 8 starting pops, players have room for 2 pops before needing housing. By the time housing pressure hits, they often have other priorities. Housing should feel more urgent. Consider reducing base capital housing from 10 to 8 — this means housing pressure starts earlier and creates more tension.
+- **Agriculture is overbuilt**: Starting with 2 Agri (+12 food) for 8 pops (consume 8) = +4 surplus. Players rarely need a 3rd Agri until pop 18+. Food is too comfortable early. Consider reducing starting Agri to 1 and increasing starting pops to 6 — this creates immediate food pressure.
+- **Industrial's only purpose is VP banking**: At 4 alloys/month, it takes 50 months (8.3 min) to accumulate 200 alloys — the colony ship cost. This is actually well-paced for a 20-minute match IF colony ships exist. Without them, Industrial is just a VP trickle.
 
-#### 5.4 "Rival AI Shadow"
+**Specific number tweak:** Reduce base capital housing from 10 to 8. This creates earlier housing pressure (pop 8 hits cap immediately), forces an earlier Housing district build, and makes the opening build order less formulaic. Trade-off: Generator → Mining → Agriculture → Housing becomes a genuine 4-way decision instead of the current solved opener.
 
-Even before full AI opponents, show a "ghost rival" — a simulated economy running optimal play, shown as a line on the scoreboard. "You're ahead of the AI by 3 pops." Gives solo players something to beat. Cheap to implement: just run the growth math forward with a fixed build order and compare.
+#### Tech Pacing
 
-#### 5.5 "Environmental Hazards"
+| Scenario | T1 Completion | T2 Completion |
+|----------|--------------|--------------|
+| 1 Research district (4/month per type) | ~38 months (6.3 min) | ~125 months (20.8 min) |
+| 2 Research districts (8/month per type) | ~19 months (3.2 min) | ~63 months (10.4 min) |
+| 3 Research districts (12/month per type) | ~13 months (2.1 min) | ~42 months (7.0 min) |
 
-Each planet type has a unique periodic hazard: Arctic → "Ice Storm" (-50% energy for 2 months), Desert → "Sandstorm" (-50% mining for 2 months), Ocean → "Tsunami" (lose 1 random district), Tropical → "Plague" (lose 2 pops). Frequency: ~once per 20 months. Creates planet-specific risk/reward profiles and makes planet choice more interesting.
+**Verdict:** T1 is achievable in every game with even 1 Research district. T2 requires dedicated research investment (2+ districts). This creates a genuine strategic fork: invest in research for late-game multipliers, or invest in economy/expansion for immediate VP. The pacing is good.
 
----
+**Note:** The proposed T2 cost increase to 750 (R18 task) would make T2 unreachable without 3 Research districts in a 20-minute match. This seems too harsh. Keep T2 at 500.
 
-### 6. Priority Sequence (Updated)
+#### Game Length
 
-1. **Early mineral pacing** (Rec 3.2) — 15 min. Removes the mineral wall that now compounds with pop growth.
-2. **Build discount fix** — 15 min. Dead code cleanup.
-3. **Single-player mode** (Rec 3.3) — 15 min. Enables solo testing.
-4. **Stale client cleanup** (Rec 3.1 Step A) — 1 hour. Strip RTS cruft.
-5. **HTML colony UI** (Rec 3.1 Step B) — 2-3 hours. Make the game playable.
-6. **Planet type bonuses** (Rec 3.4) — 1 hour. Strategic variety.
-7. **Starting planet variety** (Rec 3.6) — 30 min. Replayability (requires #6).
-8. **Colony personality traits** (Rec 3.5) — 1 hour. End-game goal.
-9. **Construction queue QoL** (Rec 3.7) — 30 min. Player comfort.
+20-minute matches with current systems:
+- ~12 months of active decision-making (opening build rush)
+- ~108 months of passive optimization (watch numbers grow)
+- Typical end state: 12-14 districts, 15-20 pops, 2-3 techs, 60-100 VP
 
-Items 1-5 are the critical path to a playable, testable game.
-
----
-
-### 7. Design Roadmap Updates
-
-Added to `devguide/design.md`:
-- Phase 1: Single-player/practice mode (canLaunch bypass for solo rooms)
-- Phase 1: Starting planet variety (random type/size assignment)
-- Phase 2: Construction queue QoL (cost preview, cancel refund, time estimates)
-
-See `devguide/design.md` for full task descriptions.
+The dead time problem is severe. Colony ships would create a second wave of decisions around minute 5-8 (when you've accumulated enough alloys). Game speed controls would let players fast-forward through the dead periods.
 
 ---
 
-## Review #6 — 2026-03-11
+### 6. Content Wishlist — "Wouldn't It Be Cool If..."
 
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 7/70 tasks complete (10%). Colony 4X engine with balanced economy, pop growth, 84 tests. Client still renders dead RTS.
-**Focus:** First client UX pass — make the game visible and playable.
+1. **Galactic Tides:** Instead of a static galaxy, systems slowly shift position over the match (1% drift per minute along random vectors). Hyperlanes stretch and eventually break if systems drift too far apart, and new connections form when systems drift close. This creates a living topology — trade routes shift, borders reorganize, chokepoints appear and disappear. Players must adapt their expansion strategy to a changing map. No game does this. It would be technically simple (adjust positions each month tick) and visually stunning (watching the galaxy breathe).
 
----
+2. **Colony Ship Piracy:** When a colony ship is in transit along a hyperlane, other players within 1 hop can see it as a blip on their galaxy map. If a player sends a fleet to the same hyperlane, they can intercept and capture the colony ship (converting it to their own). This creates high-stakes moments around expansion — do you send an escort? Do you take the longer but safer route? It makes the galaxy feel dangerous without a full combat system. Inspired by submarine warfare in WW2 strategy games.
 
-### 1. Pillar Scores
+3. **The Great Filter Event:** At a random point in the mid-game (month 40-60), one random planet type becomes uninhabitable galaxy-wide. All colonies on that type get a 10-month evacuation warning — they can relocate pops at 1 pop/month to other colonies via resource spend, or lose them. This creates a mid-game crisis that forces reactive play and punishes mono-planet-type strategies. Inspired by Stellaris crisis events but more intimate and less military.
 
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3.5/10 | Unchanged — solid district trade-offs exist server-side but are invisible to players |
-| Pacing & Tension | 3/10 | Growth loop creates a real 8-minute arc, but no player has ever experienced it |
-| Economy & Production | 6/10 | Best pillar. Energy budget, food pressure, housing cap all working. Completely hidden. |
-| Exploration & Discovery | 1/10 | Absent |
-| Multiplayer Fairness | 3/10 | Symmetric starts, solid lobby. Zero in-game interaction visible |
+4. **Resonance Districts:** A special 7th district type that copies the output of its most common neighbor type. Place it next to 2 Mining districts and it mines. Place it next to 2 Research districts and it researches. It's expensive (300 minerals, 50 energy) and takes longer to build (600 ticks), but it rewards district clustering and spatial planning. Combined with adjacency bonuses, this creates a genuine colony layout puzzle.
 
-**Overall: 3.3/10** — The server-side game is genuinely interesting. The score won't move until a player can see and interact with it.
+5. **Galactic Leaderboard Moments:** At month 30, 60, and 90, the game announces the current leader in each category: "Most Populous Empire: Player A (23 pops)", "Richest Empire: Player B (450 minerals)", "Most Advanced: Player C (3 techs)". Leaders get a small VP bonus (+5) for each title held at announcement. This creates mid-game competitive moments and gives players something to race toward besides the final score.
 
 ---
 
-### 2. The Diagnosis
+### 7. Summary
 
-The game has a **complete architectural mismatch**: the server sends colony 4X data (`colonies`, `districts`, `pops`, `resources.energy/minerals/food/alloys`), but the client expects RTS data (`units`, `buildings`, `gold/wood/stone`). The client renders Canvas 2D diamonds on a 50x50 grid. The HUD references properties that don't exist in gameState. Every game system built over the last 7 entries is invisible.
+**Overall Score: 4.2/10** — unchanged. The build discount fix was correctness, not gameplay.
 
-This isn't a polish issue — it's a **broken product**. A player who connects, creates a room, and launches sees medieval RTS placeholder graphics and a HUD showing "Gold: NaN". Meanwhile, a well-tuned colony economy ticks silently on the server.
+**Top 3 recommendations:**
+1. Game speed controls — unlock comfortable play and playtesting
+2. Colony ships (moved up from #5) — the watershed that bridges colony and galaxy
+3. Planet type bonuses — strategic variety with minimal effort
 
-**The single highest-impact change to this project is making the existing server game visible to the player.** Nothing else matters until this happens.
+**Most urgent balance fix:** Reduce base capital housing from 10 to 8 to create earlier housing pressure and diversify the opening build order.
 
----
+**Big idea:** Galactic Tides — a slowly drifting galaxy where hyperlane topology evolves during the match, creating a living strategic landscape no other 4X game has.
 
-### 3. Recommended Implementation Order
-
-The client UX sprint should be the next 3 tasks picked by `/develop`, in this exact order:
-
-#### 3.1 Single-Player/Practice Mode
-
-**Impact:** Critical (unblocks all testing)
-**Effort:** Very Low (10-15 minutes)
-**Category:** UX / Development
-
-**Why first:** Currently requires 2 browser tabs, 2 names, join, ready, launch just to see the game. Every iteration of client development requires this dance. Removing it saves minutes per test cycle across dozens of iterations.
-
-**The fix:** Already spec'd in design.md. Modify `canLaunch` in room-manager.js to allow solo launch when `room.maxPlayers === 1` or `room.practiceMode === true`.
-
-#### 3.2 Stale Client Cleanup
-
-**Impact:** Critical (prerequisite for any new UI)
-**Effort:** Medium (1-2 hours)
-**Category:** Foundation
-
-**What to strip from app.js:**
-- Canvas 2D isometric renderer (drawTile, drawUnit, drawBuilding, drawMinimap, drawGrid, drawSelectionBox — all game render functions)
-- Unit selection system (click select, box select, selection state)
-- Right-click movement command sending
-- RTS camera (isometric projection math for unit positioning)
-- Minimap rendering and click-to-pan
-- Gold/Wood/Stone/Supply HUD update code
-- Any references to Projection module
-
-**What to keep:**
-- WebSocket connection setup and message dispatch
-- Screen management (name → lobby → room → game transitions)
-- Chat message handling
-- Room UI (player list, ready, launch)
-- The `handleMessage` switch/dispatch structure (just gut the game-specific cases and rewire)
-
-**What to rewire:**
-- `gameInit` handler: parse `{ colonies, players, yourPlayerId, tick }` instead of `{ units, buildings, players, mapWidth }`
-- `gameState` handler: receive `{ tick, players, colonies }` and update stored state
-- Store `myColonies`, `myResources`, `currentTick` as module-level state for the UI to read
-
-**What to update in index.html:**
-- Remove `<canvas id="game-canvas">` (or repurpose later for Three.js)
-- Remove minimap canvas
-- Remove the gold/wood/stone resource bar HTML
-- Remove selection panel HTML
-- Add a `<div id="colony-ui">` container for the new HTML UI
-- Remove `projection.js` script tag if present
-
-#### 3.3 HTML Colony UI Overlay
-
-**Impact:** Critical (transforms project from "invisible server" to "playable game")
-**Effort:** Medium-High (2-3 hours)
-**Category:** Core UX
-
-This is the big one. Build a pure HTML/CSS interface that reads gameState and lets the player manage their colony. No Three.js needed — function over form.
-
-**Layout:**
-
-```
-┌─────────────────────────────────────────────────────┐
-│ ⚡ 105 (+5/mo) │ ⛏ 306 (+6/mo) │ 🌾 102 (+2/mo)  │  RESOURCE BAR
-│ ⚙ 50 (0/mo)   │ 🔬 P:6 S:6 E:6 │ 👑 100 (+2/mo) │  (top, always visible)
-├─────────────────────────────────────────────────────┤
-│ Month 3 │ Speed: ▶▶▶ │ Pops: 10/10 ⚠ Growing (slow) │  STATUS BAR
-├──────────────────────┬──────────────────────────────┤
-│                      │ Colony: New Earth            │
-│   DISTRICT GRID      │ Continental (Size 16)       │
-│                      │                              │
-│  [Gen] [Min] [Agr]  │ Districts: 4/16              │
-│  [Agr] [ + ] [ + ]  │ Pops: 10 (4 working, 6 idle)│  COLONY PANEL
-│  [ + ] [ + ] [ + ]  │ Housing: 10/10 ⚠             │
-│  [ + ] [ + ] [ + ]  │                              │
-│  [ + ] [ + ] [ + ]  │ Build Queue:                 │
-│  [ + ] [ + ] [ + ]  │ (empty)                      │
-│                      │                              │
-├──────────────────────┴──────────────────────────────┤
-│ BUILD MENU (appears on [ + ] click):                │
-│ [Housing 100⛏] [Generator 100⛏] [Mining 100⛏]     │
-│ [Agriculture 100⛏] [Industrial 200⛏] [Research 200⛏+20⚡] │
-└─────────────────────────────────────────────────────┘
-```
-
-**Resource Bar:** 6 resources horizontal. Each: icon + stockpile + net/month (green if +, red if −). Colors: energy=#f1c40f, minerals=#95a5a6, food=#2ecc71, alloys=#e67e22, research=#3498db, influence=#9b59b6.
-
-**Status Bar:** Month counter (`tick/100`), pop count with housing warning if at cap, growth indicator ("Growing slow/fast/rapid" or "Starving!" or "Housing full"), growth progress bar.
-
-**District Grid:** CSS grid (4 columns). Built = colored tile with type abbrev (GEN, MIN, AGR, IND, RES, HOU). Empty = dark outline + "+" icon. Under construction = color + progress bar overlay. Click built → tooltip + demolish. Click empty → build menu.
-
-**Build Menu:** Horizontal buttons per district type. Show cost. Gray out if unaffordable or queue full (3 max). Click → send `buildDistrict`. Hover → production preview.
-
-**Colony Info Panel (right):** Colony name, planet type/size, district count, pop breakdown (working/idle), housing used/cap, build queue with progress bars (ticks as seconds), production/consumption breakdown per resource.
-
-**Interaction Wiring:**
-- Build click → `ws.send({ type: 'buildDistrict', colonyId, districtType })`
-- Demolish click → `ws.send({ type: 'demolish', colonyId, districtId })`
-- All state from `gameState` messages — never compute locally
-- Refresh UI on every `gameState` (throttle to every 5th tick / 2Hz if needed)
-
-**CSS Theme:** Dark space: bg #0a0a1a, panels #1a1a2e, borders #2a2a4e. Monospace for numbers. Sans-serif for labels. No animations beyond progress bars.
+**New work items added to design.md:** 2 (housing balance tweak, revised priority order R21)
 
 ---
 
-### 4. What NOT to Build Yet
-
-- **In-game chat** — Works in lobby. Not needed for solo testing.
-- **Scoreboard/Tab** — Multiplayer feature. Solo doesn't need it.
-- **Event ticker** — No events yet.
-- **Planet bonuses, speed controls** — Server features. Do after 3D view + UI exist.
-
-The goal: launch game → see your colony in 3D isometric → click to build districts → watch buildings appear → see pops grow → feel the economy. The 3D view and the HTML overlay are built together — the scene IS the game, the overlay is the controls.
-
----
-
-### 5. Balance Note
-
-No changes recommended. Post-entries 4-7 numbers are well-tuned on paper. First real playtest through the UI will reveal whether pacing *feels* right. Reserve adjustments for after the UI exists.
-
----
-
-### 6. Design Roadmap Updates
-
-Reordered Phase 1 in `devguide/design.md` to put the client UX sprint at the top of unchecked tasks. Three tasks (practice mode → stale cleanup → HTML UI) become the next 3 items `/develop` picks up, in that exact order. Moved above Three.js tasks to enforce priority.
-
----
-
-## Review #2 — 2026-03-11
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 8/68 tasks complete (12%). Server-side colony 4X engine functional; client still renders old RTS.
-
----
-
-### 1. Pillar Scores
-
-| Pillar | Score | Notes |
-|--------|-------|-------|
-| Strategic Depth | 3/10 | Server has 6 district types with real trade-offs (energy vs alloys vs research), but only one colony per player, no tech tree, no fleet composition, no win paths. The district choice is the *only* decision point. |
-| Pacing & Tension | 2/10 | Pop growth creates a slow ramp. Monthly resource ticks give a sense of progression. But no mid/late game arc, no crises, no opponent pressure, no escalation. The game just... continues. |
-| Economy & Production | 5/10 | Strongest pillar. 6 resources with distinct roles. Districts have meaningful costs and energy trade-offs (Industrial costs 3 energy/month, Research costs 4). Pop-job assignment creates workforce pressure. Food surplus drives growth speed. Mineral pacing is tuned. Solid foundation — needs more spending sinks. |
-| Exploration & Discovery | 0/10 | Nothing exists. No galaxy, no systems, no surveying, no anomalies. Single colony on a fixed Continental size-16 planet. |
-| Multiplayer Fairness | 3/10 | Symmetric starts (same planet, same resources). Lobby/room system works. But requires 2 players to launch, no solo mode, and no game to compete *in*. |
-
-**Overall: 2.6/10** — Up from 1.6. The economy engine is real and well-balanced. Everything else is missing or invisible to players.
-
----
-
-### 2. Top 5 Things a Playtester Would Notice
-
-1. **"The screen is broken."** After launching a game, the client renders an old RTS view with a grid, no units, no buildings, gold/wood/stone HUD showing `undefined`. The colony engine is running on the server but the client can't display it. This is the #1 blocker — the game is literally unplayable.
-
-2. **"I can't play alone."** Requires 2 players to launch. For a game this early, solo iteration is essential. Every playtest requires coordinating two browser tabs/windows.
-
-3. **"I built some districts... now what?"** Even if the client worked, there's only one colony on one planet. No expansion, no exploration, no opponents doing anything. The 4X loop is "exploit" only — and a narrow slice of it.
-
-4. **"All colonies are the same."** Every game starts on Continental size 16. No planet variety, no type bonuses, no specialization incentives beyond district mix. Two players' colonies are mechanically identical.
-
-5. **"There's no way to win or lose."** No win conditions, no score tracking, no time pressure. The game has no end state. Players will ask "what's the point?" within 2 minutes.
-
----
-
-### 3. What's Working Well (Design Wins)
-
-- **Energy as a constraint resource.** Industrial (3 energy) and Research (4 energy) districts require Generator support. This creates a real decision: do I build generators now to unlock alloys later, or rush agriculture for faster pop growth? Good Stellaris-style tension.
-
-- **Pop growth tied to food surplus with tiers.** Three growth speeds (base/fast/fastest) at surplus thresholds of 0/5/10 create meaningful breakpoints. Players can invest in agriculture early for compound growth or defer for immediate economic power. Classic 4X early-game dilemma.
-
-- **Housing as a hard cap on growth.** Base housing of 10 means the first Housing district (+5) is a critical early decision. Housing doesn't produce anything — pure growth investment. Good opportunity cost.
-
-- **Unemployed pops produce research.** Elegant fallback that prevents "dead" pops and gives early-game research without dedicated districts. Mirrors Stellaris's researcher jobs.
-
-- **Build queue limit of 3.** Forces prioritization. Every slot is a commitment.
-
----
-
-### 4. Economy & Balance Analysis
-
-#### Resource Flow (Starting State)
-
-| Resource | Starting | Production/month | Consumption/month | Net | Notes |
-|----------|----------|-------------------|--------------------|----|-------|
-| Energy | 100 | 6 (1 Generator) | 0 | +6 | Comfortable. Will need more when building Industrial/Research. |
-| Minerals | 300 | 6 (1 Mining) | 0 | +6 | 3 immediate builds at 100 each. Good opening agency. |
-| Food | 100 | 12 (2 Agriculture) | 10 (10 pops) | +2 | Tight but positive. Growth starts immediately. |
-| Alloys | 50 | 0 | 0 | 0 | No production until Industrial district. Dead resource early. |
-| Research | 0 | 6 each (6 unemployed pops) | 0 | +6 each | Free research from unemployed. Drops as pops get jobs. |
-| Influence | 100 | 0 | 0 | 0 | No production, no spending. Completely inert. |
-
-**Key observations:**
-- **Alloys are gated behind a 2-step chain:** Need minerals (200) + energy capacity (3/month ongoing) to build Industrial. Earliest alloy production is ~month 2-3. Fine for pacing — alloys should feel earned.
-- **Influence is a dead resource.** No way to produce or spend it. Needs a purpose before it's worth displaying.
-- **Research has an interesting inversion:** Starts high (6/type from unemployed) and *decreases* as you employ pops in districts, until dedicated Research districts are built. Non-obvious trade-off — building economy actually reduces research temporarily. Clever, but players won't understand without UI feedback.
-
-#### District Economics
-
-| District | Cost | Monthly Output | Monthly Energy Cost | ROI (months) |
-|----------|------|---------------|--------------------|----|
-| Housing | 100 | +5 housing | 1 | N/A (enabling) |
-| Generator | 150 | +6 energy | 0 | 25 months |
-| Mining | 100 | +6 minerals | 0 | 16.7 months |
-| Agriculture | 100 | +6 food | 0 | N/A (enabling) |
-| Industrial | 200 | +3 alloys | 3 | Depends on alloy value |
-| Research | 200+20e | +3 each type | 4 | Depends on tech value |
-
-**Balance issues:**
-- **Generator costs 150 vs Mining/Agriculture/Housing at 100.** Generators are enabling infrastructure, not a luxury. The 50% premium feels punishing. Should be 100 to match.
-- **Build time is uniformly 300 ticks for everything.** Removes pacing variety. Consider tiered times: Housing 200, basic 300, advanced 400.
-
-#### Pop Growth Timing
-
-Starting surplus is +2, so base growth rate applies. **But players start at 10 pops with 10 housing — growth is immediately blocked.** The pop growth system is disabled from tick 1 unless the player builds Housing first. This is a design bug.
-
-#### Game Length Estimate
-
-16-slot planet fills in ~8-10 minutes of active building. No second colony possible. No win condition. **Effective session: 5-10 minutes before running out of things to do.** Target is 20-40 minutes.
-
----
-
-### 5. Recommendations
-
-#### 5.1 — Fix Starting Pop/Housing Deadlock
-
-**Impact:** High | **Effort:** Low | **Category:** Balance
-
-**The problem:** Players start with 10 pops and 10 housing. Pop growth is immediately blocked. The growth system is silently disabled from game start.
-**The fix:** Reduce starting pops to 8 (keeping base housing at 10). Gives 2 growth cycles before housing constrains, teaching players that pops grow and housing matters.
-**Why it matters:** First 60 seconds set the tone. A colony that starts stagnant feels dead.
-**Design details:**
-- 8 pops × 1 food = 8 consumed. 12 produced. Surplus = +4 → base growth (400 ticks).
-- Pop 9 at ~40 sec, pop 10 at ~80 sec. Then housing-blocked — clear signal to build Housing.
-- 4 districts staffed, 4 pops unemployed producing research. Slightly more starting research.
-
-#### 5.2 — Generator Cost Parity
-
-**Impact:** Medium | **Effort:** Low | **Category:** Balance
-
-**The problem:** Generator at 150 minerals vs 100 for other basics. Punishing for enabling infrastructure.
-**The fix:** Generator cost 150 → 100 minerals.
-**Why it matters:** Uniform basic costs (100 each) let players focus on *what* to build, not *can I afford* it. Real cost is already in opportunity (slot used for energy, not minerals/food).
-
-#### 5.3 — Variable Build Times by District Tier
-
-**Impact:** Medium | **Effort:** Low | **Category:** Pacing
-
-**The problem:** All districts take 300 ticks. Housing takes as long as a Research lab.
-**The fix:** Housing: 200 ticks (20s). Basic districts: 300 ticks (30s). Industrial/Research: 400 ticks (40s).
-**Why it matters:** Quick Housing lets players unblock growth fast. Slower advanced districts create anticipation.
-
-#### 5.4 — Colony Idle Notifications (Server Events)
-
-**Impact:** High | **Effort:** Low | **Category:** UX
-
-**The problem:** Construction completes, pops grow, queues empty — nothing notifies the player. "Idle colony" is the #1 efficiency killer in 4X.
-**The fix:** Server broadcasts `gameEvent` messages: `constructionComplete`, `queueEmpty`, `popMilestone` (every 5 pops), `housingFull`, `foodDeficit`.
-**Why it matters:** Events are the heartbeat of 4X. They create "turn to" moments that keep players engaged. Rate-limit pop events to every 5 pops to avoid spam.
-
-#### 5.5 — Energy Deficit Consequences
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Core Mechanic
-
-**The problem:** Energy deficit has no consequence. Districts run free even at negative energy. Generators become pointless.
-**The fix:** When energy is negative at month end, disable highest-consuming districts until balance recovers. Disabled districts produce nothing, pop becomes unemployed. Re-enable automatically when energy supports them.
-**Why it matters:** Without consequences, the Generator/Industrial/Research triangle collapses. Energy deficit must hurt. Stellaris does exactly this.
-
-#### 5.6 — Early Opponent Awareness
-
-**Impact:** Medium | **Effort:** Low | **Category:** Multiplayer
-
-**The problem:** Zero opponent visibility. No competitive tension even in multiplayer.
-**The fix:** Every 500 ticks, broadcast `galaxyNews` with comparative stats: pop rankings, district counts, milestones. Frame as "Galactic Census Bureau" reports.
-**Why it matters:** Knowing your opponent has 15 pops while you have 12 creates urgency. Cheap to implement, immediate multiplayer tension.
-
-#### 5.7 — Planet Type Bonuses
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Replayability
-
-**The problem:** Every game is Continental size 16. No variety.
-**The fix:** Already designed — implement the type bonuses and randomize starting planet. All players get same random type for fairness.
-**Why it matters:** Different starts create different opening strategies. Arctic → tech rush. Desert → industrial expansion. Low-effort replayability.
-
-#### 5.8 — Edict System (Influence Spending)
-
-**Impact:** Medium | **Effort:** Medium | **Category:** Strategic Depth
-
-**The problem:** Influence is a dead resource with no purpose until Phase 3/6.
-**The fix:** 3-4 colony edicts: "Mineral Rush" (50 influence, +50% mining for 5 months), "Population Drive" (75 influence, +100% growth for 5 months), "Research Grant" (50 influence, +50% research for 5 months), "Emergency Reserves" (25 influence, +100 of each resource immediately). Max 1 active edict.
-**Why it matters:** Influence becomes a strategic timer — limited "power moves" that must be spent wisely. Stellaris edicts are one of its most elegant systems.
-
----
-
-### 6. Content Wishlist
-
-1. **Colony Governors with Personalities.** Auto-assigned AI governor per colony with a trait (Industrialist: +10% alloys/-10% research, Ecologist: +10% food/housing/-10% mining). Reassignable. Creates attachment to colonies as characters. Lighter version of Endless Space 2's hero system.
-
-2. **Galactic Stock Market.** Shared resource exchange where supply/demand from all players sets prices. Mining-heavy meta → mineral prices crash. Creates emergent economic gameplay. Inspired by Anno 1800 and EVE Online.
-
-3. **Colony Crises with Player Choice.** Colony-specific events: "Worker Uprising on your Forge World — grant demands, suppress, or negotiate?" Creates memorable stories per playthrough.
-
-4. **Asymmetric Player Factions.** 4-6 factions: "Solar Collective" (+33% energy, -25% mining), "Deep Miners" (+50% mining, can build on Barren), "Hive Mind" (0.5 food/pop, can't trade). Dramatically increases replayability.
-
-5. **Orbital Stations as Colony Extensions.** When surface slots are full, build orbital platforms for Industrial/Research/Military slots. "Vertical growth" alongside horizontal expansion. Visually dramatic above the colony grid.
-
----
-
-### 7. Priority Matrix
-
-| # | Recommendation | Impact | Effort | Priority |
-|---|---------------|--------|--------|----------|
-| 5.1 | Starting pop/housing fix | High | Low | **Do first** |
-| 5.2 | Generator cost parity | Medium | Low | **Do first** |
-| 5.3 | Variable build times | Medium | Low | **Do first** |
-| 5.4 | Colony idle notifications | High | Low | **Do second** |
-| 5.5 | Energy deficit consequences | Medium | Medium | **Do second** |
-| 5.6 | Early opponent awareness | Medium | Low | **Do third** |
-| 5.7 | Planet type bonuses | Medium | Medium | **Do third** |
-| 5.8 | Edict system | Medium | Medium | **Phase 2+** |
-
-**Critical path:** Fix starting deadlock (5.1) → get client working (existing sprints) → add notifications (5.4) → energy consequences (5.5).
-
----
-
-### 8. Roadmap Updates
-
-Added 6 new tasks to `devguide/design.md`:
-- Phase 1: Starting pops 10→8 balance fix, Generator cost 150→100, variable build times
-- Phase 1: Colony idle event notifications, energy deficit district disable
-- Phase 2: Edict system (influence spending)

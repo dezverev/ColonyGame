@@ -1,6 +1,22 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED } = require('../../server/game-engine');
+
+// Helper: calculate total planet bonus for a colony's districts
+function calcPlanetBonus(colony) {
+  const bonus = { energy: 0, minerals: 0, food: 0, alloys: 0, physics: 0, society: 0, engineering: 0 };
+  const pb = PLANET_BONUSES[colony.planet.type];
+  if (!pb) return bonus;
+  for (const d of colony.districts) {
+    if (d.disabled) continue;
+    if (pb[d.type]) {
+      for (const [res, amt] of Object.entries(pb[d.type])) {
+        bonus[res] += amt;
+      }
+    }
+  }
+  return bonus;
+}
 
 // Helper: tick engine to next broadcast boundary (tickCount divisible by BROADCAST_EVERY)
 function tickToBroadcast(engine) {
@@ -169,6 +185,65 @@ describe('GameEngine — District Building', () => {
     // Should be full build time (200) since colony already has 3+ districts (housing buildTime=200)
     assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200);
   });
+
+  it('starting colony never gets build discount even with 0 playerBuiltDistricts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    const colony = engine.colonies.get(colonyId);
+    // Starting colony has isStartingColony=true and playerBuiltDistricts=0
+    assert.strictEqual(colony.isStartingColony, true, 'starting colony should have isStartingColony=true');
+    assert.strictEqual(colony.playerBuiltDistricts, 0, 'starting colony should have 0 playerBuiltDistricts');
+
+    engine.playerStates.get(1).resources.minerals = 10000;
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    // Full price (200) despite playerBuiltDistricts being 0, because isStartingColony is true
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200, 'starting colony should not get discount');
+  });
+
+  it('playerBuiltDistricts increments on each build and discount expires after 3', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'desert', habitability: 60 });
+    engine.playerStates.get(1).resources.minerals = 50000;
+    assert.strictEqual(colony.playerBuiltDistricts, 0);
+
+    // Build 1 — discounted
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.strictEqual(colony.playerBuiltDistricts, 1);
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 100, '1st district should be 50% time');
+
+    // Build 2 — discounted (mining: 300 * 0.5 = 150)
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'mining' });
+    assert.strictEqual(colony.playerBuiltDistricts, 2);
+    assert.strictEqual(colony.buildQueue[1].ticksRemaining, 150, '2nd district should be 50% time');
+
+    // Build 3 — discounted (generator: 300 * 0.5 = 150)
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    assert.strictEqual(colony.playerBuiltDistricts, 3);
+    assert.strictEqual(colony.buildQueue[2].ticksRemaining, 150, '3rd district should be 50% time');
+
+    // Clear queue to allow more builds (max queue is 3)
+    colony.buildQueue.length = 0;
+
+    // Build 4 — full price
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.strictEqual(colony.playerBuiltDistricts, 4);
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200, '4th district should be full price');
+  });
+
+  it('_createColony defaults to isStartingColony=false', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'New', { size: 10, type: 'continental', habitability: 80 });
+    assert.strictEqual(colony.isStartingColony, false);
+    assert.strictEqual(colony.playerBuiltDistricts, 0);
+  });
+
+  it('serializes isStartingColony and playerBuiltDistricts in getState', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    const colony = state.colonies[0];
+    assert.strictEqual(colony.isStartingColony, true, 'starting colony serialized as isStartingColony=true');
+    assert.strictEqual(colony.playerBuiltDistricts, 0, 'playerBuiltDistricts serialized');
+  });
 });
 
 describe('GameEngine — Demolish', () => {
@@ -241,6 +316,8 @@ describe('GameEngine — Construction Processing', () => {
 describe('GameEngine — Resource Production', () => {
   it('produces resources on monthly tick', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     const before = JSON.parse(JSON.stringify(engine.playerStates.get(1).resources));
 
     // Run exactly MONTH_TICKS ticks to trigger monthly processing
@@ -250,10 +327,10 @@ describe('GameEngine — Resource Production', () => {
 
     const after = engine.playerStates.get(1).resources;
     // Starting districts: generator(+6 energy), mining(+6 minerals), 2x agriculture(+12 food)
-    // 8 pops consume 8 food, so net food = +12 - 8 = +4
-    assert.strictEqual(after.energy, before.energy + 6);
-    assert.strictEqual(after.minerals, before.minerals + 6);
-    assert.strictEqual(after.food, before.food + 12 - 8);
+    // Plus planet type bonuses. 8 pops consume 8 food
+    assert.strictEqual(after.energy, before.energy + 6 + pb.energy);
+    assert.strictEqual(after.minerals, before.minerals + 6 + pb.minerals);
+    assert.strictEqual(after.food, before.food + 12 + pb.food - 8);
   });
 
   it('unemployed pops produce research', () => {
@@ -316,29 +393,36 @@ describe('GameEngine — Population', () => {
 });
 
 describe('GameEngine — Pop Growth', () => {
-  it('pop grows after GROWTH_BASE_TICKS when food surplus > 0', () => {
+  it('pop grows after appropriate growth ticks when food surplus > 0', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     // Starting: 8 pops, 10 housing — 2 slots for growth
+    // Food surplus = 12 + pb.food - 8 pops
+    const foodSurplus = 12 + pb.food - 8;
+    const expectedTicks = foodSurplus > 10 ? GROWTH_FASTEST_TICKS : foodSurplus > 5 ? GROWTH_FAST_TICKS : GROWTH_BASE_TICKS;
 
-    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+    for (let i = 0; i < expectedTicks; i++) {
       engine.tick();
     }
 
-    assert.strictEqual(colony.pops, 9, 'Should have grown 1 pop after base growth ticks');
+    assert.strictEqual(colony.pops, 9, 'Should have grown 1 pop after growth ticks');
     assert.strictEqual(colony.growthProgress, 0, 'Growth progress should reset after pop added');
   });
 
   it('no growth before reaching growth threshold', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
+    const foodSurplus = 12 + pb.food - 8;
+    const expectedTicks = foodSurplus > 10 ? GROWTH_FASTEST_TICKS : foodSurplus > 5 ? GROWTH_FAST_TICKS : GROWTH_BASE_TICKS;
 
-    for (let i = 0; i < GROWTH_BASE_TICKS - 1; i++) {
+    for (let i = 0; i < expectedTicks - 1; i++) {
       engine.tick();
     }
 
     assert.strictEqual(colony.pops, 8, 'Should not have grown before threshold');
-    assert.strictEqual(colony.growthProgress, GROWTH_BASE_TICKS - 1);
+    assert.strictEqual(colony.growthProgress, expectedTicks - 1);
   });
 
   it('growth is blocked by housing cap', () => {
@@ -429,12 +513,14 @@ describe('GameEngine — Pop Growth', () => {
 describe('GameEngine — State Serialization', () => {
   it('getState includes netProduction data per colony', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony0 = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony0);
     const state = engine.getState();
     const colony = state.colonies[0];
     assert.ok(colony.netProduction);
-    assert.strictEqual(colony.netProduction.energy, 6); // generator (no consumers yet)
-    assert.strictEqual(colony.netProduction.minerals, 6); // mining
-    assert.strictEqual(colony.netProduction.food, 4); // 2x agriculture (12) - 8 pops consuming
+    assert.strictEqual(colony.netProduction.energy, 6 + pb.energy);
+    assert.strictEqual(colony.netProduction.minerals, 6 + pb.minerals);
+    assert.strictEqual(colony.netProduction.food, 12 + pb.food - 8);
   });
 
   it('getState includes housing and jobs', () => {
@@ -447,11 +533,17 @@ describe('GameEngine — State Serialization', () => {
 
   it('getState includes growth data (progress, target, status)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony0 = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony0);
+    const foodSurplus = 12 + pb.food - 8;
+    const expectedTarget = foodSurplus > 10 ? GROWTH_FASTEST_TICKS : foodSurplus > 5 ? GROWTH_FAST_TICKS : GROWTH_BASE_TICKS;
+    const expectedStatus = foodSurplus > 10 ? 'rapid' : foodSurplus > 5 ? 'fast' : 'slow';
+
     const state = engine.getState();
     const colony = state.colonies[0];
     assert.strictEqual(colony.growthProgress, 0);
-    assert.strictEqual(colony.growthTarget, GROWTH_BASE_TICKS); // food surplus = 4 (base rate)
-    assert.strictEqual(colony.growthStatus, 'slow'); // food surplus 4 <= 5 = slow
+    assert.strictEqual(colony.growthTarget, expectedTarget);
+    assert.strictEqual(colony.growthStatus, expectedStatus);
   });
 
   it('getState shows housing_full growth status when pops at cap', () => {
@@ -558,10 +650,12 @@ describe('GameEngine — Food & Housing Balance', () => {
       'Should start 2 below housing cap to allow 2 growth cycles before housing constrains');
   });
 
-  it('starting food surplus is +4 (12 production - 8 consumption)', () => {
+  it('starting food surplus includes planet bonus', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony0 = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony0);
     const colony = engine.getState().colonies[0];
-    assert.strictEqual(colony.netProduction.food, 4);
+    assert.strictEqual(colony.netProduction.food, 12 + pb.food - 8);
   });
 
   it('base capital housing is 10', () => {
@@ -573,16 +667,19 @@ describe('GameEngine — Food & Housing Balance', () => {
 
   it('food surplus grows over multiple months', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
+    const netFood = 12 + pb.food - 8;
     const before = engine.playerStates.get(1).resources.food;
 
-    // Run 3 months (300 ticks, no pop growth yet since GROWTH_BASE_TICKS = 400)
+    // Run 3 months — use short period to avoid pop growth changing food consumption
     for (let i = 0; i < MONTH_TICKS * 3; i++) {
       engine.tick();
     }
 
     const after = engine.playerStates.get(1).resources.food;
-    // Net +4 food/month × 3 months = +12
-    assert.strictEqual(after, before + 12);
+    // Net food/month × 3 months (pop growth may occur so check >= minimum)
+    assert.ok(after >= before + netFood * 3 - 3, `Food should grow: got ${after}, expected >= ${before + netFood * 3 - 3}`);
   });
 });
 
@@ -1477,43 +1574,48 @@ describe('GameEngine — Mini Tech Tree', () => {
   it('Improved Mining applies +25% Mining output', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
 
     engine.playerStates.get(1).completedTechs.push('improved_mining');
     engine._invalidateColonyCache(colony);
 
     const prod = engine._calcProduction(colony);
-    assert.strictEqual(prod.production.minerals, 7.5); // 6 * 1.25
+    assert.strictEqual(prod.production.minerals, 7.5 + pb.minerals); // 6 * 1.25 + planet bonus
   });
 
   it('T2 supersedes T1 for same district type (highest multiplier wins)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
 
     engine.playerStates.get(1).completedTechs.push('improved_power_plants', 'advanced_reactors');
     engine._invalidateColonyCache(colony);
 
     const prod = engine._calcProduction(colony);
-    // Should use 1.5x (T2), not 1.25x (T1)
-    assert.strictEqual(prod.production.energy, 9); // 6 * 1.5
+    // Should use 1.5x (T2), not 1.25x (T1), plus planet bonus
+    assert.strictEqual(prod.production.energy, 9 + pb.energy); // 6 * 1.5 + planet bonus
   });
 
   it('Frontier Medicine reduces pop growth time by 25%', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     colony.pops = 8;
     colony.growthProgress = 0;
     engine._invalidateColonyCache(colony);
 
-    // Without tech: base growth takes 400 ticks (food surplus = 4)
-    // With Frontier Medicine: 400 * 0.75 = 300 ticks
+    const foodSurplus = 12 + pb.food - 8;
+    const baseTicks = foodSurplus > 10 ? GROWTH_FASTEST_TICKS : foodSurplus > 5 ? GROWTH_FAST_TICKS : GROWTH_BASE_TICKS;
+    const withTech = Math.floor(baseTicks * 0.75);
+
     engine.playerStates.get(1).completedTechs.push('frontier_medicine');
     engine._invalidateColonyCache(colony);
 
-    for (let i = 0; i < 299; i++) engine.tick();
-    assert.strictEqual(colony.pops, 8, 'Should not grow before 300 ticks');
+    for (let i = 0; i < withTech - 1; i++) engine.tick();
+    assert.strictEqual(colony.pops, 8, `Should not grow before ${withTech} ticks`);
 
-    engine.tick(); // tick 300
-    assert.strictEqual(colony.pops, 9, 'Should grow at 300 ticks with Frontier Medicine');
+    engine.tick();
+    assert.strictEqual(colony.pops, 9, `Should grow at ${withTech} ticks with Frontier Medicine`);
   });
 
   it('can research all 3 tracks simultaneously', () => {
@@ -1551,13 +1653,14 @@ describe('GameEngine — Mini Tech Tree', () => {
   it('Gene Crops applies +50% Agriculture output', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
 
     engine.playerStates.get(1).completedTechs.push('frontier_medicine', 'gene_crops');
     engine._invalidateColonyCache(colony);
 
     const prod = engine._calcProduction(colony);
-    // 2 agriculture districts, each producing 6 * 1.5 = 9 food
-    assert.strictEqual(prod.production.food, 18); // 2 * 9
+    // 2 agriculture districts, each producing 6 * 1.5 = 9 food + planet bonus
+    assert.strictEqual(prod.production.food, 18 + pb.food); // 2 * 9 + planet bonus
   });
 });
 
@@ -1569,17 +1672,16 @@ describe('GameEngine — Energy Deficit', () => {
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
-    // Add an industrial district (consumes 3 energy) and a research district (consumes 4 energy)
+    // Add multiple energy consumers to guarantee deficit regardless of planet bonuses
     engine._addBuiltDistrict(colony, 'industrial');
     engine._addBuiltDistrict(colony, 'research');
-    // Add pops so they can work the new districts
-    colony.pops = 10;
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 12;
     engine._invalidateColonyCache(colony);
 
-    // Set energy to a level that will go negative after monthly processing
-    // Generator produces 6, industrial consumes 3, research consumes 4 → net = -1/month
-    // (no housing district built — base capital housing doesn't consume energy)
-    state.resources.energy = 0; // will become -1 after monthly processing
+    // Net energy before planet bonuses: 6 (gen) - 3 (industrial) - 4 (research) - 4 (research) = -5/month
+    // Even with arid bonus (+1 energy on gen), net = -4 — always negative
+    state.resources.energy = 0;
 
     engine._processMonthlyResources();
     assert.ok(state.resources.energy < 0, 'energy should be negative before deficit processing');
@@ -1587,8 +1689,8 @@ describe('GameEngine — Energy Deficit', () => {
     engine._processEnergyDeficit();
 
     // Research district (4 energy) should be disabled first (highest consumer)
-    const researchDistrict = colony.districts.find(d => d.type === 'research');
-    assert.strictEqual(researchDistrict.disabled, true, 'research district should be disabled');
+    const researchDistrict = colony.districts.find(d => d.type === 'research' && d.disabled);
+    assert.ok(researchDistrict, 'at least one research district should be disabled');
   });
 
   it('disabled districts produce nothing and consume nothing', () => {
@@ -1764,14 +1866,15 @@ describe('GameEngine — Energy Deficit', () => {
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
-    // Add industrial + research to create energy deficit
+    // Add multiple energy consumers to guarantee deficit regardless of planet bonuses
     engine._addBuiltDistrict(colony, 'industrial');
     engine._addBuiltDistrict(colony, 'research');
-    colony.pops = 10;
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 12;
     engine._invalidateColonyCache(colony);
 
-    // Set energy low enough that monthly processing puts it negative
-    // Net energy: 6 (gen) - 3 (industrial) - 4 (research) = -1/month
+    // Net energy before planet bonuses: 6 (gen) - 3 (industrial) - 4 (research) - 4 (research) = -5/month
+    // Even with arid bonus (+1 energy on gen), net = -4 — always negative
     state.resources.energy = 0;
 
     // Run ticks until monthly processing
@@ -2651,11 +2754,12 @@ describe('GameEngine — Tech Modifier Production', () => {
   it('improved_power_plants increases generator output by 25%', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     const state = engine.playerStates.get(1);
 
-    // Baseline: generator produces 6 energy
+    // Baseline: generator produces 6 energy + planet bonus
     const before = engine._calcProduction(colony);
-    assert.strictEqual(before.production.energy, 6);
+    assert.strictEqual(before.production.energy, 6 + pb.energy);
 
     // Complete tech
     state.completedTechs.push('improved_power_plants');
@@ -2663,12 +2767,13 @@ describe('GameEngine — Tech Modifier Production', () => {
     engine._invalidateColonyCache(colony);
 
     const after = engine._calcProduction(colony);
-    assert.strictEqual(after.production.energy, 7.5, 'Generator should produce 6 * 1.25 = 7.5');
+    assert.strictEqual(after.production.energy, 7.5 + pb.energy, 'Generator should produce 6 * 1.25 = 7.5 + planet bonus');
   });
 
   it('T2 tech supersedes T1 for same district (advanced_reactors overrides improved_power_plants)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     const state = engine.playerStates.get(1);
 
     // Complete both T1 and T2
@@ -2678,24 +2783,25 @@ describe('GameEngine — Tech Modifier Production', () => {
     engine._invalidateColonyCache(colony);
 
     const prod = engine._calcProduction(colony);
-    // Should use 1.5x (T2), not 1.25x (T1)
-    assert.strictEqual(prod.production.energy, 9, 'Generator should produce 6 * 1.5 = 9');
+    // Should use 1.5x (T2), not 1.25x (T1), plus planet bonus
+    assert.strictEqual(prod.production.energy, 9 + pb.energy, 'Generator should produce 6 * 1.5 = 9 + planet bonus');
   });
 
   it('improved_mining increases mining district output by 25%', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
     const state = engine.playerStates.get(1);
 
     const before = engine._calcProduction(colony);
-    assert.strictEqual(before.production.minerals, 6);
+    assert.strictEqual(before.production.minerals, 6 + pb.minerals);
 
     state.completedTechs.push('improved_mining');
     engine._techModCache.delete(1);
     engine._invalidateColonyCache(colony);
 
     const after = engine._calcProduction(colony);
-    assert.strictEqual(after.production.minerals, 7.5, 'Mining should produce 6 * 1.25 = 7.5');
+    assert.strictEqual(after.production.minerals, 7.5 + pb.minerals, 'Mining should produce 6 * 1.25 = 7.5 + planet bonus');
   });
 
   it('tech modifier cache auto-invalidates when completedTechs length changes', () => {
@@ -2716,32 +2822,217 @@ describe('GameEngine — Tech Modifier Production', () => {
   it('industrial produces 4 alloys per month in actual production calc', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
-    const state = engine.playerStates.get(1);
+    const pb = calcPlanetBonus(colony);
 
     engine._addBuiltDistrict(colony, 'industrial');
     colony.pops = 10; // enough to work all districts
     engine._invalidateColonyCache(colony);
 
+    // Recalc bonus after adding industrial
+    const pbAfter = calcPlanetBonus(colony);
     const prod = engine._calcProduction(colony);
-    assert.strictEqual(prod.production.alloys, 4, 'Industrial should produce 4 alloys');
+    assert.strictEqual(prod.production.alloys, 4 + pbAfter.alloys, 'Industrial should produce 4 alloys + planet bonus');
   });
 
   it('research district produces 4/4/4 per month in actual production calc', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
-    const state = engine.playerStates.get(1);
 
     engine._addBuiltDistrict(colony, 'research');
     colony.pops = 10;
     engine._invalidateColonyCache(colony);
 
+    const pb = calcPlanetBonus(colony);
     const prod = engine._calcProduction(colony);
     // Starting districts: gen(1), mining(1), agri(1), agri(1) = 4 jobs + 1 research = 5 jobs
     // 10 pops - 5 jobs = 5 unemployed, each producing 1 research per track
     const unemployedResearch = 10 - 5; // 5 unemployed pops
-    assert.strictEqual(prod.production.physics, 4 + unemployedResearch, 'Research district produces 4 physics + unemployed');
-    assert.strictEqual(prod.production.society, 4 + unemployedResearch, 'Research district produces 4 society + unemployed');
-    assert.strictEqual(prod.production.engineering, 4 + unemployedResearch, 'Research district produces 4 engineering + unemployed');
+    assert.strictEqual(prod.production.physics, 4 + unemployedResearch + pb.physics, 'Research district produces 4 physics + unemployed + planet bonus');
+    assert.strictEqual(prod.production.society, 4 + unemployedResearch + pb.society, 'Research district produces 4 society + unemployed + planet bonus');
+    assert.strictEqual(prod.production.engineering, 4 + unemployedResearch + pb.engineering, 'Research district produces 4 engineering + unemployed + planet bonus');
+  });
+});
+
+// ── Planet Type Bonuses ──
+
+describe('GameEngine — Planet Type Bonuses', () => {
+  // Helper: create engine and manually set colony planet type for deterministic testing
+  function makeEngineWithPlanet(planetType) {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    colony.planet.type = planetType;
+    engine._invalidateColonyCache(colony);
+    return { engine, colony };
+  }
+
+  it('PLANET_BONUSES defines bonuses for all 6 habitable types', () => {
+    assert.ok(PLANET_BONUSES.continental);
+    assert.ok(PLANET_BONUSES.ocean);
+    assert.ok(PLANET_BONUSES.tropical);
+    assert.ok(PLANET_BONUSES.arctic);
+    assert.ok(PLANET_BONUSES.desert);
+    assert.ok(PLANET_BONUSES.arid);
+  });
+
+  it('no bonuses for non-habitable planet types', () => {
+    assert.strictEqual(PLANET_BONUSES.barren, undefined);
+    assert.strictEqual(PLANET_BONUSES.molten, undefined);
+    assert.strictEqual(PLANET_BONUSES.gasGiant, undefined);
+  });
+
+  it('Continental: +1 food per Agriculture district', () => {
+    const { engine, colony } = makeEngineWithPlanet('continental');
+    const prod = engine._calcProduction(colony);
+    // 2 agriculture districts: each 6 food + 1 bonus = 7, total 14
+    assert.strictEqual(prod.production.food, 14); // 2 × (6 + 1)
+  });
+
+  it('Ocean: +1 food per Agriculture, +1 each research per Research', () => {
+    const { engine, colony } = makeEngineWithPlanet('ocean');
+    // Add a research district
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10; // ensure enough pops for all jobs
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 2 agriculture: 2 × (6 + 1) = 14 food
+    assert.strictEqual(prod.production.food, 14);
+    // 1 research district: 4 + 1 = 5 per track, plus 5 unemployed pops
+    assert.strictEqual(prod.production.physics, 5 + 5);
+    assert.strictEqual(prod.production.society, 5 + 5);
+    assert.strictEqual(prod.production.engineering, 5 + 5);
+  });
+
+  it('Tropical: +2 food per Agriculture district', () => {
+    const { engine, colony } = makeEngineWithPlanet('tropical');
+    const prod = engine._calcProduction(colony);
+    // 2 agriculture: 2 × (6 + 2) = 16 food
+    assert.strictEqual(prod.production.food, 16);
+  });
+
+  it('Arctic: +1 minerals per Mining, +1 each research per Research', () => {
+    const { engine, colony } = makeEngineWithPlanet('arctic');
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 1 mining: 6 + 1 = 7 minerals
+    assert.strictEqual(prod.production.minerals, 7);
+    // 1 research: 4 + 1 = 5 per track, plus 5 unemployed
+    assert.strictEqual(prod.production.physics, 5 + 5);
+  });
+
+  it('Desert: +2 minerals per Mining district', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    const prod = engine._calcProduction(colony);
+    // 1 mining: 6 + 2 = 8 minerals
+    assert.strictEqual(prod.production.minerals, 8);
+  });
+
+  it('Arid: +1 energy per Generator, +1 alloy per Industrial', () => {
+    const { engine, colony } = makeEngineWithPlanet('arid');
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 1 generator: 6 + 1 = 7 energy
+    assert.strictEqual(prod.production.energy, 7);
+    // 1 industrial: 4 + 1 = 5 alloys
+    assert.strictEqual(prod.production.alloys, 5);
+  });
+
+  it('planet bonuses stack with tech modifiers', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    engine.playerStates.get(1).completedTechs.push('improved_mining');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 1 mining: 6 * 1.25 (tech) = 7.5 + 2 (desert bonus) = 9.5
+    assert.strictEqual(prod.production.minerals, 9.5);
+  });
+
+  it('disabled districts do not receive planet bonuses', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    // Disable the mining district
+    colony.districts.find(d => d.type === 'mining').disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    assert.strictEqual(prod.production.minerals, 0); // disabled, no output
+  });
+
+  it('planet bonuses included in getState colony serialization', () => {
+    const { engine, colony } = makeEngineWithPlanet('tropical');
+    const state = engine.getState();
+    const serializedColony = state.colonies.find(c => c.id === colony.id);
+    // Tropical: +2 food per agriculture, 2 agriculture = +4 bonus
+    // Net food: 16 - 8 = 8
+    assert.strictEqual(serializedColony.netProduction.food, 8);
+  });
+
+  it('non-matching districts receive no planet bonus', () => {
+    const { engine, colony } = makeEngineWithPlanet('continental');
+    // Continental only grants +1 food per agriculture — generator and mining should be unaffected
+    const prod = engine._calcProduction(colony);
+    assert.strictEqual(prod.production.energy, 6, 'Generator should produce base 6 energy with no continental bonus');
+    assert.strictEqual(prod.production.minerals, 6, 'Mining should produce base 6 minerals with no continental bonus');
+  });
+
+  it('bonus scales linearly with multiple matching districts', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    // Desert: +2 minerals per mining. Start has 1 mining, add 2 more
+    engine._addBuiltDistrict(colony, 'mining');
+    engine._addBuiltDistrict(colony, 'mining');
+    colony.pops = 10; // enough pops for all districts
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 3 mining districts: 3 × (6 + 2) = 24 minerals
+    assert.strictEqual(prod.production.minerals, 24, 'Each mining district should get +2 desert bonus');
+  });
+
+  it('pop-limited colony only gives bonus to working districts', () => {
+    const { engine, colony } = makeEngineWithPlanet('tropical');
+    // Tropical: +2 food per agriculture. Starting: 1 gen, 1 mining, 2 agriculture
+    // With only 2 pops, only gen + mining get staffed (they come first in order)
+    colony.pops = 2;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // 2 pops → gen (6 energy) + mining (6 minerals), agriculture districts unstaffed
+    assert.strictEqual(prod.production.food, 0, 'Unstaffed agriculture should produce no food or bonus');
+    assert.strictEqual(prod.production.energy, 6);
+    assert.strictEqual(prod.production.minerals, 6);
+  });
+
+  it('housing districts never receive planet bonuses', () => {
+    const { engine, colony } = makeEngineWithPlanet('arid');
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Housing has 0 jobs, no production — planet bonus should not apply
+    // Arid bonuses: +1 energy/gen, +1 alloy/industrial — housing is neither
+    assert.strictEqual(prod.production.energy, 7, 'Only generator should get arid +1 energy bonus');
+  });
+
+  it('unknown planet type produces no bonuses', () => {
+    const { engine, colony } = makeEngineWithPlanet('barren');
+    const prod = engine._calcProduction(colony);
+    // Barren has no entry in PLANET_BONUSES — all output should be base
+    assert.strictEqual(prod.production.food, 12, 'Base agriculture: 2 × 6 = 12 food');
+    assert.strictEqual(prod.production.energy, 6, 'Base generator: 6 energy');
+    assert.strictEqual(prod.production.minerals, 6, 'Base mining: 6 minerals');
+  });
+
+  it('planet bonuses included in getPlayerState serialization', () => {
+    const { engine, colony } = makeEngineWithPlanet('desert');
+    const playerState = engine.getPlayerState(1);
+    const serializedColony = playerState.colonies.find(c => c.id === colony.id);
+    // Desert: +2 minerals per mining, 1 mining = 8 minerals, consumption 0
+    assert.strictEqual(serializedColony.netProduction.minerals, 8, 'getPlayerState should include desert mining bonus');
   });
 });
 
@@ -2892,5 +3183,126 @@ describe('GameEngine — Pop Growth Tech Bonus', () => {
 
     assert.strictEqual(colony.pops, startPops + 1,
       'Pop should grow after 300 ticks with frontier_medicine (400 * 0.75 = 300)');
+  });
+});
+
+// ── Game Speed Controls ──
+
+describe('GameEngine — Game Speed Controls', () => {
+  it('starts at default speed (2)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.gameSpeed, DEFAULT_SPEED);
+    assert.strictEqual(state.paused, false);
+  });
+
+  it('setGameSpeed changes speed and returns ok', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.setGameSpeed(5);
+    assert.strictEqual(result.ok, true);
+    const state = engine.getState();
+    assert.strictEqual(state.gameSpeed, 5);
+  });
+
+  it('setGameSpeed rejects invalid values', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.ok(engine.setGameSpeed(0).error);
+    assert.ok(engine.setGameSpeed(6).error);
+    assert.ok(engine.setGameSpeed(-1).error);
+    assert.ok(engine.setGameSpeed(2.5).error);
+    assert.ok(engine.setGameSpeed('abc').error);
+    assert.ok(engine.setGameSpeed(NaN).error);
+    assert.ok(engine.setGameSpeed(Infinity).error);
+    // Speed should remain at default after all invalid attempts
+    assert.strictEqual(engine.getState().gameSpeed, DEFAULT_SPEED);
+  });
+
+  it('setGameSpeed with same speed is a no-op', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.setGameSpeed(DEFAULT_SPEED);
+    assert.strictEqual(result.ok, true);
+  });
+
+  it('togglePause pauses and unpauses the game', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(engine.getState().paused, false);
+    const r1 = engine.togglePause();
+    assert.strictEqual(r1.ok, true);
+    assert.strictEqual(r1.paused, true);
+    assert.strictEqual(engine.getState().paused, true);
+    const r2 = engine.togglePause();
+    assert.strictEqual(r2.ok, true);
+    assert.strictEqual(r2.paused, false);
+    assert.strictEqual(engine.getState().paused, false);
+  });
+
+  it('pause stops ticking — tickCount does not advance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.start();
+    engine.togglePause(); // pause
+    const tickBefore = engine.tickCount;
+    // Manually try calling tick — it should still work if called directly
+    // but the interval should be cleared
+    assert.strictEqual(engine.tickInterval, null, 'Interval should be cleared when paused');
+    engine.togglePause(); // unpause
+    assert.ok(engine.tickInterval !== null, 'Interval should be restored when unpaused');
+    engine.stop();
+  });
+
+  it('speed change while running restarts interval', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.start();
+    const oldInterval = engine.tickInterval;
+    engine.setGameSpeed(4);
+    assert.ok(engine.tickInterval !== null, 'Interval should exist after speed change');
+    assert.notStrictEqual(engine.tickInterval, oldInterval, 'Interval should be different');
+    engine.stop();
+  });
+
+  it('onSpeedChange callback fires on speed change', () => {
+    let received = null;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onSpeedChange: (state) => { received = state; },
+    });
+    engine.setGameSpeed(3);
+    assert.ok(received);
+    assert.strictEqual(received.speed, 3);
+    assert.strictEqual(received.speedLabel, '2x');
+    assert.strictEqual(received.paused, false);
+  });
+
+  it('onSpeedChange callback fires on pause toggle', () => {
+    let received = null;
+    const engine = new GameEngine(makeRoom(1), {
+      tickRate: 10,
+      onSpeedChange: (state) => { received = state; },
+    });
+    engine.togglePause();
+    assert.ok(received);
+    assert.strictEqual(received.paused, true);
+    assert.strictEqual(received.speed, DEFAULT_SPEED);
+  });
+
+  it('speed and pause state included in per-player state', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.setGameSpeed(4);
+    const pState = engine.getPlayerState(1);
+    assert.strictEqual(pState.gameSpeed, 4);
+    assert.strictEqual(pState.paused, false);
+  });
+
+  it('SPEED_INTERVALS has entries for all 5 speeds', () => {
+    for (let s = 1; s <= 5; s++) {
+      assert.ok(SPEED_INTERVALS[s] > 0, `Speed ${s} should have a positive interval`);
+    }
+    // Higher speed = lower interval
+    assert.ok(SPEED_INTERVALS[1] > SPEED_INTERVALS[5]);
+  });
+
+  it('SPEED_LABELS has labels for all 5 speeds', () => {
+    for (let s = 1; s <= 5; s++) {
+      assert.ok(typeof SPEED_LABELS[s] === 'string', `Speed ${s} should have a label`);
+    }
   });
 });

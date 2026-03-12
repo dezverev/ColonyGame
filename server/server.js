@@ -189,6 +189,13 @@ function startServer(options = {}) {
               if (ws) send(ws, { type: 'gameEvent', ...event });
             }
           },
+          onSpeedChange: (speedState) => {
+            const msg = { type: 'speedChanged', ...speedState };
+            for (const [pid] of result.room.players) {
+              const pws = clients.get(pid);
+              if (pws) send(pws, msg);
+            }
+          },
           onGameOver: (data) => {
             const msg = { type: 'gameOver', ...data };
             for (const [pid] of result.room.players) {
@@ -236,6 +243,40 @@ function startServer(options = {}) {
         break;
       }
 
+      case 'setGameSpeed': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const engine = games.get(room.id);
+        if (!engine) return;
+        // Host-only in multiplayer; any player in single-player (practice mode)
+        if (!room.practiceMode && room.hostId !== clientId) {
+          send(ws, { type: 'error', message: 'Only the host can change game speed' });
+          return;
+        }
+        const result = engine.setGameSpeed(msg.speed);
+        if (result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
+        break;
+      }
+
+      case 'togglePause': {
+        const room = rooms.getRoomForPlayer(clientId);
+        if (!room) return;
+        const engine = games.get(room.id);
+        if (!engine) return;
+        // Host-only in multiplayer; any player in single-player (practice mode)
+        if (!room.practiceMode && room.hostId !== clientId) {
+          send(ws, { type: 'error', message: 'Only the host can pause the game' });
+          return;
+        }
+        const result = engine.togglePause();
+        if (result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
+        break;
+      }
+
       case 'chat': {
         const room = rooms.getRoomForPlayer(clientId);
         const chatMsg = { type: 'chat', from: ws.displayName, text: String(msg.text || '').slice(0, 200) };
@@ -258,6 +299,7 @@ function startServer(options = {}) {
         port: httpServer.address().port,
         close: () => {
           for (const [, engine] of games) engine.stop();
+          for (const client of wss.clients) client.terminate();
           wss.close();
           httpServer.close();
         },

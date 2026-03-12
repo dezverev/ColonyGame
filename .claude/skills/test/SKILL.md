@@ -19,8 +19,10 @@ Before doing anything, read CLAUDE.md at the project root for the full architect
 Read these files:
 
 1. **`CLAUDE.md`** — Architecture overview, module map, protocol spec
-2. **`devguide/ledger.md`** — Recent changes (what was just built)
+2. **`devguide/ledger.md`** — Read only the **last 80 lines** (recent entries). Do NOT read the entire file.
 3. **All test files in `src/tests/`** — What's already tested
+
+**IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed for testing.**
 4. **`server/game-engine.js`** — Core game logic
 5. **`server/server.js`** — WebSocket server, message routing
 6. **`server/room-manager.js`** — Room lifecycle

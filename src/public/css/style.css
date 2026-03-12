@@ -159,6 +159,20 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   z-index: 10;
 }
 .status-sep { color: #444; }
+#status-speed {
+  color: #3498db; font-weight: bold; cursor: pointer;
+  user-select: none;
+}
+#status-speed:hover { color: #5dade2; }
+
+/* ── Pause Overlay ── */
+#pause-overlay {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 4rem; font-weight: bold; color: rgba(255,255,255,0.6);
+  font-family: monospace; letter-spacing: 0.5rem;
+  text-shadow: 0 0 20px rgba(52,152,219,0.5);
+  pointer-events: none; z-index: 50;
+}
 #growth-bar-wrap {
   width: 60px; height: 6px; background: #1a1a2e; border-radius: 3px;
   overflow: hidden; margin-left: 0.2rem;
@@ -246,6 +260,8 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .build-option-name { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.2rem; }
 .build-option-cost { font-size: 0.75rem; color: #aaa; font-family: monospace; }
 .build-option-prod { font-size: 0.75rem; color: #2ecc71; font-family: monospace; }
+.build-option-bonus { font-size: 0.7rem; color: #f39c12; font-family: monospace; }
+.planet-bonus-tag { color: #f39c12; font-size: 0.75rem; white-space: nowrap; }
 .build-option-swatch {
   width: 14px; height: 14px; border-radius: 3px; margin-bottom: 0.3rem; border: 1px solid rgba(255,255,255,0.2);
 }
@@ -369,6 +385,36 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   cursor: pointer; font-size: 0.8rem; text-align: center;
 }
 .system-colony-btn:hover { background: #3498db; }
+
+/* ── Toast Notifications ── */
+#toast-container {
+  pointer-events: none;
+  position: absolute; top: 80px; right: 10px;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  z-index: 30; width: 240px;
+}
+.toast {
+  pointer-events: auto;
+  padding: 0.5rem 0.7rem;
+  background: rgba(26, 26, 46, 0.92);
+  backdrop-filter: blur(6px);
+  border-radius: 6px;
+  border-left: 3px solid #888;
+  font-size: 0.8rem; color: #e0e0e0;
+  animation: toastSlideIn 0.3s ease-out;
+  transition: opacity 0.4s, transform 0.4s;
+}
+.toast.toast-positive { border-left-color: #2ecc71; }
+.toast.toast-warning  { border-left-color: #f1c40f; }
+.toast.toast-crisis   { border-left-color: #e74c3c; }
+.toast.toast-info     { border-left-color: #3498db; }
+.toast-out {
+  opacity: 0; transform: translateX(40px);
+}
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateX(40px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 
 /* ── Match Warning Banner ── */
 #match-warning {

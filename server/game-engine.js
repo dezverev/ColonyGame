@@ -26,8 +26,30 @@ const PLANET_TYPES = {
   gasGiant:    { habitability: 0,  label: 'Gas Giant' },
 };
 
+// Planet type signature bonuses: additive per working district of matching type
+const PLANET_BONUSES = {
+  continental: { agriculture: { food: 1 } },
+  ocean:       { agriculture: { food: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+  tropical:    { agriculture: { food: 2 } },
+  arctic:      { mining: { minerals: 1 }, research: { physics: 1, society: 1, engineering: 1 } },
+  desert:      { mining: { minerals: 2 } },
+  arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
+};
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
+
+// Game speed: tick interval in ms per speed level (1-5)
+// Speed 1 = 0.5x, Speed 2 = 1x (default), Speed 3 = 2x, Speed 4 = 3x, Speed 5 = 5x
+const SPEED_INTERVALS = {
+  1: 200,  // 5 Hz — half speed
+  2: 100,  // 10 Hz — normal
+  3: 50,   // 20 Hz — double
+  4: 33,   // ~30 Hz — triple
+  5: 20,   // 50 Hz — 5x
+};
+const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
+const DEFAULT_SPEED = 2;
 
 // Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
@@ -108,6 +130,11 @@ class GameEngine {
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._gameOver = false; // true after game ends
 
+    // Game speed & pause
+    this._gameSpeed = DEFAULT_SPEED;
+    this._paused = false;
+    this.onSpeedChange = options.onSpeedChange || null;
+
     // Match timer: minutes from room settings, 0 = unlimited
     const matchMinutes = Number(room.matchTimer) || 0;
     this._matchTicksRemaining = matchMinutes > 0 ? matchMinutes * 60 * (options.tickRate || 10) : 0;
@@ -184,6 +211,7 @@ class GameEngine {
       }
 
       const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
+      colony.isStartingColony = true;
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
       this._addBuiltDistrict(colony, 'mining');
@@ -206,6 +234,8 @@ class GameEngine {
       },
       districts: [],               // built districts: { id, type }
       buildQueue: [],              // { id, type, ticksRemaining }
+      isStartingColony: false,     // true for initial colonies, no build discount
+      playerBuiltDistricts: 0,    // count of districts player has built (not pre-built)
       pops: 8,                     // starting population
       growthProgress: 0,           // ticks accumulated toward next pop
       _cachedHousing: null,        // cached derived values
@@ -296,6 +326,9 @@ class GameEngine {
     const playerState = this.playerStates.get(colony.ownerId);
     const techMods = this._getTechModifiers(playerState);
 
+    // Planet type signature bonuses — lookup once per colony (planet type is constant)
+    const planetBonus = PLANET_BONUSES[colony.planet.type] || null;
+
     // Assign pops to districts in order — each working district needs 1 pop
     let assignedPops = 0;
     for (const d of colony.districts) {
@@ -319,6 +352,13 @@ class GameEngine {
       const districtMod = techMods.district[d.type] || 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
         production[resource] = (production[resource] || 0) + (amount * districtMod);
+      }
+      // Planet type signature bonuses (additive, after tech modifier)
+      const districtBonus = planetBonus && planetBonus[d.type];
+      if (districtBonus) {
+        for (const [resource, amount] of Object.entries(districtBonus)) {
+          production[resource] = (production[resource] || 0) + amount;
+        }
       }
       for (const [resource, amount] of Object.entries(def.consumes)) {
         consumption[resource] = (consumption[resource] || 0) + amount;
@@ -773,13 +813,57 @@ class GameEngine {
   }
 
   start() {
-    this.tickInterval = setInterval(() => this.tick(), 1000 / this.tickRate);
+    this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[this._gameSpeed]);
   }
 
   stop() {
     if (this.tickInterval) {
       clearInterval(this.tickInterval);
       this.tickInterval = null;
+    }
+  }
+
+  setGameSpeed(speed) {
+    const s = Number(speed);
+    if (!Number.isFinite(s) || s < 1 || s > 5 || Math.floor(s) !== s) {
+      return { error: 'Invalid speed (1-5)' };
+    }
+    if (s === this._gameSpeed) return { ok: true };
+    this._gameSpeed = s;
+    // Restart tick interval at new rate
+    if (this.tickInterval) {
+      clearInterval(this.tickInterval);
+      this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[s]);
+    }
+    this._broadcastSpeedState();
+    return { ok: true };
+  }
+
+  togglePause() {
+    this._paused = !this._paused;
+    if (this._paused) {
+      if (this.tickInterval) {
+        clearInterval(this.tickInterval);
+        this.tickInterval = null;
+      }
+    } else {
+      if (!this.tickInterval) {
+        this.tickInterval = setInterval(() => this.tick(), SPEED_INTERVALS[this._gameSpeed]);
+      }
+    }
+    this._broadcastSpeedState();
+    return { ok: true, paused: this._paused };
+  }
+
+  _broadcastSpeedState() {
+    this._cachedState = null;
+    this._cachedStateJSON = null;
+    if (this.onSpeedChange) {
+      this.onSpeedChange({
+        speed: this._gameSpeed,
+        speedLabel: SPEED_LABELS[this._gameSpeed],
+        paused: this._paused,
+      });
     }
   }
 
@@ -882,12 +966,13 @@ class GameEngine {
           state.resources[resource] -= amount;
         }
 
-        // Determine build time — first 3 districts build at 50% time
+        // Determine build time — first 3 player-built districts on non-starting colonies build at 50% time
         let buildTime = def.buildTime;
-        if (colony.districts.length + colony.buildQueue.length < 3) {
+        if (!colony.isStartingColony && colony.playerBuiltDistricts < 3) {
           buildTime = Math.floor(buildTime * 0.5);
         }
 
+        colony.playerBuiltDistricts++;
         const id = this._nextId();
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
         this._dirtyPlayers.add(playerId);
@@ -991,6 +1076,8 @@ class GameEngine {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
     }
+    state.gameSpeed = this._gameSpeed;
+    state.paused = this._paused;
     this._cachedState = state;
     return state;
   }
@@ -1040,6 +1127,8 @@ class GameEngine {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
     }
+    state.gameSpeed = this._gameSpeed;
+    state.paused = this._paused;
 
     return state;
   }
@@ -1076,6 +1165,7 @@ class GameEngine {
     }
     return {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
+      isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
@@ -1112,4 +1202,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, generateGalaxy, assignStartingSystems };

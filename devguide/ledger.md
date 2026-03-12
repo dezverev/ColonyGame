@@ -767,3 +767,145 @@ Each entry records an iteration of automated development.
 - Energy consumption unchanged (Industrial: 3, Research: 4) — the buff is output-only, energy pressure remains the same
 
 **Next:** Event toast notification HUD (game-designer R18 priority #2)
+
+---
+
+## Entry 23 — 2026-03-12 — Event Toast Notification HUD
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Toast notification system that surfaces server game events as slide-in cards on the right side of the game screen
+- Covers all 8 existing game event types: constructionComplete, popMilestone, researchComplete, districtEnabled, queueEmpty, housingFull, foodDeficit, districtDisabled
+- Color-coded borders: green for positive events, yellow for warnings, red for crises
+- CSS slide-in animation from right, auto-dismiss after 4 seconds with fade-out
+- Max 5 visible toasts (oldest removed when 6th arrives)
+- Human-readable text formatting with colony name, district type, pop count, tech name
+- Shared toast-format.js module (IIFE pattern) for both browser and Node.js testing
+
+**Files changed:**
+- `src/public/index.html` — added toast container div, added toast-format.js script tag
+- `src/public/css/style.css` — added toast notification styles (container, cards, animations)
+- `src/public/js/toast-format.js` — **new** shared module with formatGameEvent() and TOAST_TYPE_MAP
+- `src/public/js/app.js` — added _showToast() function, wired gameEvent handler to create toasts
+- `src/tests/toast-notifications.test.js` — **new** 15 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 313 total (15 new). All passing.
+
+**Key decisions:**
+- Extracted formatting logic into shared toast-format.js to enable Node.js testing without DOM dependencies
+- Toast container positioned at top: 80px, right: 10px — below resource bar, doesn't overlap colony panel
+- Used CSS-only animations (no JS animation libraries) for performance
+- All event types already had the required detail fields (colonyName, districtType, etc.) from earlier event work
+
+**Next:** Planet type signature bonuses (game-designer R19 priority #2)
+
+---
+
+## Entry 24 — 2026-03-12 — Balance Fix: Dead Code — First-3-Districts Build Discount
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Fixed the first-3-districts 50% build time discount which never fired because starting colonies have 4 pre-built districts
+- Added `isStartingColony` flag to colony objects — `true` for initial colonies created at game start
+- Added `playerBuiltDistricts` counter that increments each time a player queues a district
+- Discount now applies to first 3 player-built districts on non-starting (newly colonized) planets only
+- Both new fields included in `getState()` serialization for client visibility
+
+**Files changed:**
+- `server/game-engine.js` — added `isStartingColony` and `playerBuiltDistricts` fields to `_createColony`, set flag on starting colonies, updated discount logic, incremented counter on build, added fields to `getState()`
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 313 total (0 new — all existing tests pass with updated logic). All passing.
+
+**Key decisions:**
+- Discount tracked by `playerBuiltDistricts` counter rather than re-counting districts, avoiding O(n) recounts
+- Starting colonies explicitly flagged rather than checking pre-built district count — cleaner, future-proof for when colonize command is implemented
+- Counter incremented at queue time (not completion time) so the 4th queued district gets full build time even if earlier ones haven't finished
+
+**Next:** Planet type signature bonuses
+
+---
+
+## Entry 25 — 2026-03-12 — Game Speed Controls
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- 5-speed game speed system (0.5x, 1x, 2x, 3x, 5x) with pause/unpause toggle
+- Server: `setGameSpeed(speed)` and `togglePause()` methods on GameEngine that dynamically change the tick interval
+- Server: `SPEED_INTERVALS` lookup (speed 1=200ms, 2=100ms, 3=50ms, 4=33ms, 5=20ms) and `SPEED_LABELS` for display
+- Server: `onSpeedChange` callback broadcasts `speedChanged` messages to all room players
+- Protocol: `setGameSpeed` and `togglePause` commands with host-only enforcement in multiplayer (any player in practice mode)
+- Client: Speed indicator in status bar showing current speed label (e.g., "2x")
+- Client: "PAUSED" overlay centered on screen when game is paused
+- Client: Keyboard shortcuts — +/= to speed up, - to slow down, Space to toggle pause
+- Speed and pause state included in `gameInit`, `gameState`, and `getPlayerState` payloads
+
+**Files changed:**
+- `server/game-engine.js` — added SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED constants; added _gameSpeed, _paused, onSpeedChange to constructor; added setGameSpeed(), togglePause(), _broadcastSpeedState() methods; updated start() to use speed-based interval; added speed/pause to getState() and getPlayerState(); updated exports
+- `server/server.js` — added setGameSpeed and togglePause message handlers with host-only validation; wired onSpeedChange callback to broadcast speedChanged to room
+- `src/public/index.html` — added speed indicator span in status bar; added pause overlay div
+- `src/public/css/style.css` — added #status-speed and #pause-overlay styles
+- `src/public/js/app.js` — added speedChanged message handler; stored speed/pause in gameState; added _updateSpeedDisplay(); added keyboard shortcuts (+/-/Space); added SPEED_LABELS client-side lookup
+- `src/tests/game-engine.test.js` — 12 new unit tests for speed controls
+- `src/tests/server-integration.test.js` — 2 new integration tests (protocol speed controls, host-only enforcement)
+- `devguide/design.md` — marked game speed control tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 347 total (14 new — 12 unit + 2 integration). All passing.
+
+**Key decisions:**
+- Speed changes tick interval rather than MONTH_TICKS — simpler implementation, all game systems (construction, growth, resources) scale uniformly
+- Default speed is 2 (1x/100ms) matching the original 10Hz tick rate — no behavioral change for existing games
+- Cache invalidation on speed/pause change prevents stale state reads
+- Host-only control in multiplayer but any player can control in practice mode — solo players need full control for playtesting
+
+**Next:** Planet type signature bonuses (R21 priority #2)
+
+---
+
+## Entry 26 — 2026-03-12 — Planet Type Signature Bonuses
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- `PLANET_BONUSES` lookup table in game-engine.js: 6 habitable planet types each get additive production bonuses per working district of matching type
+- Continental: +1 food per Agriculture district
+- Ocean: +1 food per Agriculture, +1 each research per Research district
+- Tropical: +2 food per Agriculture district
+- Arctic: +1 mineral per Mining, +1 each research per Research district
+- Desert: +2 mineral per Mining district
+- Arid: +1 energy per Generator, +1 alloy per Industrial district
+- Bonuses applied in `_calcProduction` after tech modifiers — additive, not multiplicative with tech
+- Client: build menu shows planet-specific bonus per district type (orange text)
+- Client: district info panel shows planet bonus row when applicable
+- Client: system panel planet table includes Bonus column with per-type labels
+- Client: `_planetBonusLabel()` helper formats bonus text for any planet type
+
+**Files changed:**
+- `server/game-engine.js` — PLANET_BONUSES constant, bonus application in _calcProduction, exported in module.exports
+- `src/public/js/app.js` — client PLANET_BONUSES mirror, _planetBonusLabel helper, build menu bonus display, district info panel bonus row, system panel bonus column
+- `src/public/css/style.css` — .build-option-bonus and .planet-bonus-tag styles
+- `src/tests/game-engine.test.js` — 11 new planet bonus tests, updated ~12 existing tests to account for planet bonuses using calcPlanetBonus helper
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 344 total (11 new: PLANET_BONUSES structure, no bonuses for uninhabitable, Continental/Ocean/Tropical/Arctic/Desert/Arid production, tech+bonus stacking, disabled districts no bonus, serialization). All passing.
+
+**Key decisions:**
+- Bonuses are additive (flat +N per district) rather than multiplicative — prevents overpowered stacking with tech modifiers while keeping bonuses meaningful
+- Applied after tech modifier multiplication, not before — tech multiplies base output, planet adds flat bonus on top. This means tech doesn't amplify planet bonuses
+- Updated existing tests to use a `calcPlanetBonus` helper that dynamically computes expected values based on the galaxy-assigned planet type, rather than hardcoding — makes tests resilient to random galaxy seeds
+- New planet bonus tests use `makeEngineWithPlanet()` helper that overrides colony planet type for deterministic testing
+- Non-habitable types (barren, molten, gasGiant) have no bonuses — consistent with them being uncolonizable
+
+**Next:** Colony ships — minimal expansion (R23 priority #2)
