@@ -15,6 +15,10 @@ class RoomManager {
     if (!validTimers.includes(matchTimer)) {
       matchTimer = practiceMode ? 10 : 20;
     }
+    // Galaxy size validation
+    const validGalaxySizes = ['small', 'medium', 'large'];
+    const galaxySize = validGalaxySizes.includes(options.galaxySize) ? options.galaxySize : 'small';
+
     const room = {
       id,
       name: name.slice(0, 30),
@@ -23,6 +27,7 @@ class RoomManager {
       map: options.map || 'default',
       practiceMode,
       matchTimer,
+      galaxySize,
       status: 'waiting', // waiting | playing | finished
       players: new Map(),
       createdAt: Date.now(),
@@ -120,6 +125,7 @@ class RoomManager {
         map: room.map,
         practiceMode: room.practiceMode,
         matchTimer: room.matchTimer,
+        galaxySize: room.galaxySize,
         status: room.status,
       });
     }
@@ -135,6 +141,7 @@ class RoomManager {
       map: room.map,
       practiceMode: room.practiceMode,
       matchTimer: room.matchTimer,
+      galaxySize: room.galaxySize,
       status: room.status,
       players: Array.from(room.players.values()),
     };

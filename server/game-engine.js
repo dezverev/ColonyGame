@@ -1,3 +1,5 @@
+const { generateGalaxy, assignStartingSystems, bestHabitablePlanet } = require('./galaxy');
+
 const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#ecf0f1'];
 
 // District definitions: type -> { produces, consumes, cost, buildTime }
@@ -119,7 +121,17 @@ class GameEngine {
     this._tickTimingsMax = 100;
 
     this._initPlayerStates();
+
+    // Generate galaxy
+    const galaxySize = room.galaxySize || 'small';
+    const galaxySeed = options.galaxySeed != null ? options.galaxySeed : Math.floor(Math.random() * 2147483647);
+    this.galaxy = generateGalaxy({ size: galaxySize, seed: galaxySeed });
+
+    // Assign starting systems to players and place colonies
+    const playerIds = [...this.playerStates.keys()];
+    this._startingSystems = assignStartingSystems(this.galaxy, playerIds);
     this._initStartingColonies();
+
     // Mark all players dirty so first tick broadcasts initial state
     for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
   }
@@ -152,11 +164,25 @@ class GameEngine {
 
   _initStartingColonies() {
     for (const [playerId] of this.playerStates) {
-      const colony = this._createColony(playerId, `Colony ${playerId}`, {
-        size: 16,
-        type: 'continental',
-        habitability: 80,
-      });
+      // Use starting system's best habitable planet, or fallback defaults
+      const systemId = this._startingSystems[playerId];
+      let planet = { size: 16, type: 'continental', habitability: 80 };
+      let systemName = 'Home';
+
+      if (systemId != null && this.galaxy) {
+        const system = this.galaxy.systems[systemId];
+        if (system) {
+          systemName = system.name;
+          const best = bestHabitablePlanet(system);
+          if (best) {
+            planet = { size: best.size, type: best.type, habitability: best.habitability };
+            best.colonized = true;
+            best.colonyOwner = playerId;
+          }
+        }
+      }
+
+      const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
       this._addBuiltDistrict(colony, 'mining');
@@ -165,12 +191,13 @@ class GameEngine {
     }
   }
 
-  _createColony(ownerId, name, planet) {
+  _createColony(ownerId, name, planet, systemId) {
     const id = this._nextId();
     const colony = {
       id,
       ownerId,
       name,
+      systemId: systemId != null ? systemId : null,
       planet: {
         size: planet.size,         // max districts
         type: planet.type,
@@ -1037,7 +1064,7 @@ class GameEngine {
       else growthStatus = 'slow';
     }
     return {
-      id: c.id, ownerId: c.ownerId, name: c.name, planet: c.planet,
+      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
@@ -1052,8 +1079,26 @@ class GameEngine {
   }
 
   getInitState() {
-    return this.getState();
+    const state = this.getState();
+    // Include full galaxy data on init (systems, hyperlanes) — sent once
+    if (this.galaxy) {
+      state.galaxy = {
+        seed: this.galaxy.seed,
+        size: this.galaxy.size,
+        systems: this.galaxy.systems.map(s => ({
+          id: s.id,
+          name: s.name,
+          x: s.x, y: s.y, z: s.z,
+          starType: s.starType,
+          starColor: s.starColor,
+          planets: s.planets,
+          owner: s.owner,
+        })),
+        hyperlanes: this.galaxy.hyperlanes,
+      };
+    }
+    return state;
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, generateGalaxy, assignStartingSystems };

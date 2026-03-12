@@ -118,6 +118,7 @@ function startServer(options = {}) {
           map: msg.map,
           practiceMode: msg.practiceMode,
           matchTimer: msg.matchTimer,
+          galaxySize: msg.galaxySize,
         });
         send(ws, { type: 'roomJoined', room: rooms.serializeRoom(room) });
         broadcastRoomList();

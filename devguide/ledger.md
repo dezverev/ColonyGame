@@ -653,3 +653,46 @@ Each entry records an iteration of automated development.
 - Post-game overlay shows full VP breakdown (pops, districts, alloys, research) so players understand scoring
 
 **Next:** Research & Industrial output bump (3→4), then starting minerals & alloys adjustment
+
+---
+
+## Entry 20 — 2026-03-12 — Procedural Galaxy Generation
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- `server/galaxy.js` — standalone galaxy generation module with seeded PRNG (mulberry32) for deterministic generation
+- Poisson disc sampling in 2D for even star system distribution within a circular galaxy radius
+- Relative Neighborhood Graph algorithm for hyperlane connections, with connectivity enforcement (BFS), minimum degree supplement (≥2), and maximum degree cap (≤6)
+- Procedural star name generator from curated syllable lists (prefix + suffix + optional designation)
+- 5 star types (yellow, red, blue, white, orange) with weighted random selection
+- 9 planet types with proper habitability values, 1-6 planets per system, orbit slots, size variation
+- 3 galaxy sizes: small (50 systems, r=200), medium (100 systems, r=300), large (200 systems, r=450)
+- Starting system assignment: greedy spread algorithm maximizing minimum distance between players, prefers habitable systems
+- Starting colonies now placed on actual galaxy planets (best habitable planet in assigned system)
+- `galaxySize` room setting with validation (small/medium/large), passed through room creation flow
+- `getInitState()` sends full galaxy data (systems + hyperlanes) to clients on game start
+- Colony serialization includes `systemId` linking colonies to galaxy systems
+
+**Files changed:**
+- `server/galaxy.js` — new file (galaxy generation module)
+- `server/game-engine.js` — galaxy integration: generate on init, assign starting systems, colony placement on galaxy planets, galaxy in getInitState(), systemId in colonies
+- `server/room-manager.js` — galaxySize room setting with validation, included in serialization/listing
+- `server/server.js` — pass galaxySize through from createRoom message
+- `src/tests/galaxy.test.js` — new file (33 tests)
+- `src/tests/game-engine.test.js` — updated 1 test (starting colony now uses galaxy planet)
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 228 total (33 new galaxy tests: PRNG determinism, name uniqueness, Poisson disc spacing/bounds, hyperlane connectivity/degree bounds, full galaxy structure, determinism, size variants, planet validity, habitable planets, hyperlane validity, starting system assignment/spread/ownership, best habitable planet selection, GameEngine integration). All passing.
+
+**Key decisions:**
+- Used Relative Neighborhood Graph instead of Delaunay triangulation — simpler to implement, naturally produces sparse planar-ish connections without complex computational geometry
+- Seeded PRNG (mulberry32) ensures identical galaxies from same seed — critical for multiplayer synchronization and replay
+- Galaxy generated server-side and sent to clients in `gameInit` — keeps server-authoritative design
+- Starting colonies use `bestHabitablePlanet()` to pick the best planet in the assigned system — players always start on a viable world
+- Planet generation is per-system, not global — each system rolls its own planets with weighted type distribution
+- Galaxy data sent once on init (not every tick) — clients cache it locally
+
+**Next:** Galaxy map view (Three.js) — PerspectiveCamera rendering star systems and hyperlanes
