@@ -221,6 +221,7 @@ class GameEngine {
     if (colony._cachedHousing !== null) return colony._cachedHousing;
     let housing = 10; // base housing from capital
     for (const d of colony.districts) {
+      if (d.disabled) continue; // disabled districts provide no housing
       const def = DISTRICT_DEFS[d.type];
       if (def) housing += def.housing;
     }
@@ -233,6 +234,7 @@ class GameEngine {
     if (colony._cachedJobs !== null) return colony._cachedJobs;
     let jobs = 0;
     for (const d of colony.districts) {
+      if (d.disabled) continue; // disabled districts provide no jobs
       const def = DISTRICT_DEFS[d.type];
       if (def) jobs += def.jobs;
     }
@@ -258,6 +260,9 @@ class GameEngine {
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
       if (!def) continue;
+
+      // Disabled districts produce nothing, consume nothing, provide no jobs
+      if (d.disabled) continue;
 
       // Jobless districts (e.g., housing) still consume resources
       if (def.jobs === 0) {
@@ -436,6 +441,101 @@ class GameEngine {
     }
   }
 
+  // Process energy deficit: disable/re-enable districts based on energy balance
+  // Called after monthly resource processing
+  _processEnergyDeficit() {
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (!colonyIds) continue;
+
+      // --- DISABLE phase: energy stockpile < 0 ---
+      if (state.resources.energy < 0) {
+        // Gather all enabled, energy-consuming districts across player colonies
+        const candidates = [];
+        for (const colonyId of colonyIds) {
+          const colony = this.colonies.get(colonyId);
+          if (!colony) continue;
+          for (const d of colony.districts) {
+            if (d.disabled) continue;
+            const def = DISTRICT_DEFS[d.type];
+            if (!def) continue;
+            const energyCost = def.consumes.energy || 0;
+            if (energyCost > 0) {
+              candidates.push({ district: d, colony, energyCost, energyProd: def.produces.energy || 0 });
+            }
+          }
+        }
+        // Sort by energy consumption descending (disable highest consumers first)
+        candidates.sort((a, b) => b.energyCost - a.energyCost);
+
+        for (const c of candidates) {
+          if (state.resources.energy >= 0) break;
+          c.district.disabled = true;
+          // Reverse this month's impact: add back consumption, subtract production
+          state.resources.energy += c.energyCost;
+          state.resources.energy -= c.energyProd;
+          this._invalidateColonyCache(c.colony);
+          this._emitEvent('districtDisabled', playerId, {
+            colonyId: c.colony.id,
+            colonyName: c.colony.name,
+            districtId: c.district.id,
+            districtType: c.district.type,
+          });
+        }
+      }
+
+      // --- RE-ENABLE phase: try to bring back disabled districts (cheapest first) ---
+      // Only if energy is non-negative after any disables
+      if (state.resources.energy >= 0) {
+        const disabled = [];
+        for (const colonyId of colonyIds) {
+          const colony = this.colonies.get(colonyId);
+          if (!colony) continue;
+          for (const d of colony.districts) {
+            if (!d.disabled) continue;
+            const def = DISTRICT_DEFS[d.type];
+            if (!def) continue;
+            const energyCost = def.consumes.energy || 0;
+            disabled.push({ district: d, colony, energyCost, energyProd: def.produces.energy || 0 });
+          }
+        }
+        // Sort by energy consumption ascending (re-enable cheapest first)
+        disabled.sort((a, b) => a.energyCost - b.energyCost);
+
+        for (const c of disabled) {
+          // Calculate net monthly energy balance across all colonies if we re-enable this district
+          const netChange = c.energyProd - c.energyCost;
+          // Check: would re-enabling keep us non-negative next month?
+          // Use current net energy production as baseline
+          const currentNetEnergy = this._calcPlayerNetEnergy(playerId);
+          if (currentNetEnergy + netChange >= 0) {
+            delete c.district.disabled;
+            this._invalidateColonyCache(c.colony);
+            this._emitEvent('districtEnabled', playerId, {
+              colonyId: c.colony.id,
+              colonyName: c.colony.name,
+              districtId: c.district.id,
+              districtType: c.district.type,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Calculate net energy production/month across all colonies for a player
+  _calcPlayerNetEnergy(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    let net = 0;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      const { production, consumption } = this._calcProduction(colony);
+      net += (production.energy || 0) - (consumption.energy || 0);
+    }
+    return net;
+  }
+
   // Get district output multipliers from completed techs
   _getTechModifiers(playerState) {
     const modifiers = {}; // districtType -> multiplier
@@ -529,6 +629,7 @@ class GameEngine {
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
+      this._processEnergyDeficit();
       this._processResearch();
       this._processPopStarvation();
     }

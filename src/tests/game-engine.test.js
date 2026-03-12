@@ -1534,3 +1534,229 @@ describe('GameEngine — Mini Tech Tree', () => {
     assert.strictEqual(prod.production.food, 18); // 2 * 9
   });
 });
+
+// ── Energy Deficit Consequences ──
+
+describe('GameEngine — Energy Deficit', () => {
+  it('disables highest-energy-consuming district when energy goes negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add an industrial district (consumes 3 energy) and a research district (consumes 4 energy)
+    engine._addBuiltDistrict(colony, 'industrial');
+    engine._addBuiltDistrict(colony, 'research');
+    // Add pops so they can work the new districts
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Set energy to a level that will go negative after monthly processing
+    // Generator produces 6, industrial consumes 3, research consumes 4 → net = -1/month
+    // (no housing district built — base capital housing doesn't consume energy)
+    state.resources.energy = 0; // will become -1 after monthly processing
+
+    engine._processMonthlyResources();
+    assert.ok(state.resources.energy < 0, 'energy should be negative before deficit processing');
+
+    engine._processEnergyDeficit();
+
+    // Research district (4 energy) should be disabled first (highest consumer)
+    const researchDistrict = colony.districts.find(d => d.type === 'research');
+    assert.strictEqual(researchDistrict.disabled, true, 'research district should be disabled');
+  });
+
+  it('disabled districts produce nothing and consume nothing', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Add a research district and disable it
+    const districtId = engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    const researchDistrict = colony.districts.find(d => d.id === districtId);
+    researchDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Research district is disabled — should not produce 3/3/3 research or consume 4 energy
+    // Only generator (6 energy), mining (6 minerals), 2 agriculture (12 food) produce
+    // No housing district built, so no housing energy consumption
+    assert.strictEqual(prod.consumption.energy, 0); // no energy-consuming district active
+    // 4 built districts with jobs (gen, mining, 2 agri) = 4 jobs. Research disabled = 0 jobs.
+    // 10 pops - 4 working = 6 unemployed. Each produces 1 research.
+    assert.strictEqual(prod.production.physics, 6); // 6 unemployed × 1
+  });
+
+  it('disables multiple districts if needed to restore energy balance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add two research districts (consume 4 each) and one industrial (consumes 3)
+    engine._addBuiltDistrict(colony, 'research');
+    engine._addBuiltDistrict(colony, 'research');
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 12;
+    engine._invalidateColonyCache(colony);
+
+    // Net energy: 6 (gen) - 4 - 4 - 3 = -5/month (no housing district built)
+    state.resources.energy = 0; // will become -5
+
+    engine._processMonthlyResources();
+    engine._processEnergyDeficit();
+
+    // Should have disabled enough districts to bring energy >= 0
+    const disabledCount = colony.districts.filter(d => d.disabled).length;
+    assert.ok(disabledCount >= 2, 'should disable at least 2 districts');
+    assert.ok(state.resources.energy >= 0, 'energy should be non-negative after disabling');
+  });
+
+  it('re-enables cheapest disabled district when energy supports it', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add an industrial district (consumes 3) and disable it manually
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    const indDistrict = colony.districts.find(d => d.id === districtId);
+    indDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    // With industrial disabled: net energy = 6 (gen) - 1 (housing) = +5/month
+    // Re-enabling industrial would make it: 6 - 1 - 3 = +2/month — still positive
+    state.resources.energy = 100; // plenty of energy
+
+    engine._processEnergyDeficit();
+
+    assert.ok(!indDistrict.disabled, 'industrial should be re-enabled');
+  });
+
+  it('does not re-enable if it would cause negative energy balance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add two research districts (4 each) and disable both
+    const id1 = engine._addBuiltDistrict(colony, 'research');
+    const id2 = engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    const r1 = colony.districts.find(d => d.id === id1);
+    const r2 = colony.districts.find(d => d.id === id2);
+    r1.disabled = true;
+    r2.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    // Currently: net energy = 6 (gen) - 1 (housing) = +5/month
+    // Re-enabling one research: 6 - 1 - 4 = +1 → ok
+    // Re-enabling both: 6 - 1 - 4 - 4 = -3 → not ok
+    state.resources.energy = 100;
+
+    engine._processEnergyDeficit();
+
+    const enabledResearch = colony.districts.filter(d => d.type === 'research' && !d.disabled);
+    const disabledResearch = colony.districts.filter(d => d.type === 'research' && d.disabled);
+    assert.strictEqual(enabledResearch.length, 1, 'should re-enable one research district');
+    assert.strictEqual(disabledResearch.length, 1, 'should keep one research district disabled');
+  });
+
+  it('emits districtDisabled event when disabling', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Force energy negative
+    state.resources.energy = -10;
+
+    engine._processEnergyDeficit();
+
+    const events = engine._flushEvents();
+    assert.ok(events, 'should have pending events');
+    const disableEvent = events.find(e => e.eventType === 'districtDisabled');
+    assert.ok(disableEvent, 'should emit districtDisabled event');
+    assert.strictEqual(disableEvent.districtType, 'industrial');
+    assert.strictEqual(disableEvent.playerId, 1);
+  });
+
+  it('emits districtEnabled event when re-enabling', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    const indDistrict = colony.districts.find(d => d.id === districtId);
+    indDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    state.resources.energy = 100;
+
+    engine._processEnergyDeficit();
+
+    const events = engine._flushEvents();
+    assert.ok(events, 'should have pending events');
+    const enableEvent = events.find(e => e.eventType === 'districtEnabled');
+    assert.ok(enableEvent, 'should emit districtEnabled event');
+    assert.strictEqual(enableEvent.districtType, 'industrial');
+  });
+
+  it('disabled housing districts provide no housing', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'housing');
+    const housingDistrict = colony.districts.find(d => d.id === districtId);
+    const housingBefore = engine._calcHousing(colony);
+    assert.strictEqual(housingBefore, 15); // 10 base + 5 from housing district
+
+    housingDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+    const housingAfter = engine._calcHousing(colony);
+    assert.strictEqual(housingAfter, 10); // back to base only
+  });
+
+  it('disabled districts do not count as jobs', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'mining');
+    const miningDistrict = colony.districts.find(d => d.id === districtId);
+    const jobsBefore = engine._calcJobs(colony);
+    assert.strictEqual(jobsBefore, 5); // gen(1) + mining(1) + agri(1) + agri(1) + new mining(1) = 5
+
+    miningDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+    const jobsAfter = engine._calcJobs(colony);
+    assert.strictEqual(jobsAfter, 4); // one mining disabled
+  });
+
+  it('energy deficit processing runs during monthly tick', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add industrial + research to create energy deficit
+    engine._addBuiltDistrict(colony, 'industrial');
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Set energy low enough that monthly processing puts it negative
+    // Net energy: 6 (gen) - 3 (industrial) - 4 (research) = -1/month
+    state.resources.energy = 0;
+
+    // Run ticks until monthly processing
+    const events = [];
+    engine.onEvent = (evts) => events.push(...evts);
+    for (let i = 0; i < MONTH_TICKS; i++) {
+      engine.tick();
+    }
+
+    // Should have auto-disabled at least one district
+    const hasDisableEvent = events.some(e => e.eventType === 'districtDisabled');
+    assert.ok(hasDisableEvent, 'energy deficit should trigger district disable during monthly tick');
+  });
+});

@@ -318,11 +318,13 @@
     const ui = DISTRICT_UI[d.type];
     if (!ui) return;
 
-    districtInfoTitle.textContent = ui.label + ' District';
+    const disabledTag = d.disabled ? ' <span style="color:#e74c3c;font-weight:bold">[DISABLED]</span>' : '';
+    districtInfoTitle.innerHTML = ui.label + ' District' + disabledTag;
     districtInfoBody.innerHTML =
+      (d.disabled ? `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#e74c3c">Disabled (energy deficit)</span></div>` : '') +
       `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${ui.label}</span></div>` +
-      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:#2ecc71">${ui.produces}</span></div>` : '') +
-      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:#e74c3c">${ui.consumes}</span></div>` : '');
+      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:${d.disabled ? '#666' : '#2ecc71'}">${d.disabled ? '<s>' + ui.produces + '</s>' : ui.produces}</span></div>` : '') +
+      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:${d.disabled ? '#666' : '#e74c3c'}">${d.disabled ? '<s>' + ui.consumes + '</s>' : ui.consumes}</span></div>` : '');
 
     // Show demolish button (hide for capital buildings if needed)
     districtDemolishBtn.classList.remove('hidden');

@@ -567,3 +567,42 @@ Each entry records an iteration of automated development.
 - Research panel centered as overlay rather than permanent side panel — avoids cluttering the colony view
 
 **Next:** Energy deficit consequences (auto-disable districts when energy negative)
+
+---
+
+## Entry 18 — 2026-03-11 — Energy Deficit Consequences
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Auto-disable system: when a player's energy stockpile goes negative at monthly processing, the highest-energy-consuming district is disabled until energy balance is restored
+- Disabled districts produce nothing, consume nothing, provide no jobs or housing — pops become unemployed
+- Re-enable system: each month, cheapest disabled districts are re-enabled if the monthly net energy balance can support them
+- `_processEnergyDeficit()` method runs after monthly resource processing, before research/starvation
+- `_calcPlayerNetEnergy()` helper calculates net energy production across all player colonies
+- `_calcProduction`, `_calcJobs`, `_calcHousing` all skip disabled districts
+- `districtDisabled` and `districtEnabled` events emitted for UI notifications
+- Client renderer: disabled districts rendered with desaturated gray material (MeshStandardMaterial color #444444, 50% opacity)
+- Client UI: district info panel shows [DISABLED] tag with struck-through production/upkeep values
+- Disabled material pool created in renderer.js `_initPools()` for each district type
+- Incremental renderer update tracks disabled state to swap materials without full grid rebuild
+
+**Files changed:**
+- `server/game-engine.js` — `_processEnergyDeficit`, `_calcPlayerNetEnergy`, disabled checks in `_calcProduction`/`_calcJobs`/`_calcHousing`, wired into monthly tick
+- `src/public/js/renderer.js` — disabled materials in pool, `_createDistrictMesh` accepts disabled param, `updateFromState` tracks disabled state
+- `src/public/js/app.js` — district info panel shows disabled status with struck-through values
+- `src/tests/game-engine.test.js` — 10 new energy deficit tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 150 total (10 new: disable on negative energy, disabled districts produce/consume nothing, multi-district disable, re-enable when energy supports, no re-enable if would go negative, disable/enable events, disabled housing provides no housing, disabled districts have no jobs, monthly tick integration). All passing.
+
+**Key decisions:**
+- Disable logic reverses the current month's impact (adds back consumption, subtracts production) so the stockpile immediately reflects the disabled state
+- Re-enable uses net monthly energy balance check (not stockpile) to prevent oscillating enable/disable cycles
+- `delete district.disabled` on re-enable rather than `= false` to keep district objects clean
+- Disabled materials are pre-allocated in the pool (one per district type) to avoid per-frame allocations
+- No separate "disabled district 3D rendering" task needed for basic visuals — desaturated material is sufficient; the existing design doc task for red X overlay is a future enhancement
+
+**Next:** Dead code fix (first-3-districts discount for newly colonized planets), or score timer + VP scoring
