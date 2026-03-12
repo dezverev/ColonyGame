@@ -429,8 +429,8 @@
       highlightMesh = null;
     }
 
-    // Find the mesh for this tile (children[0] is ground)
-    const tileMesh = gridGroup.children.find(c => c.userData.tileIndex === tileIndex);
+    // Direct index lookup: children[0] is ground, tiles start at [1]
+    const tileMesh = gridGroup.children[tileIndex + 1];
     if (!tileMesh) return;
 
     // Add highlight ring at tile position

@@ -1079,14 +1079,16 @@ describe('GameEngine — Performance', () => {
     assert.notStrictEqual(json1, json3, 'Should return new string after state change');
   });
 
-  it('onTick receives pre-stringified JSON', () => {
+  it('onTick receives per-player pre-stringified JSON', () => {
+    let receivedPlayerId = null;
     let receivedPayload = null;
     const engine = new GameEngine(makeRoom(1), {
       tickRate: 10,
-      onTick: (payload) => { receivedPayload = payload; },
+      onTick: (playerId, payload) => { receivedPlayerId = playerId; receivedPayload = payload; },
     });
 
     engine.tick();
+    assert.strictEqual(receivedPlayerId, 1, 'onTick should receive playerId');
     assert.strictEqual(typeof receivedPayload, 'string', 'onTick should receive a string');
     const parsed = JSON.parse(receivedPayload);
     assert.strictEqual(parsed.type, 'gameState');
@@ -1191,5 +1193,68 @@ describe('GameEngine — Tick Profiling', () => {
     const stats = engine.getTickStats();
     assert.strictEqual(stats.count, 0);
     assert.strictEqual(stats.avg, 0);
+  });
+});
+
+describe('GameEngine — Per-Player State Filtering', () => {
+  it('getPlayerState only includes the requesting players colonies', () => {
+    const engine = new GameEngine(makeRoom(2));
+    const state1 = engine.getPlayerState(1);
+    const state2 = engine.getPlayerState(2);
+
+    // Each player should only see their own colonies
+    assert.ok(state1.colonies.every(c => c.ownerId === 1), 'Player 1 sees only own colonies');
+    assert.ok(state2.colonies.every(c => c.ownerId === 2), 'Player 2 sees only own colonies');
+    assert.strictEqual(state1.colonies.length, 1);
+    assert.strictEqual(state2.colonies.length, 1);
+  });
+
+  it('getPlayerState includes own resources but not other players resources', () => {
+    const engine = new GameEngine(makeRoom(2));
+    const state = engine.getPlayerState(1);
+
+    // First player in array is self (has resources)
+    const me = state.players.find(p => p.id === 1);
+    assert.ok(me.resources, 'Own player has resources');
+
+    // Other player should NOT have resources
+    const other = state.players.find(p => p.id === 2);
+    assert.strictEqual(other.resources, undefined, 'Other player has no resources');
+  });
+
+  it('per-player payload is under 5KB for 8 players with 5 colonies each', () => {
+    const engine = new GameEngine(makeRoom(8));
+    // Add 4 extra colonies per player (5 total each)
+    for (let i = 1; i <= 8; i++) {
+      for (let c = 0; c < 4; c++) {
+        const colony = engine._createColony(i, `Colony-${i}-${c}`, { size: 16, type: 'continental', habitability: 80 });
+        engine._addBuiltDistrict(colony, 'generator');
+        engine._addBuiltDistrict(colony, 'mining');
+        engine._addBuiltDistrict(colony, 'agriculture');
+        engine._addBuiltDistrict(colony, 'housing');
+      }
+    }
+
+    // Check per-player payload size
+    const json = engine.getPlayerStateJSON(1);
+    const sizeKB = json.length / 1024;
+    assert.ok(sizeKB < 5, `Per-player payload is ${sizeKB.toFixed(1)}KB, limit is 5KB`);
+  });
+
+  it('per-player onTick sends filtered state to each player', () => {
+    const received = new Map();
+    const engine = new GameEngine(makeRoom(2), {
+      onTick: (playerId, json) => {
+        received.set(playerId, JSON.parse(json));
+      },
+    });
+
+    engine.tick(); // triggers dirty broadcast
+
+    assert.ok(received.has(1), 'Player 1 received state');
+    assert.ok(received.has(2), 'Player 2 received state');
+    // Each player's colonies should only be their own
+    assert.ok(received.get(1).colonies.every(c => c.ownerId === 1));
+    assert.ok(received.get(2).colonies.every(c => c.ownerId === 2));
   });
 });

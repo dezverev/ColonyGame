@@ -391,10 +391,12 @@ class GameEngine {
       this.onEvent(events);
     }
 
-    // Only broadcast when state has changed
+    // Only broadcast when state has changed — per-player filtered payloads
     if (this.onTick && this._dirty) {
       this._dirty = false;
-      this.onTick(this.getStateJSON());
+      for (const [playerId] of this.playerStates) {
+        this.onTick(playerId, this.getPlayerStateJSON(playerId));
+      }
     }
 
     // Record tick timing
@@ -516,52 +518,7 @@ class GameEngine {
     }
     const coloniesArr = [];
     for (const c of this.colonies.values()) {
-      const { production, consumption } = this._calcProduction(c);
-      const queueArr = [];
-      for (const q of c.buildQueue) {
-        queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
-      }
-      // Calculate growth state for UI
-      const housing = this._calcHousing(c);
-      const foodSurplus = production.food - (consumption.food || 0);
-      let growthTarget = 0;
-      let growthStatus = 'none';
-      if (foodSurplus <= 0) {
-        growthStatus = foodSurplus < 0 ? 'starving' : 'stalled';
-      } else if (c.pops >= housing) {
-        growthStatus = 'housing_full';
-      } else {
-        if (foodSurplus > 10) growthTarget = GROWTH_FASTEST_TICKS;
-        else if (foodSurplus > 5) growthTarget = GROWTH_FAST_TICKS;
-        else growthTarget = GROWTH_BASE_TICKS;
-        if (foodSurplus > 10) growthStatus = 'rapid';
-        else if (foodSurplus > 5) growthStatus = 'fast';
-        else growthStatus = 'slow';
-      }
-
-      coloniesArr.push({
-        id: c.id,
-        ownerId: c.ownerId,
-        name: c.name,
-        planet: c.planet,
-        districts: c.districts,
-        buildQueue: queueArr,
-        pops: c.pops,
-        housing,
-        jobs: this._calcJobs(c),
-        growthProgress: c.growthProgress,
-        growthTarget,
-        growthStatus,
-        netProduction: {
-          energy: production.energy - (consumption.energy || 0),
-          minerals: production.minerals - (consumption.minerals || 0),
-          food: production.food - (consumption.food || 0),
-          alloys: production.alloys - (consumption.alloys || 0),
-          physics: production.physics,
-          society: production.society,
-          engineering: production.engineering,
-        },
-      });
+      coloniesArr.push(this._serializeColony(c));
     }
     const state = { tick: this.tickCount, players: playersArr, colonies: coloniesArr };
     this._cachedState = state;
@@ -575,6 +532,78 @@ class GameEngine {
     state.type = 'gameState';
     this._cachedStateJSON = JSON.stringify(state);
     return this._cachedStateJSON;
+  }
+
+  // Per-player state: only this player's resources and colonies + minimal other-player summary
+  getPlayerState(playerId) {
+    const player = this.playerStates.get(playerId);
+    if (!player) return this.getState(); // fallback
+
+    // Own resources
+    const me = { id: player.id, name: player.name, color: player.color, resources: player.resources };
+
+    // Other players: name/color only (no resources — saves bandwidth, not needed by client)
+    const others = [];
+    for (const p of this.playerStates.values()) {
+      if (p.id === playerId) continue;
+      others.push({ id: p.id, name: p.name, color: p.color });
+    }
+
+    // Own colonies (full detail)
+    const myColonyIds = this._playerColonies.get(playerId) || [];
+    const coloniesArr = [];
+    for (const colonyId of myColonyIds) {
+      const c = this.colonies.get(colonyId);
+      if (!c) continue;
+      coloniesArr.push(this._serializeColony(c));
+    }
+
+    return { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+  }
+
+  // Pre-stringified per-player gameState payload
+  getPlayerStateJSON(playerId) {
+    const state = this.getPlayerState(playerId);
+    state.type = 'gameState';
+    return JSON.stringify(state);
+  }
+
+  // Serialize a single colony (shared by getState and getPlayerState)
+  _serializeColony(c) {
+    const { production, consumption } = this._calcProduction(c);
+    const queueArr = [];
+    for (const q of c.buildQueue) {
+      queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
+    }
+    const housing = this._calcHousing(c);
+    const foodSurplus = production.food - (consumption.food || 0);
+    let growthTarget = 0;
+    let growthStatus = 'none';
+    if (foodSurplus <= 0) {
+      growthStatus = foodSurplus < 0 ? 'starving' : 'stalled';
+    } else if (c.pops >= housing) {
+      growthStatus = 'housing_full';
+    } else {
+      if (foodSurplus > 10) growthTarget = GROWTH_FASTEST_TICKS;
+      else if (foodSurplus > 5) growthTarget = GROWTH_FAST_TICKS;
+      else growthTarget = GROWTH_BASE_TICKS;
+      if (foodSurplus > 10) growthStatus = 'rapid';
+      else if (foodSurplus > 5) growthStatus = 'fast';
+      else growthStatus = 'slow';
+    }
+    return {
+      id: c.id, ownerId: c.ownerId, name: c.name, planet: c.planet,
+      districts: c.districts, buildQueue: queueArr,
+      pops: c.pops, housing, jobs: this._calcJobs(c),
+      growthProgress: c.growthProgress, growthTarget, growthStatus,
+      netProduction: {
+        energy: production.energy - (consumption.energy || 0),
+        minerals: production.minerals - (consumption.minerals || 0),
+        food: foodSurplus,
+        alloys: production.alloys - (consumption.alloys || 0),
+        physics: production.physics, society: production.society, engineering: production.engineering,
+      },
+    };
   }
 
   getInitState() {
