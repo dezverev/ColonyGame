@@ -97,9 +97,90 @@ describe('Server Integration', () => {
     send(ws1, { type: 'launchGame' });
     const init1 = await waitForMessage(ws1, m => m.type === 'gameInit');
     const init2 = await waitForMessage(ws2, m => m.type === 'gameInit');
-    assert.ok(init1.mapWidth > 0);
-    assert.ok(init2.mapWidth > 0);
-    assert.ok(init1.units.length > 0);
+    assert.ok(init1.colonies.length >= 2);
+    assert.ok(init2.colonies.length >= 2);
+    assert.ok(init1.players.length >= 2);
+  });
+
+  it('buildDistrict command works via WebSocket', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws1 = await connectWs(srv.port);
+    const ws2 = await connectWs(srv.port);
+    t.after(() => { ws1.close(); ws2.close(); });
+
+    await waitForMessage(ws1, m => m.type === 'welcome');
+    await waitForMessage(ws2, m => m.type === 'welcome');
+
+    send(ws1, { type: 'setName', name: 'Alice' });
+    send(ws2, { type: 'setName', name: 'Bob' });
+    await waitForMessage(ws1, m => m.type === 'nameSet');
+    await waitForMessage(ws2, m => m.type === 'nameSet');
+
+    send(ws1, { type: 'createRoom', name: 'Build Test', maxPlayers: 2 });
+    const joined = await waitForMessage(ws1, m => m.type === 'roomJoined');
+    send(ws2, { type: 'joinRoom', roomId: joined.room.id });
+    await waitForMessage(ws2, m => m.type === 'roomJoined');
+    send(ws2, { type: 'toggleReady' });
+    await waitForMessage(ws2, m => m.type === 'roomUpdate');
+
+    send(ws1, { type: 'launchGame' });
+    const init = await waitForMessage(ws1, m => m.type === 'gameInit');
+
+    // Find player 1's colony (ws1 is clientId 1)
+    const myColony = init.colonies.find(c => c.ownerId === init.yourId);
+    assert.ok(myColony, 'Should have a colony');
+
+    // Build a housing district
+    send(ws1, { type: 'buildDistrict', colonyId: myColony.id, districtType: 'housing' });
+
+    // Wait for a gameState that shows the build queue
+    const stateMsg = await waitForMessage(ws1, m => {
+      if (m.type !== 'gameState') return false;
+      const colony = m.colonies.find(c => c.id === myColony.id);
+      return colony && colony.buildQueue.length > 0;
+    });
+    const colony = stateMsg.colonies.find(c => c.id === myColony.id);
+    assert.strictEqual(colony.buildQueue[0].type, 'housing');
+  });
+
+  it('rejects buildDistrict on another players colony', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+
+    const ws1 = await connectWs(srv.port);
+    const ws2 = await connectWs(srv.port);
+    t.after(() => { ws1.close(); ws2.close(); });
+
+    await waitForMessage(ws1, m => m.type === 'welcome');
+    await waitForMessage(ws2, m => m.type === 'welcome');
+
+    send(ws1, { type: 'setName', name: 'Alice' });
+    send(ws2, { type: 'setName', name: 'Bob' });
+    await waitForMessage(ws1, m => m.type === 'nameSet');
+    await waitForMessage(ws2, m => m.type === 'nameSet');
+
+    send(ws1, { type: 'createRoom', name: 'Ownership Test', maxPlayers: 2 });
+    const joined = await waitForMessage(ws1, m => m.type === 'roomJoined');
+    send(ws2, { type: 'joinRoom', roomId: joined.room.id });
+    await waitForMessage(ws2, m => m.type === 'roomJoined');
+    send(ws2, { type: 'toggleReady' });
+    await waitForMessage(ws2, m => m.type === 'roomUpdate');
+
+    send(ws1, { type: 'launchGame' });
+    const init1 = await waitForMessage(ws1, m => m.type === 'gameInit');
+    await waitForMessage(ws2, m => m.type === 'gameInit');
+
+    // Player 1's colony
+    const p1Colony = init1.colonies.find(c => c.ownerId === init1.yourId);
+
+    // Player 2 tries to build on player 1's colony
+    send(ws2, { type: 'buildDistrict', colonyId: p1Colony.id, districtType: 'housing' });
+
+    // Should get an error
+    const err = await waitForMessage(ws2, m => m.type === 'error');
+    assert.ok(err.message);
   });
 
   it('chat works within a room', async (t) => {

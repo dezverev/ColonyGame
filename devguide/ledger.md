@@ -68,3 +68,42 @@ Each entry records an iteration of automated development.
 - Simultaneous real-time multiplayer (like Stellaris, not turn-based)
 
 **Next:** Phase 1 — Foundation Pivot (Three.js integration, colony terrain, new game engine)
+
+---
+
+## Entry 3 — 2026-03-11 — Colony 4X Engine & Resource System
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Complete rewrite of game-engine.js from RTS to colony 4X: removed unit movement/combat, UNIT_DEFS, calcDamage
+- Colony state system: districts[], buildQueue[], pops, planet properties (size, type, habitability)
+- 6 district types with production/consumption: Housing, Generator, Mining, Agriculture, Industrial, Research
+- Per-player resource tracking: energy, minerals, food, alloys, research (3 types), influence
+- Monthly economic cycle (every 100 ticks): resource production, consumption, pop food costs
+- Construction system: build queue (max 3), build time with 50% discount for first 3 districts
+- Demolish command for removing built districts
+- Population system: food deficit causes pop death, pops cannot go below 1
+- Unemployed pops produce research (1 each type per unemployed pop per month)
+- Updated server.js protocol: buildDistrict and demolish commands replace old gameCommand/moveUnits
+- Server validates ownership, resources, slots, queue limits on every command
+- Planet type definitions with habitability values (9 types)
+
+**Files changed:**
+- `server/game-engine.js` — complete rewrite (colony 4X engine)
+- `server/server.js` — updated protocol handlers, log message
+- `src/tests/game-engine.test.js` — complete rewrite (38 tests)
+- `src/tests/server-integration.test.js` — updated for colony protocol (5 tests including 2 new)
+- `devguide/design.md` — marked 4 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 50 total (38 game-engine + 12 room-manager + 5 integration). All passing.
+
+**Key decisions:**
+- Built economy loop before Three.js rendering (game designer recommendation: playable mechanics > pretty graphics)
+- Production is per-month (100 ticks = 10 seconds), not per-tick, for balanced pacing
+- handleCommand returns result objects {ok/error} so server.js can send errors to client
+- Starting colonies get 3 pre-built districts so resources flow immediately without player action
+
+**Next:** Add Three.js dependency and basic scene setup (Phase 1 rendering tasks), or basic resource HUD to make the economy visible

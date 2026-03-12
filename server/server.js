@@ -168,12 +168,16 @@ function startServer(options = {}) {
         break;
       }
 
-      case 'gameCommand': {
+      case 'buildDistrict':
+      case 'demolish': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);
         if (!engine) return;
-        engine.handleCommand(clientId, msg.command);
+        const result = engine.handleCommand(clientId, msg);
+        if (result && result.error) {
+          send(ws, { type: 'error', message: result.error });
+        }
         break;
       }
 
@@ -194,7 +198,7 @@ function startServer(options = {}) {
 
   return new Promise((resolve) => {
     httpServer.listen(port, () => {
-      if (log) console.log(`[server] RTS game server on port ${port}`);
+      if (log) console.log(`[server] Colony 4X game server on port ${port}`);
       resolve({
         port: httpServer.address().port,
         close: () => {
