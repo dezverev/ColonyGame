@@ -91,6 +91,59 @@ describe('Performance — broadcast efficiency', () => {
   });
 });
 
+describe('Performance — stress test (max load)', () => {
+  it('8 players with max districts — tick stays under 5ms', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10, profile: true });
+
+    // Max out districts on every colony
+    for (let p = 1; p <= 8; p++) {
+      engine.playerStates.get(p).resources.minerals = 99999;
+      engine.playerStates.get(p).resources.energy = 99999;
+      const colonyIds = engine._playerColonies.get(p) || [];
+      for (const cId of colonyIds) {
+        const colony = engine.colonies.get(cId);
+        const remaining = colony.planet.size - colony.districts.length - colony.buildQueue.length;
+        const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+        for (let d = 0; d < remaining; d++) {
+          engine.handleCommand(p, { type: 'buildDistrict', colonyId: cId, districtType: types[d % types.length] });
+        }
+      }
+    }
+
+    // Run 500 ticks (5 monthly cycles) under max load
+    for (let i = 0; i < 500; i++) engine.tick();
+    const stats = engine.getTickStats();
+    assert.ok(stats.avg < 5, `Avg tick ${stats.avg.toFixed(4)}ms exceeds 5ms under max load`);
+    assert.ok(stats.max < 20, `Max tick ${stats.max.toFixed(4)}ms exceeds 20ms under max load`);
+    engine.stop();
+  });
+
+  it('per-player payload stays under 5KB at max districts', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+
+    for (let p = 1; p <= 8; p++) {
+      engine.playerStates.get(p).resources.minerals = 99999;
+      engine.playerStates.get(p).resources.energy = 99999;
+      const colonyIds = engine._playerColonies.get(p) || [];
+      for (const cId of colonyIds) {
+        const colony = engine.colonies.get(cId);
+        const remaining = colony.planet.size - colony.districts.length - colony.buildQueue.length;
+        const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+        for (let d = 0; d < remaining; d++) {
+          engine.handleCommand(p, { type: 'buildDistrict', colonyId: cId, districtType: types[d % types.length] });
+        }
+      }
+    }
+
+    // Let construction finish
+    for (let i = 0; i < 500; i++) engine.tick();
+
+    const json = engine.getPlayerStateJSON(1);
+    assert.ok(json.length < 5120, `Per-player payload ${json.length} bytes exceeds 5KB at max load`);
+    engine.stop();
+  });
+});
+
 describe('Performance — galaxy generation', () => {
   it('large galaxy generates under 50ms', () => {
     const { generateGalaxy } = require('../../server/galaxy');
