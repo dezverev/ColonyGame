@@ -736,3 +736,34 @@ Each entry records an iteration of automated development.
 - Planet habitability color-coded in table: green (60%+), yellow (1-59%), gray (0%) — instant visual parsing
 
 **Next:** Alloy VP fix + industrial output bump (game-designer R17-2, R17-3), then event toast HUD
+
+---
+
+## Entry 22 — 2026-03-12 — Balance Fix: Alloy VP Weight + Industrial/Research Output Bump
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Doubled alloy VP weight: changed VP formula from `alloys/50` to `alloys/25` in `_calcVictoryPoints` and `_triggerGameOver` breakdown — Industrial districts now produce ~0.16 VP/month, competitive with Housing's ~0.08 VP/month
+- Increased Industrial district alloy output from 3 to 4 per month in DISTRICT_DEFS
+- Increased Research district output from 3/3/3 to 4/4/4 (physics/society/engineering) per month in DISTRICT_DEFS
+- Updated client DISTRICT_UI to show "+4 Alloys" and "+4 Phys/Soc/Eng"
+- Updated all VP tests to use new alloys/25 divisor (7 existing tests updated)
+- Added 3 new tests: Industrial output=4, Research output=4/4/4, VP alloy divisor=25
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS industrial/research output values, _calcVictoryPoints alloys/25, _triggerGameOver breakdown alloys/25
+- `src/public/js/app.js` — DISTRICT_UI industrial/research produces strings
+- `src/tests/game-engine.test.js` — updated 7 VP tests, added 3 new balance tests
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 282 total (3 new). All passing.
+
+**Key decisions:**
+- Alloys/25 makes Industrial VP-competitive: 4 alloys/month × 1/25 = 0.16 VP/month vs Housing ~0.08 VP/month from pop growth — still slightly behind but no longer a 33x disadvantage
+- Research 4/4/4 output justifies the 200 mineral + 20 energy premium over basic districts (4 vs 6 for basics, but across 3 types = 12 total)
+- Energy consumption unchanged (Industrial: 3, Research: 4) — the buff is output-only, energy pressure remains the same
+
+**Next:** Event toast notification HUD (game-designer R18 priority #2)

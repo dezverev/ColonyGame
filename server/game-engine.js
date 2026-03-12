@@ -9,8 +9,8 @@ const DISTRICT_DEFS = {
   generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   mining:      { produces: { minerals: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
-  industrial:  { produces: { alloys: 3 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 400 },
-  research:    { produces: { physics: 3, society: 3, engineering: 3 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
+  industrial:  { produces: { alloys: 4 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 400 },
+  research:    { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
 };
 
 // Planet types and their habitability ranges
@@ -627,8 +627,8 @@ class GameEngine {
       if (colony) totalDistricts += colony.districts.length;
     }
 
-    // Alloys stockpiled / 50
-    const alloysVP = Math.floor(state.resources.alloys / 50);
+    // Alloys stockpiled / 25
+    const alloysVP = Math.floor(state.resources.alloys / 25);
 
     // Total research / 100
     const totalResearch = (state.resources.research.physics || 0)
@@ -698,7 +698,7 @@ class GameEngine {
           districts: totalDistricts,
           districtsVP: totalDistricts,
           alloys: state.resources.alloys,
-          alloysVP: Math.floor(state.resources.alloys / 50),
+          alloysVP: Math.floor(state.resources.alloys / 25),
           totalResearch: (state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0),
           researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 100),
         },

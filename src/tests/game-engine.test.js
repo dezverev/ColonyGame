@@ -1429,7 +1429,7 @@ describe('GameEngine — Mini Tech Tree', () => {
     // Run one month
     for (let i = 0; i < MONTH_TICKS; i++) engine.tick();
 
-    // Research district produces 3 physics/month + unemployed pops produce some too
+    // Research district produces 4 physics/month + unemployed pops produce some too
     const progress = engine.playerStates.get(1).researchProgress['improved_power_plants'];
     assert.ok(progress > 0, 'Research progress should be positive');
     // Physics stockpile should be consumed (set to 0)
@@ -1896,18 +1896,18 @@ describe('GameEngine — Victory Points', () => {
     const state = engine.playerStates.get(1);
     const colony = Array.from(engine.colonies.values())[0];
 
-    // Starting: 8 pops * 2 = 16, 4 districts * 1 = 4, alloys 50/50 = 1, research 0
+    // Starting: 8 pops * 2 = 16, 4 districts * 1 = 4, alloys 50/25 = 2, research 0
     const vp = engine._calcVictoryPoints(1);
-    assert.strictEqual(vp, 16 + 4 + 1 + 0); // 21
+    assert.strictEqual(vp, 16 + 4 + 2 + 0); // 22
   });
 
-  it('VP includes alloy stockpile divided by 50', () => {
+  it('VP includes alloy stockpile divided by 25', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.playerStates.get(1);
     state.resources.alloys = 250;
     const vp = engine._calcVictoryPoints(1);
-    // 8*2=16, 4 districts, 250/50=5
-    assert.strictEqual(vp, 16 + 4 + 5 + 0);
+    // 8*2=16, 4 districts, 250/25=10
+    assert.strictEqual(vp, 16 + 4 + 10 + 0);
   });
 
   it('VP includes total research divided by 100', () => {
@@ -2181,20 +2181,20 @@ describe('GameEngine — VP Edge Cases', () => {
 
     // Player 1 now has: colony1 (8 pops, 4 districts) + colony2 (5 pops, 2 districts)
     // Total pops = 13, total districts = 6
-    // VP = 13*2 + 6 + floor(50/50) + 0 = 26 + 6 + 1 = 33
+    // VP = 13*2 + 6 + floor(50/25) + 0 = 26 + 6 + 2 = 34
     const vp = engine._calcVictoryPoints(1);
-    assert.strictEqual(vp, 33);
+    assert.strictEqual(vp, 34);
   });
 
   it('VP floors fractional alloy and research values', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.playerStates.get(1);
-    state.resources.alloys = 99;  // 99/50 = 1.98 → floor = 1
+    state.resources.alloys = 99;  // 99/25 = 3.96 → floor = 3
     state.resources.research = { physics: 33, society: 33, engineering: 33 }; // 99/100 = 0.99 → floor = 0
 
     const vp = engine._calcVictoryPoints(1);
-    // 8*2=16, 4 districts, 1 alloyVP, 0 researchVP
-    assert.strictEqual(vp, 16 + 4 + 1 + 0);
+    // 8*2=16, 4 districts, 3 alloyVP, 0 researchVP
+    assert.strictEqual(vp, 16 + 4 + 3 + 0);
   });
 
   it('VP handles zero alloys correctly', () => {
@@ -2211,9 +2211,30 @@ describe('GameEngine — VP Edge Cases', () => {
 
     // Advance a tick — cache should be stale
     engine.tick();
-    engine.playerStates.get(1).resources.alloys += 500; // +10 VP from alloys
+    engine.playerStates.get(1).resources.alloys += 500; // +20 VP from alloys (500/25)
     const vp2 = engine._calcVictoryPoints(1);
-    assert.strictEqual(vp2, vp1 + 10, 'VP should reflect updated alloys after tick advances');
+    assert.strictEqual(vp2, vp1 + 20, 'VP should reflect updated alloys after tick advances');
+  });
+
+  it('Industrial district produces 4 alloys per month', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(DISTRICT_DEFS.industrial.produces.alloys, 4);
+  });
+
+  it('Research district produces 4 of each research type per month', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(DISTRICT_DEFS.research.produces.physics, 4);
+    assert.strictEqual(DISTRICT_DEFS.research.produces.society, 4);
+    assert.strictEqual(DISTRICT_DEFS.research.produces.engineering, 4);
+  });
+
+  it('VP alloy weight uses divisor of 25 (not 50)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 75; // 75/25 = 3 VP from alloys
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 75/25=3
+    assert.strictEqual(vp, 16 + 4 + 3 + 0);
   });
 });
 

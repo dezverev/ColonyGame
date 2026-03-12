@@ -207,8 +207,8 @@
     generator:   { label: 'Generator',   color: '#f1c40f', cost: { minerals: 100 }, produces: '+6 Energy', consumes: '' },
     mining:      { label: 'Mining',      color: '#95a5a6', cost: { minerals: 100 }, produces: '+6 Minerals', consumes: '' },
     agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
-    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+3 Alloys', consumes: '-3 Energy' },
-    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
+    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+4 Alloys', consumes: '-3 Energy' },
+    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
   // ── Tech tree (client-side mirror for UI) ──
