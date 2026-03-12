@@ -6,7 +6,7 @@
     "dev": "concurrently \"node src/dev-client-server.js\" \"node --watch server/server.js\"",
     "start": "node server/server.js",
     "test": "node --test src/tests/**/*.test.js",
-    "stop": "lsof -ti :4000,:4001 | xargs kill -9 2>/dev/null || true"
+    "stop": "lsof -ti :4000 -ti :4001 | xargs kill -9 2>/dev/null || true"
   },
   "dependencies": {
     "ws": "^8.16.0"

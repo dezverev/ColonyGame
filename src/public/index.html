@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>RTS Game</title>
+  <title>ColonyGame</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <!-- Name Entry -->
   <div id="name-screen" class="screen active">
     <div class="center-box">
-      <h1>RTS Game</h1>
+      <h1>ColonyGame</h1>
       <input type="text" id="name-input" placeholder="Enter your name" maxlength="20" autocomplete="off">
       <button id="name-submit">Play</button>
     </div>
@@ -67,23 +67,66 @@
 
   <!-- Game View -->
   <div id="game-screen" class="screen">
-    <canvas id="game-canvas"></canvas>
-    <div id="game-hud">
+    <div id="render-container"></div>
+    <div id="colony-ui">
+      <!-- Resource bar (top) -->
       <div id="resource-bar">
-        <span id="hud-gold">Gold: 0</span>
-        <span id="hud-wood">Wood: 0</span>
-        <span id="hud-stone">Stone: 0</span>
-        <span id="hud-supply">Supply: 0/0</span>
+        <div class="res-item" data-res="energy"><span class="res-icon" style="color:#f1c40f">⚡</span><span class="res-name">Energy</span><span class="res-val" id="res-energy">0</span><span class="res-net" id="res-energy-net"></span></div>
+        <div class="res-item" data-res="minerals"><span class="res-icon" style="color:#95a5a6">⛏</span><span class="res-name">Minerals</span><span class="res-val" id="res-minerals">0</span><span class="res-net" id="res-minerals-net"></span></div>
+        <div class="res-item" data-res="food"><span class="res-icon" style="color:#2ecc71">🌾</span><span class="res-name">Food</span><span class="res-val" id="res-food">0</span><span class="res-net" id="res-food-net"></span></div>
+        <div class="res-item" data-res="alloys"><span class="res-icon" style="color:#e67e22">⚙</span><span class="res-name">Alloys</span><span class="res-val" id="res-alloys">0</span><span class="res-net" id="res-alloys-net"></span></div>
+        <div class="res-item" data-res="research"><span class="res-icon" style="color:#3498db">🔬</span><span class="res-name">Research</span><span class="res-val" id="res-research">0</span><span class="res-net" id="res-research-net"></span></div>
+        <div class="res-item" data-res="influence"><span class="res-icon" style="color:#9b59b6">★</span><span class="res-name">Influence</span><span class="res-val" id="res-influence">0</span></div>
       </div>
-      <div id="minimap-container">
-        <canvas id="minimap-canvas" width="150" height="150"></canvas>
+
+      <!-- Status bar (below resource bar) -->
+      <div id="status-bar">
+        <span id="status-month">Month 0</span>
+        <span class="status-sep">|</span>
+        <span id="status-pops">Pop: 0/0</span>
+        <span class="status-sep">|</span>
+        <span id="status-growth">Growth: —</span>
+        <div id="growth-bar-wrap"><div id="growth-bar-fill"></div></div>
       </div>
-      <div id="selection-panel"></div>
+
+      <!-- Colony info panel (right side) -->
+      <div id="colony-panel" class="game-panel">
+        <div class="panel-header"><span id="colony-panel-title">Colony</span></div>
+        <div id="colony-panel-body">
+          <div class="info-row"><span class="info-label">Planet</span><span class="info-value" id="cp-planet">—</span></div>
+          <div class="info-row"><span class="info-label">Districts</span><span class="info-value" id="cp-districts">0/0</span></div>
+          <div class="info-row"><span class="info-label">Working</span><span class="info-value" id="cp-working">0</span></div>
+          <div class="info-row"><span class="info-label">Idle</span><span class="info-value" id="cp-idle">0</span></div>
+          <div class="info-row"><span class="info-label">Housing</span><span class="info-value" id="cp-housing">0/0</span></div>
+        </div>
+        <div id="colony-queue-header" class="hidden">Build Queue</div>
+        <div id="colony-queue-list"></div>
+      </div>
+
+      <!-- Research panel — toggled with R key or button -->
+      <div id="research-panel" class="game-panel hidden">
+        <div class="panel-header">Research<button id="research-panel-close" class="panel-close">&times;</button></div>
+        <div id="research-tracks"></div>
+      </div>
+
+      <!-- Build menu — appears when empty tile clicked -->
+      <div id="build-menu" class="game-panel hidden">
+        <div class="panel-header">Build District<button id="build-menu-close" class="panel-close">&times;</button></div>
+        <div id="build-menu-resources"></div>
+        <div id="build-menu-options"></div>
+      </div>
+      <!-- District info — appears when built district clicked -->
+      <div id="district-info" class="game-panel hidden">
+        <div class="panel-header"><span id="district-info-title">District</span><button id="district-info-close" class="panel-close">&times;</button></div>
+        <div id="district-info-body"></div>
+        <button id="district-demolish-btn" class="demolish-btn">Demolish</button>
+      </div>
     </div>
   </div>
 
-  <script src="js/projection.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="js/lobby.js"></script>
+  <script src="js/renderer.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -375,3 +375,195 @@ Each entry records an iteration of automated development.
 - `housingFull` fires on the exact tick pops reach housing cap, giving immediate feedback
 
 **Next:** Energy deficit consequences (auto-disable districts when energy negative)
+
+---
+
+## Entry 13 — 2026-03-11 — CLIENT UX SPRINT 2/5: Stale Client Cleanup
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Stripped all RTS rendering code from app.js: removed Canvas 2D renderer, Projection module references, unit selection/drag-select, minimap rendering, gold/wood/stone HUD update, camera/zoom system, selection box, render loop
+- Updated gameInit handler to parse colony 4X state (tick, players, colonies, yourId)
+- Updated gameState handler to receive tick/player/colony updates
+- Added gameEvent handler stub for future UI rendering
+- Exposed `window.GameClient = { send, getState }` for future modules (renderer.js, ui.js)
+- Removed from index.html: game-canvas, minimap-canvas, gold/wood/stone/supply resource bar, selection-panel, game-hud, projection.js script tag
+- Added to index.html: `<div id="render-container">` for Three.js canvas, `<div id="colony-ui">` for HTML overlay
+- Updated title from "RTS Game" to "ColonyGame"
+- Removed RTS game styles from style.css (canvas, minimap, gold/wood/stone colors, selection panel)
+- Added colony 4X game screen styles (render-container, colony-ui overlay)
+- Deleted `src/public/js/projection.js` (no longer referenced anywhere)
+
+**Files changed:**
+- `src/public/js/app.js` — complete rewrite (stripped RTS, added colony 4X handlers)
+- `src/public/index.html` — removed RTS elements, added 4X containers, updated title
+- `src/public/css/style.css` — replaced RTS game styles with colony 4X layout
+- `src/public/js/projection.js` — deleted
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (no client-side tests needed for this cleanup — all changes are browser UI).
+
+**Key decisions:**
+- Exposed `window.GameClient` so future renderer.js and ui.js modules can send commands and read game state without tight coupling to app.js internals
+- render-container and colony-ui are both absolute-positioned overlays on game-screen — Three.js canvas goes in render-container, HTML panels go in colony-ui with pointer-events: none (individual panels opt-in to pointer events)
+- Kept lobby/room/chat code untouched — it works correctly and is 4X-agnostic
+- No game loop in app.js anymore — Three.js renderer.js will own requestAnimationFrame in Sprint 3
+
+**Next:** CLIENT UX SPRINT 3/5 — Three.js scene + isometric colony view (OrthographicCamera, terrain grid, camera controls)
+
+---
+
+## Entry 14 — 2026-03-11 — CLIENT UX SPRINT 3/5: Three.js Scene + Isometric Colony View
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Three.js integrated via CDN (r128) in index.html
+- Created renderer.js module: Scene, OrthographicCamera at isometric angle (35.264° pitch, 45° yaw), WebGLRenderer
+- Ambient light (0x404060, 0.6) + directional light (white, 0.8) for depth
+- Colony terrain grid: BoxGeometry tiles arranged in 4-column rows based on planet.size, with 0.1 gap between tiles
+- Ground plane underneath the grid (dark 0x111122)
+- District rendering: colored 3D boxes per type — Generator=yellow, Mining=gray, Agriculture=green, Industrial=blue, Research=purple, Housing=white — with varying heights
+- Under-construction districts shown as wireframe with 50% opacity
+- Empty slots shown as dark semi-transparent tiles
+- Camera controls: scroll-wheel zoom (adjust ortho frustum, min 2 / max 20), middle-mouse drag to pan, WASD/arrow keys to pan (speed scales with zoom)
+- Dark space background color (#0a0a1a)
+- requestAnimationFrame render loop at 60fps
+- Wired into app.js: ColonyRenderer.init() on gameInit, buildColonyGrid for first colony, updateFromState on gameState updates
+- updateFromState rebuilds grid when district count or build queue changes
+
+**Files changed:**
+- `src/public/js/renderer.js` — new file (Three.js colony renderer)
+- `src/public/index.html` — added Three.js CDN, renderer.js script tag
+- `src/public/js/app.js` — wired ColonyRenderer into gameInit and gameState handlers
+- `devguide/design.md` — marked Sprint 3/5 complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (renderer is browser-only, no new server tests needed).
+
+**Key decisions:**
+- Used Three.js r128 from CDN (stable, well-documented, no bundler needed)
+- District rendering included in this sprint (ahead of Sprint 4/5 spec) since colored boxes are trivial and the grid without them would be meaningless — aligns with feedback that visuals are core, not polish
+- Grid rebuilds on district/queue count changes rather than diffing individual tiles — simple and correct, optimization can come later
+- Camera pan uses world coordinates, not screen-space — isometric angle preserved at all times
+- Exposed ColonyRenderer on window for cross-module access, consistent with GameClient pattern
+
+**Next:** CLIENT UX SPRINT 4/5 — Raycaster click interaction (click empty tile to build, click district for info/demolish), selected tile highlight
+
+---
+
+## Entry 15 — 2026-03-11 — CLIENT UX SPRINT 4/5: Click Interaction + Build/Demolish UI
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Three.js Raycaster click detection on colony grid tiles — left-click any tile to select it
+- Selected tile highlight: glowing green ring (emissive MeshStandardMaterial) appears under selected tile
+- Build menu (HTML overlay, bottom-center): appears on empty tile click, shows all 6 district types with color swatch, name, production preview, and cost. Grayed out if unaffordable, slots full, or queue full. Click to send `buildDistrict` command
+- District info panel (HTML overlay, right side): appears on built district click, shows type, output, upkeep. Demolish button sends `demolish` command
+- Escape key and X buttons deselect tile and close panels
+- Client-side DISTRICT_UI mirror for rendering costs/production without server round-trip
+- Wired renderer → app.js via `setOnTileSelect` callback pattern
+
+**Files changed:**
+- `src/public/js/renderer.js` — raycaster, mouse vector, click handler, tile selection/deselection, highlight mesh, public API (setOnTileSelect, deselectTile, getSelectedTile, getCurrentColony)
+- `src/public/js/app.js` — DISTRICT_UI data, _onTileSelect handler, _showBuildMenu, _showDistrictInfo, _hideAllPanels, panel close wiring, gameInit wires setOnTileSelect
+- `src/public/index.html` — build-menu and district-info panel HTML inside colony-ui
+- `src/public/css/style.css` — game-panel, build-menu, build-option, district-info, demolish-btn styles
+- `devguide/design.md` — marked Sprint 4/5 complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 111 total. All passing (client-side UI — no new server tests needed).
+
+**Key decisions:**
+- Used callback pattern (setOnTileSelect) rather than events for renderer→app communication — simple, direct, no event system needed
+- Build menu shows all 6 types in a 2-column grid with affordability checks against current player resources
+- District info panel on right side keeps it out of the way of the colony grid
+- No server changes needed — existing buildDistrict and demolish commands handle all the logic
+- Highlight uses emissive green (#00ffaa) material for visibility against dark space theme
+
+**Next:** CLIENT UX SPRINT 5/5 — HTML overlay UI (resource bar, status bar, colony info panel with production breakdown)
+
+---
+
+## Entry 16 — 2026-03-11 — CLIENT UX SPRINT 5/5: HTML Overlay UI on 3D View
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Resource bar (top): all 6 resource types showing stockpile and net income/month colored green(+)/red(−). Resource-specific colors: energy=#f1c40f, minerals=#95a5a6, food=#2ecc71, alloys=#e67e22, research=#3498db, influence=#9b59b6
+- Status bar (below resource bar): month counter (tick/100), pop count with housing cap warning (yellow near cap, red at cap), growth indicator (slow/fast/rapid/starving/stalled/housing full) with progress bar
+- Colony info panel (right side): colony name, planet type/size, district count, pop breakdown (working/idle), housing used/cap, build queue with progress bars (ticks as seconds) and cancel buttons with 50% refund
+- Build menu resource header: shows current mineral and energy stockpile at top of build menu
+- Server: added growthProgress, growthTarget, and growthStatus to colony serialization for growth indicator UI
+- Server: extended demolish command to support build queue cancellation with 50% resource refund (floor-rounded)
+- UI data refresh throttled to 2Hz (500ms setInterval), Three.js renders independently at 60fps
+- Dark space theme: panels rgba(26,26,46,0.85) with backdrop-blur, borders #2a2a4e, monospace for numbers
+
+**Files changed:**
+- `server/game-engine.js` — growth data in getState(), build queue cancellation in demolish handler, state cache invalidation
+- `src/public/js/app.js` — HUD elements, _updateHUD() with 2Hz refresh, resource bar, status bar, colony panel, queue cancel wiring, build menu resource header
+- `src/public/index.html` — resource bar, status bar, colony info panel, build-menu-resources div
+- `src/public/css/style.css` — resource bar, status bar, colony panel, queue item, build menu resource header styles
+- `src/tests/game-engine.test.js` — 3 new tests (queue cancellation, growth data serialization, housing full status)
+- `devguide/design.md` — marked Sprint 5/5 and build menu resource header complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 116 total (84 game-engine + 18 room-manager + 7 integration + 7 performance). All passing.
+
+**Key decisions:**
+- All UI logic stays in app.js rather than a separate ui.js — keeps the pattern simple until the module grows large enough to warrant splitting
+- Growth status computed server-side (not client) to keep client thin and match server-authoritative design
+- Queue cancellation reuses the demolish command type (checks queue after districts) rather than adding a new command — minimal protocol change
+- 50% refund on queue cancel (floor-rounded) prevents build-cancel resource duplication exploits while being generous enough to encourage experimentation
+- 2Hz UI refresh prevents DOM thrashing while keeping resource display responsive — Three.js renders independently at 60fps
+
+**Next:** Energy deficit consequences (auto-disable districts when energy negative), or mini tech tree for research sink
+
+---
+
+## Entry 17 — 2026-03-11 — Mini Tech Tree (Research Sink)
+
+**Phase:** 2 (Colony Management) — early deliverable pulled forward
+**Status:** Complete
+
+**What was built:**
+- 2-tier, 3-track tech tree: Physics (Generator bonuses), Society (growth + agriculture), Engineering (Mining bonuses)
+- T1 techs cost 150 research, T2 techs cost 500 research (tuned for 20-minute matches)
+- Research processing: monthly cycle consumes accumulated research stockpile toward active tech
+- Tech modifiers apply to `_calcProduction()` — district output multiplied by highest completed tech bonus
+- Frontier Medicine growth modifier applies to `_processPopGrowth()` — reduces ticks needed by 25%
+- T2 supersedes T1 for same district type (uses highest multiplier, not stacking)
+- `setResearch` command handler with prerequisite, completion, and duplicate validation
+- `researchComplete` event emitted on tech completion with invalidation of all player colony caches
+- Research state (currentResearch, researchProgress, completedTechs) serialized in player state
+- Client research panel: toggle with R key, shows 3 tracks side-by-side with T1/T2 cards
+- Cards show status (available/researching/completed/locked), progress bars, costs
+- Click to start researching — panel auto-refreshes on 2Hz HUD cycle and on researchComplete event
+
+**Files changed:**
+- `server/game-engine.js` — TECH_TREE constant, research state in playerStates, _getTechModifiers, _processResearch, tech modifiers in _calcProduction/_processPopGrowth, setResearch command, serialization
+- `server/server.js` — setResearch command routing
+- `src/public/js/app.js` — TECH_TREE_UI data, research panel DOM refs, _toggleResearchPanel, _renderResearchPanel, R key handler, HUD refresh integration
+- `src/public/index.html` — research panel HTML
+- `src/public/css/style.css` — research panel, track, tech card, progress bar styles
+- `src/tests/game-engine.test.js` — 18 new tech tree tests
+- `devguide/design.md` — marked mini tech tree + research cost adjustment tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 138 total (18 new: tech tree definitions, setResearch validation, research progress, tech completion, production modifiers for all 6 techs, growth modifier, simultaneous tracks, serialization). All passing.
+
+**Key decisions:**
+- Used adjusted research costs (150/500) instead of original spec (500/1000) for better 20-minute match pacing
+- T2 supersedes T1 rather than stacking — prevents overpowered 1.875x multiplier, keeps balance clean
+- Research is consumed from monthly stockpile, not per-tick — matches the monthly economic cycle pattern
+- Growth modifier uses target tick reduction (×0.75) rather than progress acceleration — simpler implementation
+- Research panel centered as overlay rather than permanent side panel — avoids cluttering the colony view
+
+**Next:** Energy deficit consequences (auto-disable districts when energy negative)

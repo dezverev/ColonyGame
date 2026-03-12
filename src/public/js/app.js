@@ -1,5 +1,5 @@
 /**
- * Main game client — WebSocket connection, screen management, game rendering.
+ * Main game client — WebSocket connection, screen management, colony 4X game state.
  */
 (function () {
   // ── State ──
@@ -8,18 +8,6 @@
   let myName = '';
   let currentRoom = null;
   let gameState = null;
-  let selectedUnits = [];
-
-  // Camera
-  let camera = { x: 25, y: 25, zoom: 1 };
-  let dragging = false;
-  let dragStart = { x: 0, y: 0 };
-  let camStart = { x: 0, y: 0 };
-
-  // Selection box
-  let selecting = false;
-  let selectStart = { x: 0, y: 0 };
-  let selectEnd = { x: 0, y: 0 };
 
   // ── DOM refs ──
   const screens = {
@@ -46,17 +34,12 @@
   const launchBtn = document.getElementById('launch-btn');
   const chatMessages = document.getElementById('chat-messages');
   const chatInput = document.getElementById('chat-input');
-  const canvas = document.getElementById('game-canvas');
-  const ctx = canvas.getContext('2d');
-  const minimapCanvas = document.getElementById('minimap-canvas');
-  const minimapCtx = minimapCanvas.getContext('2d');
 
   // ── Screen management ──
   function showScreen(name) {
     for (const [key, el] of Object.entries(screens)) {
       el.classList.toggle('active', key === name);
     }
-    if (name === 'game') resizeCanvas();
   }
 
   // ── WebSocket ──
@@ -130,27 +113,44 @@
 
       case 'gameInit':
         gameState = {
-          mapWidth: msg.mapWidth,
-          mapHeight: msg.mapHeight,
-          units: msg.units,
-          buildings: msg.buildings,
+          tick: msg.tick,
           players: msg.players,
+          colonies: msg.colonies,
           yourId: msg.yourId,
         };
-        selectedUnits = [];
-        _selectionDirty = true;
-        camera = { x: msg.mapWidth / 2, y: msg.mapHeight / 2, zoom: 1 };
         showScreen('game');
-        startGameLoop();
+        // Initialize Three.js renderer and wire tile selection
+        if (window.ColonyRenderer) {
+          window.ColonyRenderer.init();
+          window.ColonyRenderer.setOnTileSelect(_onTileSelect);
+          const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
+          if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+        }
+        // Start 2Hz HUD refresh
+        if (_uiInterval) clearInterval(_uiInterval);
+        _uiInterval = setInterval(_updateHUD, 500);
+        _updateHUD();
         break;
 
       case 'gameState':
         if (gameState) {
-          gameState.units = msg.units;
-          gameState.buildings = msg.buildings;
+          gameState.tick = msg.tick;
           gameState.players = msg.players;
-          renderDirty = true;
-          updateHUD();
+          gameState.colonies = msg.colonies;
+          // Update Three.js colony view
+          if (window.ColonyRenderer) {
+            const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
+            if (myColony) window.ColonyRenderer.updateFromState(myColony);
+          }
+        }
+        break;
+
+      case 'gameEvent':
+        if (msg.eventType === 'researchComplete') {
+          // Re-render research panel if open
+          if (researchPanel && !researchPanel.classList.contains('hidden')) {
+            _renderResearchPanel();
+          }
         }
         break;
     }
@@ -178,329 +178,419 @@
     }
   }
 
-  // ── Game rendering ──
-  let animFrame = null;
-  let renderDirty = true; // tracks whether a redraw is needed
-  const _playerMap = Object.create(null);
-  const _selectedSet = new Set();
-  let _selectionDirty = true; // rebuild Set only when selection changes
-  const _opts = { originX: 0, originY: 0 }; // reusable projection options
+  // ── District definitions (client-side mirror for UI) ──
+  const DISTRICT_UI = {
+    housing:     { label: 'Housing',     color: '#ecf0f1', cost: { minerals: 100 }, produces: '+5 Housing', consumes: '-1 Energy' },
+    generator:   { label: 'Generator',   color: '#f1c40f', cost: { minerals: 100 }, produces: '+6 Energy', consumes: '' },
+    mining:      { label: 'Mining',      color: '#95a5a6', cost: { minerals: 100 }, produces: '+6 Minerals', consumes: '' },
+    agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
+    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+3 Alloys', consumes: '-3 Energy' },
+    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
+  };
 
-  function markRenderDirty() { renderDirty = true; }
+  // ── Tech tree (client-side mirror for UI) ──
+  const TECH_TREE_UI = {
+    improved_power_plants: { track: 'physics', tier: 1, name: 'Improved Power Plants', desc: '+25% Generator output', cost: 150, requires: null },
+    frontier_medicine:     { track: 'society', tier: 1, name: 'Frontier Medicine', desc: '+25% pop growth speed', cost: 150, requires: null },
+    improved_mining:       { track: 'engineering', tier: 1, name: 'Improved Mining', desc: '+25% Mining output', cost: 150, requires: null },
+    advanced_reactors:     { track: 'physics', tier: 2, name: 'Advanced Reactors', desc: '+50% Generator output', cost: 500, requires: 'improved_power_plants' },
+    gene_crops:            { track: 'society', tier: 2, name: 'Gene Crops', desc: '+50% Agriculture output', cost: 500, requires: 'frontier_medicine' },
+    deep_mining:           { track: 'engineering', tier: 2, name: 'Deep Mining', desc: '+50% Mining output', cost: 500, requires: 'improved_mining' },
+  };
 
-  function resizeCanvas() {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-    renderDirty = true;
+  // ── HUD elements ──
+  const resBar = {
+    energy: document.getElementById('res-energy'),
+    energyNet: document.getElementById('res-energy-net'),
+    minerals: document.getElementById('res-minerals'),
+    mineralsNet: document.getElementById('res-minerals-net'),
+    food: document.getElementById('res-food'),
+    foodNet: document.getElementById('res-food-net'),
+    alloys: document.getElementById('res-alloys'),
+    alloysNet: document.getElementById('res-alloys-net'),
+    research: document.getElementById('res-research'),
+    researchNet: document.getElementById('res-research-net'),
+    influence: document.getElementById('res-influence'),
+  };
+  const statusMonth = document.getElementById('status-month');
+  const statusPops = document.getElementById('status-pops');
+  const statusGrowth = document.getElementById('status-growth');
+  const growthBarFill = document.getElementById('growth-bar-fill');
+  const colonyPanelTitle = document.getElementById('colony-panel-title');
+  const cpPlanet = document.getElementById('cp-planet');
+  const cpDistricts = document.getElementById('cp-districts');
+  const cpWorking = document.getElementById('cp-working');
+  const cpIdle = document.getElementById('cp-idle');
+  const cpHousing = document.getElementById('cp-housing');
+  const colonyQueueHeader = document.getElementById('colony-queue-header');
+  const colonyQueueList = document.getElementById('colony-queue-list');
+  const buildMenuResources = document.getElementById('build-menu-resources');
+
+  // ── Tile selection UI ──
+  const buildMenu = document.getElementById('build-menu');
+  const buildMenuOptions = document.getElementById('build-menu-options');
+  const buildMenuClose = document.getElementById('build-menu-close');
+  const districtInfo = document.getElementById('district-info');
+  const districtInfoTitle = document.getElementById('district-info-title');
+  const districtInfoBody = document.getElementById('district-info-body');
+  const districtInfoClose = document.getElementById('district-info-close');
+  const districtDemolishBtn = document.getElementById('district-demolish-btn');
+
+  // ── Research panel refs ──
+  const researchPanel = document.getElementById('research-panel');
+  const researchTracks = document.getElementById('research-tracks');
+  const researchPanelClose = document.getElementById('research-panel-close');
+
+  let _selectedTileData = null;
+  let _uiInterval = null;
+
+  function _onTileSelect(tileData) {
+    _hideAllPanels();
+    _selectedTileData = tileData;
+    if (!tileData) return;
+
+    if (tileData.empty) {
+      _showBuildMenu(tileData);
+    } else if (tileData.district) {
+      _showDistrictInfo(tileData);
+    }
+    // construction tiles: no panel (just highlight)
   }
 
-  function startGameLoop() {
-    if (animFrame) cancelAnimationFrame(animFrame);
-    renderDirty = true;
-    function loop() {
-      if (renderDirty) {
-        renderDirty = false;
-        render();
-      }
-      animFrame = requestAnimationFrame(loop);
-    }
-    loop();
+  function _hideAllPanels() {
+    buildMenu.classList.add('hidden');
+    districtInfo.classList.add('hidden');
   }
 
-  function render() {
-    if (!gameState) return;
-    const { mapWidth, mapHeight, units, buildings, players } = gameState;
-    const W = canvas.width;
-    const H = canvas.height;
-    const P = Projection;
+  function _showBuildMenu(tileData) {
+    buildMenuOptions.innerHTML = '';
+    const myPlayer = _getMyPlayer();
 
-    ctx.clearRect(0, 0, W, H);
-
-    _opts.originX = W / 2 - (camera.x - camera.y) * (P.TileWidth / 2) * camera.zoom;
-    _opts.originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
-
-    // Draw grid — batched into a single path for fewer draw calls
-    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-    ctx.lineWidth = 1;
-    const zoomOffX = W / 2 * (1 - camera.zoom);
-    const zoomOffY = H / 2 * (1 - camera.zoom);
-    ctx.beginPath();
-    for (let x = 0; x <= mapWidth; x++) {
-      let s = P.worldToScreen(x, 0, 0, _opts);
-      const ax = s.x, ay = s.y;
-      s = P.worldToScreen(x, mapHeight, 0, _opts);
-      ctx.moveTo(ax * camera.zoom + zoomOffX, ay * camera.zoom + zoomOffY);
-      ctx.lineTo(s.x * camera.zoom + zoomOffX, s.y * camera.zoom + zoomOffY);
+    // Resource header in build menu
+    if (myPlayer && buildMenuResources) {
+      const r = myPlayer.resources;
+      buildMenuResources.innerHTML =
+        `<span style="color:#95a5a6">⛏ ${Math.floor(r.minerals)}</span>` +
+        `<span style="color:#f1c40f">⚡ ${Math.floor(r.energy)}</span>`;
     }
-    for (let y = 0; y <= mapHeight; y++) {
-      let s = P.worldToScreen(0, y, 0, _opts);
-      const ax = s.x, ay = s.y;
-      s = P.worldToScreen(mapWidth, y, 0, _opts);
-      ctx.moveTo(ax * camera.zoom + zoomOffX, ay * camera.zoom + zoomOffY);
-      ctx.lineTo(s.x * camera.zoom + zoomOffX, s.y * camera.zoom + zoomOffY);
-    }
-    ctx.stroke();
+    const myColony = _getMyColony();
+    const slotsUsed = myColony ? myColony.districts.length + myColony.buildQueue.length : 0;
+    const slotsFull = myColony ? slotsUsed >= myColony.planet.size : true;
+    const queueFull = myColony ? myColony.buildQueue.length >= 3 : true;
 
-    // Rebuild player lookup (reuse object, clear old keys)
-    for (const k in _playerMap) delete _playerMap[k];
-    for (const p of players) _playerMap[p.id] = p;
-    if (_selectionDirty) {
-      _selectedSet.clear();
-      for (const id of selectedUnits) _selectedSet.add(id);
-      _selectionDirty = false;
-    }
+    for (const [type, ui] of Object.entries(DISTRICT_UI)) {
+      const btn = document.createElement('div');
+      btn.className = 'build-option';
 
-    // Apply zoom transform
-    ctx.save();
-    ctx.translate(W / 2, H / 2);
-    ctx.scale(camera.zoom, camera.zoom);
-    ctx.translate(-W / 2, -H / 2);
-
-    // Draw buildings
-    for (const b of buildings) {
-      const s = P.worldToScreen(b.x, b.y, 0, _opts);
-      const bx = s.x, by = s.y;
-      const owner = _playerMap[b.ownerId];
-      const color = owner ? owner.color : '#888';
-      const size = (b.size || 2) * P.TileWidth / 2;
-
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.6;
-      ctx.fillRect(bx - size / 2, by - size, size, size);
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(bx - size / 2, by - size, size, size);
-
-      // Label
-      ctx.fillStyle = '#fff';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(b.type, bx, by - size - 4);
-    }
-
-    // Draw units
-    for (const u of units) {
-      const s = P.worldToScreen(u.x, u.y, 0, _opts);
-      const ux = s.x, uy = s.y;
-      const owner = _playerMap[u.ownerId];
-      const color = owner ? owner.color : '#888';
-      const isSelected = _selectedSet.has(u.id);
-
-      // Selection ring
-      if (isSelected) {
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.ellipse(ux, uy, 12, 6, 0, 0, Math.PI * 2);
-        ctx.stroke();
+      let canAfford = true;
+      const costParts = [];
+      for (const [res, amt] of Object.entries(ui.cost)) {
+        costParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAfford = false;
       }
 
-      // Unit diamond
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.moveTo(ux, uy - 10);
-      ctx.lineTo(ux + 6, uy);
-      ctx.lineTo(ux, uy + 4);
-      ctx.lineTo(ux - 6, uy);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = isSelected ? '#fff' : '#000';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // HP bar
-      if (u.hp < u.maxHp) {
-        const barW = 16;
-        const ratio = u.hp / u.maxHp;
-        ctx.fillStyle = '#333';
-        ctx.fillRect(ux - barW / 2, uy - 16, barW, 3);
-        ctx.fillStyle = ratio > 0.5 ? '#2ecc71' : ratio > 0.25 ? '#f39c12' : '#e74c3c';
-        ctx.fillRect(ux - barW / 2, uy - 16, barW * ratio, 3);
+      if (!canAfford || slotsFull || queueFull) {
+        btn.classList.add('disabled');
       }
-    }
 
-    // Selection box
-    if (selecting) {
-      ctx.strokeStyle = '#2ecc71';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      const x = Math.min(selectStart.x, selectEnd.x);
-      const y = Math.min(selectStart.y, selectEnd.y);
-      const w = Math.abs(selectEnd.x - selectStart.x);
-      const h = Math.abs(selectEnd.y - selectStart.y);
-      ctx.strokeRect(x, y, w, h);
-      ctx.setLineDash([]);
-    }
+      btn.innerHTML =
+        `<div class="build-option-swatch" style="background:${ui.color}"></div>` +
+        `<div class="build-option-name">${ui.label}</div>` +
+        `<div class="build-option-prod">${ui.produces}</div>` +
+        `<div class="build-option-cost">${costParts.join(', ')}</div>`;
 
-    ctx.restore();
-
-    // Minimap
-    renderMinimap(_playerMap);
-  }
-
-  function renderMinimap(playerMap) {
-    if (!gameState) return;
-    const mw = minimapCanvas.width;
-    const mh = minimapCanvas.height;
-    const { mapWidth, mapHeight, units, buildings } = gameState;
-
-    minimapCtx.clearRect(0, 0, mw, mh);
-    minimapCtx.fillStyle = '#1a1a2e';
-    minimapCtx.fillRect(0, 0, mw, mh);
-
-    const sx = mw / mapWidth;
-    const sy = mh / mapHeight;
-
-    for (const b of buildings) {
-      const owner = playerMap[b.ownerId];
-      minimapCtx.fillStyle = owner ? owner.color : '#888';
-      minimapCtx.fillRect(b.x * sx - 2, b.y * sy - 2, 4, 4);
-    }
-
-    for (const u of units) {
-      const owner = playerMap[u.ownerId];
-      minimapCtx.fillStyle = owner ? owner.color : '#888';
-      minimapCtx.fillRect(u.x * sx - 1, u.y * sy - 1, 2, 2);
-    }
-
-    // Camera viewport indicator
-    minimapCtx.strokeStyle = '#fff';
-    minimapCtx.lineWidth = 1;
-    const vpX = (camera.x - 10 / camera.zoom) * sx;
-    const vpY = (camera.y - 10 / camera.zoom) * sy;
-    const vpW = (20 / camera.zoom) * sx;
-    const vpH = (20 / camera.zoom) * sy;
-    minimapCtx.strokeRect(vpX, vpY, vpW, vpH);
-  }
-
-  function updateHUD() {
-    if (!gameState) return;
-    const me = gameState.players.find(p => p.id === gameState.yourId);
-    if (!me) return;
-    document.getElementById('hud-gold').textContent = `Gold: ${me.gold}`;
-    document.getElementById('hud-wood').textContent = `Wood: ${me.wood}`;
-    document.getElementById('hud-stone').textContent = `Stone: ${me.stone}`;
-    document.getElementById('hud-supply').textContent = `Supply: ${me.supply}/${me.maxSupply}`;
-  }
-
-  // ── Game input ──
-  function setupGameInput() {
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0) {
-        // Left click — start selection
-        selecting = true;
-        selectStart = { x: e.offsetX, y: e.offsetY };
-        selectEnd = { x: e.offsetX, y: e.offsetY };
-      } else if (e.button === 1 || e.button === 2) {
-        // Middle/right — camera drag
-        dragging = true;
-        dragStart = { x: e.clientX, y: e.clientY };
-        camStart = { x: camera.x, y: camera.y };
-      }
-    });
-
-    canvas.addEventListener('mousemove', (e) => {
-      if (selecting) {
-        selectEnd = { x: e.offsetX, y: e.offsetY };
-        renderDirty = true;
-      }
-      if (dragging) {
-        const dx = (e.clientX - dragStart.x) / camera.zoom;
-        const dy = (e.clientY - dragStart.y) / camera.zoom;
-        camera.x = camStart.x - dx / 32;
-        camera.y = camStart.y - dy / 16;
-        renderDirty = true;
-      }
-    });
-
-    canvas.addEventListener('mouseup', (e) => {
-      if (e.button === 0 && selecting) {
-        selecting = false;
-        handleSelection(selectStart, selectEnd);
-        renderDirty = true;
-      }
-      if (dragging) {
-        dragging = false;
-      }
-    });
-
-    canvas.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      if (!gameState || selectedUnits.length === 0) return;
-      // Right click — move command
-      const P = Projection;
-      const W = canvas.width;
-      const H = canvas.height;
-      const originX = W / 2 - (camera.x - camera.y) * (P.TileWidth / 2) * camera.zoom;
-      const originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
-      // Undo zoom transform
-      const sx = W / 2 + (e.offsetX - W / 2) / camera.zoom;
-      const sy = H / 2 + (e.offsetY - H / 2) / camera.zoom;
-      const world = P.screenToWorld(sx, sy, 0, { originX, originY });
-      send({
-        type: 'gameCommand',
-        command: { type: 'moveUnits', unitIds: [...selectedUnits], targetX: world.x, targetY: world.y },
+      btn.addEventListener('click', () => {
+        if (btn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildDistrict', colonyId: myColony.id, districtType: type });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
       });
-    });
 
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      camera.zoom = Math.max(0.5, Math.min(3, camera.zoom - e.deltaY * 0.001));
-      renderDirty = true;
-    });
+      buildMenuOptions.appendChild(btn);
+    }
 
-    window.addEventListener('resize', () => {
-      if (screens.game.classList.contains('active')) resizeCanvas();
-    });
+    buildMenu.classList.remove('hidden');
   }
 
-  function handleSelection(start, end) {
+  function _showDistrictInfo(tileData) {
+    const d = tileData.district;
+    const ui = DISTRICT_UI[d.type];
+    if (!ui) return;
+
+    districtInfoTitle.textContent = ui.label + ' District';
+    districtInfoBody.innerHTML =
+      `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${ui.label}</span></div>` +
+      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:#2ecc71">${ui.produces}</span></div>` : '') +
+      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:#e74c3c">${ui.consumes}</span></div>` : '');
+
+    // Show demolish button (hide for capital buildings if needed)
+    districtDemolishBtn.classList.remove('hidden');
+    districtDemolishBtn.onclick = () => {
+      const myColony = _getMyColony();
+      if (!myColony || !d.id) return;
+      send({ type: 'demolish', colonyId: myColony.id, districtId: d.id });
+      _hideAllPanels();
+      if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+    };
+
+    districtInfo.classList.remove('hidden');
+  }
+
+  // ── Research panel ──
+  function _toggleResearchPanel() {
+    if (researchPanel.classList.contains('hidden')) {
+      _renderResearchPanel();
+      researchPanel.classList.remove('hidden');
+    } else {
+      researchPanel.classList.add('hidden');
+    }
+  }
+
+  function _renderResearchPanel() {
+    const player = _getMyPlayer();
+    if (!player) return;
+
+    const completed = player.completedTechs || [];
+    const current = player.currentResearch || {};
+    const progress = player.researchProgress || {};
+
+    researchTracks.innerHTML = '';
+
+    for (const track of ['physics', 'society', 'engineering']) {
+      const trackDiv = document.createElement('div');
+      trackDiv.className = 'research-track';
+
+      const titleDiv = document.createElement('div');
+      titleDiv.className = 'research-track-title ' + track;
+      titleDiv.textContent = track.charAt(0).toUpperCase() + track.slice(1);
+      trackDiv.appendChild(titleDiv);
+
+      // Get techs for this track sorted by tier
+      const techs = Object.entries(TECH_TREE_UI)
+        .filter(([, t]) => t.track === track)
+        .sort((a, b) => a[1].tier - b[1].tier);
+
+      for (const [techId, tech] of techs) {
+        const card = document.createElement('div');
+        card.className = 'tech-card';
+
+        const isCompleted = completed.includes(techId);
+        const isResearching = current[track] === techId;
+        const isLocked = tech.requires && !completed.includes(tech.requires);
+
+        if (isCompleted) card.classList.add('completed');
+        else if (isResearching) card.classList.add('researching');
+        else if (isLocked) card.classList.add('locked');
+
+        let statusHtml = '';
+        if (isCompleted) {
+          statusHtml = '<div class="tech-card-status completed">COMPLETED</div>';
+        } else if (isResearching) {
+          const prog = progress[techId] || 0;
+          const pct = Math.min(100, (prog / tech.cost) * 100);
+          statusHtml =
+            '<div class="tech-card-status researching">RESEARCHING</div>' +
+            `<div class="tech-progress"><div class="tech-progress-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+        }
+
+        card.innerHTML =
+          `<div class="tech-card-name">${tech.name}</div>` +
+          `<div class="tech-card-desc">${tech.desc}</div>` +
+          `<div class="tech-card-cost">Cost: ${tech.cost} ${track}</div>` +
+          statusHtml;
+
+        if (!isCompleted && !isLocked && !isResearching) {
+          card.addEventListener('click', () => {
+            send({ type: 'setResearch', techId });
+            // Optimistic: re-render after short delay
+            setTimeout(() => _renderResearchPanel(), 100);
+          });
+        }
+
+        trackDiv.appendChild(card);
+      }
+
+      researchTracks.appendChild(trackDiv);
+    }
+  }
+
+  function _getMyPlayer() {
+    if (!gameState) return null;
+    return gameState.players.find(p => p.id === gameState.yourId) || null;
+  }
+
+  function _getMyColony() {
+    if (!gameState) return null;
+    return gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
+  // ── HUD update (throttled to 2Hz) ──
+
+  function _updateHUD() {
     if (!gameState) return;
-    const minX = Math.min(start.x, end.x);
-    const maxX = Math.max(start.x, end.x);
-    const minY = Math.min(start.y, end.y);
-    const maxY = Math.max(start.y, end.y);
-    const P = Projection;
-    const W = canvas.width;
-    const H = canvas.height;
-    const originX = W / 2 - (camera.x - camera.y) * (P.TileWidth / 2) * camera.zoom;
-    const originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
-    const opts = { originX, originY };
+    const player = _getMyPlayer();
+    const colony = _getMyColony();
 
-    const isClick = Math.abs(maxX - minX) < 5 && Math.abs(maxY - minY) < 5;
-    selectedUnits = [];
-    _selectionDirty = true;
+    // Resource bar
+    if (player) {
+      const r = player.resources;
+      resBar.energy.textContent = Math.floor(r.energy);
+      resBar.minerals.textContent = Math.floor(r.minerals);
+      resBar.food.textContent = Math.floor(r.food);
+      resBar.alloys.textContent = Math.floor(r.alloys);
+      // Research: sum of 3 types (stockpile)
+      const rr = r.research || {};
+      const totalResearch = Math.floor((rr.physics || 0) + (rr.society || 0) + (rr.engineering || 0));
+      resBar.research.textContent = totalResearch;
+      resBar.influence.textContent = Math.floor(r.influence);
 
-    for (const u of gameState.units) {
-      if (u.ownerId !== gameState.yourId) continue;
-      const s = P.worldToScreen(u.x, u.y, 0, opts);
-      const sx = W / 2 + (s.x - W / 2) * camera.zoom;
-      const sy = H / 2 + (s.y - H / 2) * camera.zoom;
+      // Update research panel if open
+      if (researchPanel && !researchPanel.classList.contains('hidden')) {
+        _renderResearchPanel();
+      }
+    }
 
-      if (isClick) {
-        if (Math.abs(sx - start.x) < 12 && Math.abs(sy - start.y) < 12) {
-          selectedUnits = [u.id];
-          break;
+    // Net production from colony
+    if (colony && colony.netProduction) {
+      const np = colony.netProduction;
+      _setNet(resBar.energyNet, np.energy);
+      _setNet(resBar.mineralsNet, np.minerals);
+      _setNet(resBar.foodNet, np.food);
+      _setNet(resBar.alloysNet, np.alloys);
+      const totalResNet = (np.physics || 0) + (np.society || 0) + (np.engineering || 0);
+      _setNet(resBar.researchNet, totalResNet);
+    }
+
+    // Status bar
+    const month = Math.floor((gameState.tick || 0) / 100);
+    statusMonth.textContent = 'Month ' + month;
+
+    if (colony) {
+      statusPops.textContent = 'Pop: ' + colony.pops + '/' + colony.housing;
+      // Housing warning
+      if (colony.pops >= colony.housing) {
+        statusPops.style.color = '#e74c3c';
+      } else if (colony.pops >= colony.housing - 2) {
+        statusPops.style.color = '#f1c40f';
+      } else {
+        statusPops.style.color = '';
+      }
+
+      // Growth indicator
+      const growthLabels = {
+        slow: 'Slow', fast: 'Fast', rapid: 'Rapid',
+        starving: 'Starving', stalled: 'Stalled',
+        housing_full: 'Housing Full', none: '—',
+      };
+      const growthColors = {
+        slow: '#2ecc71', fast: '#27ae60', rapid: '#00ff88',
+        starving: '#e74c3c', stalled: '#f1c40f',
+        housing_full: '#e67e22', none: '#888',
+      };
+      const gs = colony.growthStatus || 'none';
+      statusGrowth.textContent = 'Growth: ' + (growthLabels[gs] || '—');
+      statusGrowth.style.color = growthColors[gs] || '#888';
+
+      // Growth progress bar
+      if (colony.growthTarget > 0 && colony.growthProgress !== undefined) {
+        const pct = Math.min(100, (colony.growthProgress / colony.growthTarget) * 100);
+        growthBarFill.style.width = pct + '%';
+        growthBarFill.style.background = growthColors[gs] || '#2ecc71';
+      } else {
+        growthBarFill.style.width = '0%';
+      }
+
+      // Colony info panel
+      colonyPanelTitle.textContent = colony.name;
+      cpPlanet.textContent = (colony.planet.type || 'Unknown') + ' (Size ' + colony.planet.size + ')';
+      const totalDistricts = colony.districts.length + colony.buildQueue.length;
+      cpDistricts.textContent = totalDistricts + '/' + colony.planet.size;
+      const working = Math.min(colony.pops, colony.jobs);
+      const idle = Math.max(0, colony.pops - colony.jobs);
+      cpWorking.textContent = working;
+      cpIdle.textContent = idle;
+      cpIdle.style.color = idle > 0 ? '#f1c40f' : '';
+      cpHousing.textContent = colony.pops + '/' + colony.housing;
+      cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
+
+      // Build queue
+      if (colony.buildQueue.length > 0) {
+        colonyQueueHeader.classList.remove('hidden');
+        colonyQueueList.innerHTML = '';
+        for (const q of colony.buildQueue) {
+          const ui = DISTRICT_UI[q.type] || {};
+          const def = DISTRICT_UI[q.type];
+          const totalTicks = def ? _getBuildTime(q.type) : 300;
+          const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
+          const secLeft = (q.ticksRemaining / 10).toFixed(0);
+
+          const div = document.createElement('div');
+          div.className = 'queue-item';
+          div.innerHTML =
+            `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
+            `<span class="queue-item-name">${ui.label || q.type}</span>` +
+            `<span class="queue-item-time">${secLeft}s</span>` +
+            `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+            `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+
+          const cancelBtn = div.querySelector('.queue-item-cancel');
+          cancelBtn.addEventListener('click', () => {
+            send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
+          });
+
+          colonyQueueList.appendChild(div);
         }
       } else {
-        if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
-          selectedUnits.push(u.id);
-        }
+        colonyQueueHeader.classList.add('hidden');
+        colonyQueueList.innerHTML = '';
       }
     }
+  }
 
-    // Update selection panel
-    const panel = document.getElementById('selection-panel');
-    if (selectedUnits.length === 0) {
-      panel.textContent = '';
-    } else if (selectedUnits.length === 1) {
-      const u = gameState.units.find(u => u.id === selectedUnits[0]);
-      panel.textContent = u ? `${u.type} | HP: ${u.hp}/${u.maxHp}` : '';
+  function _setNet(el, value) {
+    if (!el) return;
+    if (value > 0) {
+      el.textContent = '+' + value;
+      el.className = 'res-net positive';
+    } else if (value < 0) {
+      el.textContent = '' + value;
+      el.className = 'res-net negative';
     } else {
-      panel.textContent = `${selectedUnits.length} units selected`;
+      el.textContent = '0';
+      el.className = 'res-net';
     }
   }
+
+  function _getBuildTime(type) {
+    const times = { housing: 200, generator: 300, mining: 300, agriculture: 300, industrial: 400, research: 400 };
+    return times[type] || 300;
+  }
+
+  // Panel close buttons
+  if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
+    _hideAllPanels();
+    if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+  });
+  if (districtInfoClose) districtInfoClose.addEventListener('click', () => {
+    _hideAllPanels();
+    if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+  });
+  if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
+    researchPanel.classList.add('hidden');
+  });
+
+  // R key toggles research panel (only during game)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (!gameState) return;
+      _toggleResearchPanel();
+    }
+    if (e.key === 'Escape' && researchPanel && !researchPanel.classList.contains('hidden')) {
+      researchPanel.classList.add('hidden');
+    }
+  });
 
   // ── Button wiring ──
   nameSubmit.addEventListener('click', () => {
@@ -549,5 +639,8 @@
     }
   });
 
-  setupGameInput();
+  // Expose send and gameState for future modules (renderer, UI)
+  if (typeof window !== 'undefined') {
+    window.GameClient = { send, getState: () => gameState };
+  }
 })();

@@ -2,12 +2,13 @@
 # ══════════════════════════════════════════════════════════════
 # autopilot.sh — Iterative ColonyGame development automation
 #
-# Each iteration runs a 4-phase pipeline:
+# Each iteration runs a 5-phase pipeline:
 #   1. /status           → assess current project state
 #   2. /game-designer    → analyze gameplay, recommend improvements,
 #                          add work items to design.md
 #   3. /develop          → pick next task, implement, test, commit
 #   4. /perf             → performance audit and fix
+#   5. /test             → test coverage audit, write missing tests
 #
 # Usage:
 #   ./autopilot.sh                      # run 1 iteration
@@ -81,6 +82,17 @@ $DESIGN" 2>&1) || true
 Development output (for context on what changed):
 $RESULT" 2>&1) || true
   echo "$PERF"
+
+  # ── Phase 5: /test ──────────────────────────────────────
+  log "Phase 5: Test coverage audit..."
+  TEST=$(claude --dangerously-skip-permissions -p "/test recent
+
+Development output (for context on what was just built):
+$RESULT
+
+Performance output (for context on what changed):
+$PERF" 2>&1) || true
+  echo "$TEST"
 
   log "Iteration $i complete."
 

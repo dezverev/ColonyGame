@@ -174,9 +174,12 @@ function startServer(options = {}) {
 
         const engine = new GameEngine(result.room, {
           tickRate: config.TICK_RATE,
-          onTick: (stateJSON) => {
-            // Pre-stringified by engine — just broadcast the string directly
-            broadcastToRoom(room.id, stateJSON);
+          onTick: (playerId, stateJSON) => {
+            // Per-player filtered state — send directly to this player
+            const pws = clients.get(playerId);
+            if (pws && pws.readyState === WebSocket.OPEN) {
+              pws.send(stateJSON);
+            }
           },
           onEvent: (events) => {
             for (const event of events) {
@@ -200,7 +203,8 @@ function startServer(options = {}) {
       }
 
       case 'buildDistrict':
-      case 'demolish': {
+      case 'demolish':
+      case 'setResearch': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);
