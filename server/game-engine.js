@@ -105,6 +105,7 @@ class GameEngine {
     this._pendingEvents = []; // events to flush with next broadcast
     this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
     this._vpCacheTick = -1;   // tick when VP cache was last computed
+    this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._gameOver = false; // true after game ends
 
     // Match timer: minutes from room settings, 0 = unlimited
@@ -542,15 +543,15 @@ class GameEngine {
         // Sort by energy consumption ascending (re-enable cheapest first)
         disabled.sort((a, b) => a.energyCost - b.energyCost);
 
+        // Calculate net energy once, then adjust incrementally as we re-enable
+        let currentNetEnergy = this._calcPlayerNetEnergy(playerId);
+
         for (const c of disabled) {
-          // Calculate net monthly energy balance across all colonies if we re-enable this district
           const netChange = c.energyProd - c.energyCost;
-          // Check: would re-enabling keep us non-negative next month?
-          // Use current net energy production as baseline
-          const currentNetEnergy = this._calcPlayerNetEnergy(playerId);
           if (currentNetEnergy + netChange >= 0) {
             delete c.district.disabled;
             this._invalidateColonyCache(c.colony);
+            currentNetEnergy += netChange; // adjust incrementally
             this._emitEvent('districtEnabled', playerId, {
               colonyId: c.colony.id,
               colonyName: c.colony.name,
@@ -576,12 +577,16 @@ class GameEngine {
     return net;
   }
 
-  // Get district output multipliers from completed techs
+  // Get district output multipliers from completed techs (cached per player)
   _getTechModifiers(playerState) {
+    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1 };
+
+    // Return cached value if available and tech count unchanged
+    const cached = this._techModCache.get(playerState.id);
+    if (cached && cached._techCount === playerState.completedTechs.length) return cached;
+
     const modifiers = {}; // districtType -> multiplier
     let growthMultiplier = 1;
-
-    if (!playerState || !playerState.completedTechs) return { district: modifiers, growth: growthMultiplier };
 
     for (const techId of playerState.completedTechs) {
       const tech = TECH_TREE[techId];
@@ -599,7 +604,9 @@ class GameEngine {
       }
     }
 
-    return { district: modifiers, growth: growthMultiplier };
+    const result = { district: modifiers, growth: growthMultiplier, _techCount: playerState.completedTechs.length };
+    this._techModCache.set(playerState.id, result);
+    return result;
   }
 
   // Calculate victory points for a player (tick-scoped cache: O(N) per broadcast instead of O(N²))
@@ -746,6 +753,7 @@ class GameEngine {
           state.completedTechs.push(techId);
           state.currentResearch[track] = null;
           delete state.researchProgress[techId];
+          this._techModCache.delete(playerId); // invalidate cached modifiers
 
           // Invalidate production caches for all player colonies (modifiers changed)
           const colonyIds = this._playerColonies.get(playerId) || [];

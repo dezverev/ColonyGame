@@ -2168,6 +2168,50 @@ describe('GameEngine — Performance', () => {
   });
 });
 
+describe('GameEngine — Tech Modifier Cache', () => {
+  it('caches tech modifiers per player and invalidates on tech completion', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const state1 = engine.playerStates.get(1);
+
+    // First call should compute and cache
+    const mods1 = engine._getTechModifiers(state1);
+    assert.deepStrictEqual(mods1.district, {});
+    assert.strictEqual(mods1.growth, 1);
+
+    // Second call should return same cached object
+    const mods2 = engine._getTechModifiers(state1);
+    assert.strictEqual(mods1, mods2, 'Should return cached object');
+
+    // Complete a tech — cache should invalidate
+    state1.completedTechs.push('improved_power_plants');
+    engine._techModCache.delete(1); // simulate invalidation
+    const mods3 = engine._getTechModifiers(state1);
+    assert.notStrictEqual(mods1, mods3, 'Should return fresh object after invalidation');
+    assert.strictEqual(mods3.district.generator, 1.25);
+  });
+
+  it('tech modifiers are invalidated when research completes via _processResearch', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Set up research
+    state.currentResearch.physics = 'improved_power_plants';
+    state.resources.research.physics = 200; // enough to complete (cost 150)
+
+    // Cache tech mods before research completes
+    const before = engine._getTechModifiers(state);
+    assert.deepStrictEqual(before.district, {});
+
+    // Process research — should complete and invalidate cache
+    engine._processResearch();
+    assert.ok(state.completedTechs.includes('improved_power_plants'));
+
+    // Cache should be cleared — new call should reflect completed tech
+    const after = engine._getTechModifiers(state);
+    assert.strictEqual(after.district.generator, 1.25);
+  });
+});
+
 // ── VP & Timer Edge Cases ──
 
 describe('GameEngine — VP Edge Cases', () => {

@@ -121,6 +121,7 @@
           matchTicksRemaining: msg.matchTicksRemaining || 0,
           galaxy: msg.galaxy || null,
         };
+        _refreshPlayerCache();
         // Reset game-over state
         if (gameOverOverlay) gameOverOverlay.classList.add('hidden');
         showScreen('game');
@@ -131,8 +132,7 @@
         if (window.ColonyRenderer) {
           window.ColonyRenderer.init();
           window.ColonyRenderer.setOnTileSelect(_onTileSelect);
-          const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
-          if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+          if (_cachedMyColony) window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _updateViewUI();
         // Start 2Hz HUD refresh
@@ -148,10 +148,10 @@
           gameState.colonies = msg.colonies;
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
+          _refreshPlayerCache();
           // Update Three.js colony view
           if (currentView === 'colony' && window.ColonyRenderer) {
-            const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
-            if (myColony) window.ColonyRenderer.updateFromState(myColony);
+            if (_cachedMyColony) window.ColonyRenderer.updateFromState(_cachedMyColony);
           }
           // Update galaxy ownership rings
           if (currentView === 'galaxy' && window.GalaxyView) {
@@ -301,6 +301,9 @@
   let _uiInterval = null;
   let _warningTimeout = null;
   let _lastResearchKey = '';  // tracks research state to avoid redundant DOM rebuilds
+  let _lastQueueKey = '';      // tracks build queue state to avoid redundant DOM rebuilds
+  let _cachedMyPlayer = null;   // cached after each gameState update
+  let _cachedMyColony = null;   // cached after each gameState update
 
   function _onTileSelect(tileData) {
     _hideAllPanels();
@@ -476,14 +479,18 @@
     }
   }
 
+  function _refreshPlayerCache() {
+    if (!gameState) { _cachedMyPlayer = null; _cachedMyColony = null; return; }
+    _cachedMyPlayer = gameState.players.find(p => p.id === gameState.yourId) || null;
+    _cachedMyColony = gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
   function _getMyPlayer() {
-    if (!gameState) return null;
-    return gameState.players.find(p => p.id === gameState.yourId) || null;
+    return _cachedMyPlayer;
   }
 
   function _getMyColony() {
-    if (!gameState) return null;
-    return gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+    return _cachedMyColony;
   }
 
   // ── HUD update (throttled to 2Hz) ──
@@ -600,36 +607,40 @@
       cpHousing.textContent = colony.pops + '/' + colony.housing;
       cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
 
-      // Build queue
-      if (colony.buildQueue.length > 0) {
-        colonyQueueHeader.classList.remove('hidden');
-        colonyQueueList.innerHTML = '';
-        for (const q of colony.buildQueue) {
-          const ui = DISTRICT_UI[q.type] || {};
-          const def = DISTRICT_UI[q.type];
-          const totalTicks = def ? _getBuildTime(q.type) : 300;
-          const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
-          const secLeft = (q.ticksRemaining / 10).toFixed(0);
+      // Build queue — fingerprint to avoid redundant DOM rebuilds
+      const queueKey = colony.buildQueue.map(q => q.id + ':' + q.ticksRemaining).join(',');
+      if (queueKey !== _lastQueueKey) {
+        _lastQueueKey = queueKey;
+        if (colony.buildQueue.length > 0) {
+          colonyQueueHeader.classList.remove('hidden');
+          colonyQueueList.innerHTML = '';
+          for (const q of colony.buildQueue) {
+            const ui = DISTRICT_UI[q.type] || {};
+            const def = DISTRICT_UI[q.type];
+            const totalTicks = def ? _getBuildTime(q.type) : 300;
+            const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
+            const secLeft = (q.ticksRemaining / 10).toFixed(0);
 
-          const div = document.createElement('div');
-          div.className = 'queue-item';
-          div.innerHTML =
-            `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
-            `<span class="queue-item-name">${ui.label || q.type}</span>` +
-            `<span class="queue-item-time">${secLeft}s</span>` +
-            `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
-            `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+            const div = document.createElement('div');
+            div.className = 'queue-item';
+            div.innerHTML =
+              `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
+              `<span class="queue-item-name">${ui.label || q.type}</span>` +
+              `<span class="queue-item-time">${secLeft}s</span>` +
+              `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+              `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
 
-          const cancelBtn = div.querySelector('.queue-item-cancel');
-          cancelBtn.addEventListener('click', () => {
-            send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
-          });
+            const cancelBtn = div.querySelector('.queue-item-cancel');
+            cancelBtn.addEventListener('click', () => {
+              send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
+            });
 
-          colonyQueueList.appendChild(div);
+            colonyQueueList.appendChild(div);
+          }
+        } else {
+          colonyQueueHeader.classList.add('hidden');
+          colonyQueueList.innerHTML = '';
         }
-      } else {
-        colonyQueueHeader.classList.add('hidden');
-        colonyQueueList.innerHTML = '';
       }
     }
   }

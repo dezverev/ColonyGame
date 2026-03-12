@@ -33,6 +33,7 @@
   // Raycaster for hover/click
   const _raycaster = typeof THREE !== 'undefined' ? new THREE.Raycaster() : null;
   const _mouse = typeof THREE !== 'undefined' ? new THREE.Vector2() : null;
+  let _playerColorMap = null; // playerId -> color string, rebuilt per ownership update
 
   // Shared materials/geometries
   const _matCache = {};
@@ -239,15 +240,22 @@
   }
 
   function _getPlayerColor(playerId) {
-    // Get from gameState via GameClient
+    if (_playerColorMap && _playerColorMap.has(playerId)) {
+      return _playerColorMap.get(playerId);
+    }
+    return '#888888';
+  }
+
+  function _rebuildPlayerColorMap() {
+    _playerColorMap = new Map();
     if (typeof window !== 'undefined' && window.GameClient) {
       const state = window.GameClient.getState();
       if (state && state.players) {
-        const player = state.players.find(p => p.id === playerId);
-        if (player) return player.color;
+        for (const p of state.players) {
+          _playerColorMap.set(p.id, p.color);
+        }
       }
     }
-    return '#888888';
   }
 
   function _fitCameraToGalaxy(systems) {
@@ -422,6 +430,7 @@
 
   function updateOwnership(colonies, players) {
     if (!galaxyData) return;
+    _rebuildPlayerColorMap();
     // Update system ownership from colonies
     for (const sys of galaxyData.systems) {
       sys.owner = null; // reset
