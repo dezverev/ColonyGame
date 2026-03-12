@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS } = require('../../server/game-engine');
 
 function makeRoom(playerCount = 2) {
   const players = new Map();
@@ -287,6 +287,123 @@ describe('GameEngine — Population', () => {
     }
 
     assert.strictEqual(colony.pops, 1);
+  });
+});
+
+describe('GameEngine — Pop Growth', () => {
+  it('pop grows after GROWTH_BASE_TICKS when food surplus > 0', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Add housing so growth is not capped (starting: 10 pops, 10 housing)
+    engine._addBuiltDistrict(colony, 'housing'); // +5 housing = 15 total
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 11, 'Should have grown 1 pop after base growth ticks');
+    assert.strictEqual(colony.growthProgress, 0, 'Growth progress should reset after pop added');
+  });
+
+  it('no growth before reaching growth threshold', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    engine._addBuiltDistrict(colony, 'housing');
+
+    for (let i = 0; i < GROWTH_BASE_TICKS - 1; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 10, 'Should not have grown before threshold');
+    assert.strictEqual(colony.growthProgress, GROWTH_BASE_TICKS - 1);
+  });
+
+  it('growth is blocked by housing cap', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Starting: 10 pops, 10 housing (base). No extra housing districts.
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 10, 'Pops should not exceed housing');
+    assert.strictEqual(colony.growthProgress, 0, 'Growth progress should not accumulate at housing cap');
+  });
+
+  it('faster growth with food surplus > 5', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Add lots of agriculture for surplus > 5 (starting net: +2, need > 5)
+    // Each agriculture adds +6 food. Adding 1 more = +8 net - need pops to work it
+    // Actually surplus = production.food - consumption.food. Starting: 12 - 10 = 2.
+    // Add 2 more agriculture: production = 24, consumption = 10, surplus = 14 > 10 → fastest
+    // But we want surplus between 5 and 10 for FAST rate
+    // Add 1 agriculture: production = 18, consumption = 10, surplus = 8 (> 5, ≤ 10) → FAST
+    engine._addBuiltDistrict(colony, 'agriculture');
+    engine._addBuiltDistrict(colony, 'housing'); // need housing for growth
+    engine._invalidateColonyCache(colony);
+
+    for (let i = 0; i < GROWTH_FAST_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 11, 'Should grow at fast rate with surplus > 5');
+  });
+
+  it('fastest growth with food surplus > 10', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    // Add 2 more agriculture: production = 24, consumption = 10, surplus = 14 > 10 → fastest
+    engine._addBuiltDistrict(colony, 'agriculture');
+    engine._addBuiltDistrict(colony, 'agriculture');
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._invalidateColonyCache(colony);
+
+    for (let i = 0; i < GROWTH_FASTEST_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 11, 'Should grow at fastest rate with surplus > 10');
+  });
+
+  it('no growth when food surplus is 0 or negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    engine._addBuiltDistrict(colony, 'housing'); // need housing to isolate test
+    // Remove all agriculture to create food deficit
+    colony.districts = colony.districts.filter(d => d.type !== 'agriculture');
+    engine._invalidateColonyCache(colony);
+
+    for (let i = 0; i < GROWTH_BASE_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, 10, 'No growth when food surplus <= 0');
+    assert.strictEqual(colony.growthProgress, 0);
+  });
+
+  it('starvation resets growth progress', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    engine._addBuiltDistrict(colony, 'housing');
+    // Accumulate some growth progress
+    colony.growthProgress = 50;
+    // Set food to negative to trigger starvation
+    engine.playerStates.get(1).resources.food = -100;
+
+    // Run one month
+    for (let i = 0; i < MONTH_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.growthProgress, 0, 'Growth progress should reset on starvation');
+  });
+
+  it('growthProgress is included in serialized state', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.colonies[0].growthProgress, 0);
   });
 });
 

@@ -26,6 +26,11 @@ const PLANET_TYPES = {
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 
+// Pop growth thresholds: food surplus -> ticks per new pop
+const GROWTH_BASE_TICKS = 400;       // 40 seconds — base growth rate
+const GROWTH_FAST_TICKS = 300;       // 30 seconds — food surplus > 5
+const GROWTH_FASTEST_TICKS = 200;    // 20 seconds — food surplus > 10
+
 class GameEngine {
   constructor(room, options = {}) {
     this.room = room;
@@ -96,6 +101,7 @@ class GameEngine {
       districts: [],               // built districts: { id, type }
       buildQueue: [],              // { id, type, ticksRemaining }
       pops: 10,                    // starting population
+      growthProgress: 0,           // ticks accumulated toward next pop
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
@@ -247,8 +253,8 @@ class GameEngine {
     }
   }
 
-  // Process population growth
-  _processPopGrowth() {
+  // Process population: starvation deaths (monthly) and growth (every tick)
+  _processPopStarvation() {
     for (const [, colony] of this.colonies) {
       const state = this.playerStates.get(colony.ownerId);
       if (!state) continue;
@@ -256,6 +262,38 @@ class GameEngine {
       // Pop dies if food deficit
       if (state.resources.food < 0 && colony.pops > 1) {
         colony.pops--;
+        colony.growthProgress = 0; // reset growth on starvation
+        this._invalidateColonyCache(colony); // production depends on pops
+      }
+    }
+  }
+
+  // Process pop growth every tick — increment growthProgress when food surplus > 0
+  _processPopGrowth() {
+    for (const [, colony] of this.colonies) {
+      const { production, consumption } = this._calcProduction(colony);
+      const foodSurplus = production.food - consumption.food;
+
+      if (foodSurplus <= 0) continue;
+
+      // Check housing cap
+      const housing = this._calcHousing(colony);
+      if (colony.pops >= housing) continue;
+
+      // Determine growth speed based on food surplus
+      let growthTarget;
+      if (foodSurplus > 10) {
+        growthTarget = GROWTH_FASTEST_TICKS;
+      } else if (foodSurplus > 5) {
+        growthTarget = GROWTH_FAST_TICKS;
+      } else {
+        growthTarget = GROWTH_BASE_TICKS;
+      }
+
+      colony.growthProgress++;
+      if (colony.growthProgress >= growthTarget) {
+        colony.pops++;
+        colony.growthProgress = 0;
         this._invalidateColonyCache(colony); // production depends on pops
       }
     }
@@ -278,10 +316,13 @@ class GameEngine {
     // Process construction every tick
     this._processConstruction();
 
+    // Pop growth every tick
+    this._processPopGrowth();
+
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
-      this._processPopGrowth();
+      this._processPopStarvation();
     }
 
     // Only broadcast when state has changed
@@ -380,6 +421,7 @@ class GameEngine {
         districts: c.districts,
         buildQueue: c.buildQueue.map(q => ({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining })),
         pops: c.pops,
+        growthProgress: c.growthProgress,
         housing: this._calcHousing(c),
         jobs: this._calcJobs(c),
         production: this._calcProduction(c),
@@ -394,4 +436,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };

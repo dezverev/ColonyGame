@@ -166,3 +166,35 @@ Each entry records an iteration of automated development.
 - Pop death test needed adjustment: food set to -10 (not -1) because +2/month net surplus now recovers from small deficits
 
 **Next:** Pop growth pacing (colony.growthProgress, +1 pop based on food surplus thresholds)
+
+---
+
+## Entry 6 — 2026-03-11 — Pop Growth System
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Pop growth system: colonies grow +1 pop over time when food surplus > 0
+- Growth progress counter (`colony.growthProgress`) increments every tick
+- Three growth speed tiers based on food surplus: base (400 ticks), fast (300 ticks when surplus > 5), fastest (200 ticks when surplus > 10)
+- Housing cap enforcement — pops cannot grow beyond housing capacity
+- Starvation resets growth progress to 0
+- Growth constants exported for test use (GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS)
+- Refactored old `_processPopGrowth` into `_processPopStarvation` (monthly) and `_processPopGrowth` (per-tick)
+
+**Files changed:**
+- `server/game-engine.js` — growth constants, growthProgress field, _processPopGrowth (per-tick), _processPopStarvation (monthly), state serialization
+- `src/tests/game-engine.test.js` — 8 new pop growth tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 77 total (58 game-engine + 12 room-manager + 6 integration + 1 server-integration). All passing.
+
+**Key decisions:**
+- Growth checks production rate (food surplus = production - consumption), not resource stockpile — a colony with good farms grows even if the empire's food reserves are low
+- Growth progress increments every tick (not monthly) for smooth progression and responsive gameplay
+- Housing cap check before incrementing prevents wasted progress accumulation
+- Starvation resets growth progress to create meaningful penalty for food deficits
+
+**Next:** Early mineral pacing (Mining output 4→6, starting minerals 200→300, Mining cost 150→100)
