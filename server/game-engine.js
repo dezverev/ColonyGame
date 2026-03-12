@@ -96,10 +96,19 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
+    this.onGameOver = options.onGameOver || null;
     this._dirtyPlayers = new Set(); // per-player dirty tracking
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._pendingEvents = []; // events to flush with next broadcast
+    this._gameOver = false; // true after game ends
+
+    // Match timer: minutes from room settings, 0 = unlimited
+    const matchMinutes = Number(room.matchTimer) || 0;
+    this._matchTicksRemaining = matchMinutes > 0 ? matchMinutes * 60 * (options.tickRate || 10) : 0;
+    this._matchTimerEnabled = matchMinutes > 0;
+    this._warned2min = false;
+    this._warned30sec = false;
 
     // Tick profiling — enabled via GAME_DEBUG=1 env var or options.profile
     this._profile = options.profile || (typeof process !== 'undefined' && process.env.GAME_DEBUG === '1');
@@ -559,6 +568,118 @@ class GameEngine {
     return { district: modifiers, growth: growthMultiplier };
   }
 
+  // Calculate victory points for a player
+  _calcVictoryPoints(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return 0;
+
+    // Pops × 2
+    let totalPops = 0;
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) totalPops += colony.pops;
+    }
+
+    // Districts × 1
+    let totalDistricts = 0;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) totalDistricts += colony.districts.length;
+    }
+
+    // Alloys stockpiled / 50
+    const alloysVP = Math.floor(state.resources.alloys / 50);
+
+    // Total research / 100
+    const totalResearch = (state.resources.research.physics || 0)
+      + (state.resources.research.society || 0)
+      + (state.resources.research.engineering || 0);
+    const researchVP = Math.floor(totalResearch / 100);
+
+    return (totalPops * 2) + totalDistricts + alloysVP + researchVP;
+  }
+
+  // Process match timer countdown
+  _processMatchTimer() {
+    if (!this._matchTimerEnabled || this._gameOver) return;
+
+    this._matchTicksRemaining--;
+
+    // 2-minute warning (1200 ticks at 10Hz)
+    const twoMinTicks = 2 * 60 * this.tickRate;
+    if (!this._warned2min && this._matchTicksRemaining <= twoMinTicks && this._matchTicksRemaining > 0) {
+      this._warned2min = true;
+      for (const [playerId] of this.playerStates) {
+        this._emitEvent('matchWarning', playerId, { secondsRemaining: 120 });
+      }
+    }
+
+    // 30-second countdown (300 ticks at 10Hz)
+    const thirtySec = 30 * this.tickRate;
+    if (!this._warned30sec && this._matchTicksRemaining <= thirtySec && this._matchTicksRemaining > 0) {
+      this._warned30sec = true;
+      for (const [playerId] of this.playerStates) {
+        this._emitEvent('finalCountdown', playerId, { secondsRemaining: 30 });
+      }
+    }
+
+    // Timer expired — game over
+    if (this._matchTicksRemaining <= 0) {
+      this._matchTicksRemaining = 0;
+      this._triggerGameOver();
+    }
+  }
+
+  // End the game and determine winner
+  _triggerGameOver() {
+    if (this._gameOver) return;
+    this._gameOver = true;
+
+    const scores = [];
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId) || [];
+      let totalPops = 0, totalDistricts = 0;
+      for (const cId of colonyIds) {
+        const c = this.colonies.get(cId);
+        if (c) { totalPops += c.pops; totalDistricts += c.districts.length; }
+      }
+      const vp = this._calcVictoryPoints(playerId);
+      scores.push({
+        playerId,
+        name: state.name,
+        color: state.color,
+        vp,
+        breakdown: {
+          pops: totalPops,
+          popsVP: totalPops * 2,
+          districts: totalDistricts,
+          districtsVP: totalDistricts,
+          alloys: state.resources.alloys,
+          alloysVP: Math.floor(state.resources.alloys / 50),
+          totalResearch: (state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0),
+          researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 100),
+        },
+      });
+    }
+
+    // Sort by VP descending
+    scores.sort((a, b) => b.vp - a.vp);
+    const winner = scores.length > 0 ? scores[0] : null;
+
+    const gameOverData = {
+      winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
+      scores,
+      finalTick: this.tickCount,
+    };
+
+    if (this.onGameOver) {
+      this.onGameOver(gameOverData);
+    }
+
+    this.stop();
+  }
+
   // Process research each month — consume accumulated research toward active techs
   _processResearch() {
     for (const [playerId, state] of this.playerStates) {
@@ -613,9 +734,17 @@ class GameEngine {
   }
 
   tick() {
+    if (this._gameOver) return;
+
     const t0 = this._profile ? process.hrtime.bigint() : 0n;
 
     this.tickCount++;
+
+    // Match timer countdown
+    if (this._matchTimerEnabled) {
+      this._processMatchTimer();
+      if (this._gameOver) return; // game ended this tick
+    }
 
     // Process construction every tick
     this._processConstruction();
@@ -799,6 +928,7 @@ class GameEngine {
         id: p.id, name: p.name, color: p.color, resources: p.resources,
         currentResearch: p.currentResearch, researchProgress: p.researchProgress,
         completedTechs: p.completedTechs,
+        vp: this._calcVictoryPoints(p.id),
       });
     }
     const coloniesArr = [];
@@ -806,6 +936,10 @@ class GameEngine {
       coloniesArr.push(this._serializeColony(c));
     }
     const state = { tick: this.tickCount, players: playersArr, colonies: coloniesArr };
+    if (this._matchTimerEnabled) {
+      state.matchTicksRemaining = this._matchTicksRemaining;
+      state.matchTimerEnabled = true;
+    }
     this._cachedState = state;
     return state;
   }
@@ -824,18 +958,19 @@ class GameEngine {
     const player = this.playerStates.get(playerId);
     if (!player) return this.getState(); // fallback
 
-    // Own resources + research state
+    // Own resources + research state + VP
     const me = {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
+      vp: this._calcVictoryPoints(playerId),
     };
 
-    // Other players: name/color only (no resources — saves bandwidth, not needed by client)
+    // Other players: name/color + VP for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
-      others.push({ id: p.id, name: p.name, color: p.color });
+      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id) });
     }
 
     // Own colonies (full detail)
@@ -847,7 +982,15 @@ class GameEngine {
       coloniesArr.push(this._serializeColony(c));
     }
 
-    return { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+    const state = { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+
+    // Include match timer info
+    if (this._matchTimerEnabled) {
+      state.matchTicksRemaining = this._matchTicksRemaining;
+      state.matchTimerEnabled = true;
+    }
+
+    return state;
   }
 
   // Pre-stringified per-player gameState payload
@@ -900,4 +1043,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS };

@@ -606,3 +606,50 @@ Each entry records an iteration of automated development.
 - No separate "disabled district 3D rendering" task needed for basic visuals — desaturated material is sufficient; the existing design doc task for red X overlay is a future enhancement
 
 **Next:** Dead code fix (first-3-districts discount for newly colonized planets), or score timer + VP scoring
+
+---
+
+## Entry 19 — 2026-03-11 — Score Timer + VP Scoring
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Victory Points (VP) calculation: `_calcVictoryPoints(playerId)` — VP = pops×2 + districts×1 + alloys/50 + totalResearch/100
+- Configurable match timer: 10/20/30 minutes or unlimited, selectable in room creation dialog
+- Timer countdown in server ticks, with 2-minute warning and 30-second final countdown events
+- `gameOver` broadcast when timer expires: winner (highest VP), per-player scores with VP breakdown
+- Game engine stops ticking after game over
+- Server.js `onGameOver` callback broadcasts `gameOver` to all room players, marks room as finished
+- Room settings: `matchTimer` option with defaults (10 min practice, 20 min multiplayer), validation against [0,10,20,30]
+- Client: Tab key toggles live scoreboard overlay showing all players sorted by VP
+- Client: Match timer countdown in status bar (color-coded: green > 2min, yellow < 2min, red < 30s)
+- Client: VP display in status bar
+- Client: Match warning banner with pulse animation for 2-minute and 30-second warnings
+- Client: Post-game overlay with winner announcement, full score breakdown table, "Return to Lobby" button
+- Client: Match timer selector in create room dialog
+
+**Files changed:**
+- `server/game-engine.js` — `_calcVictoryPoints`, `_processMatchTimer`, `_triggerGameOver`, match timer state, VP in serialization, `onGameOver` callback
+- `server/server.js` — `onGameOver` handler, pass `matchTimer` to room creation
+- `server/room-manager.js` — `matchTimer` room setting with validation/defaults, included in serialization/listing
+- `src/public/js/app.js` — scoreboard toggle/render, game-over overlay, match warning banner, timer/VP in HUD, `matchTimer` in room creation, `gameOver` message handler
+- `src/public/index.html` — scoreboard overlay, game-over overlay, match warning banner, timer/VP in status bar, match timer selector in create room dialog
+- `src/public/css/style.css` — scoreboard table, game-over overlay, match warning banner with pulse animation, VP display
+- `src/tests/game-engine.test.js` — 19 new tests (7 VP, 12 match timer)
+- `src/tests/room-manager.test.js` — 6 new match timer tests
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 182 total (25 new: 7 VP calculation, 12 match timer/game over, 6 room manager match timer). All passing.
+
+**Key decisions:**
+- VP formula uses floor division for alloys/50 and research/100 — prevents fractional VP, keeps scoring clean
+- Match timer defaults: 10 min for practice (fast iteration), 20 min for multiplayer (competitive but not too long)
+- Timer validation restricts to [0,10,20,30] — prevents arbitrary values that could break pacing
+- Game engine `_gameOver` flag prevents any processing after game ends, `stop()` called in `_triggerGameOver`
+- VP recalculated per-broadcast rather than cached — simple and accurate, no performance concern with current player counts
+- Warning events use the existing `_emitEvent` system — consistent with other event types
+- Post-game overlay shows full VP breakdown (pops, districts, alloys, research) so players understand scoring
+
+**Next:** Research & Industrial output bump (3→4), then starting minerals & alloys adjustment

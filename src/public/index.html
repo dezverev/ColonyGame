@@ -40,6 +40,14 @@
             <option value="8">8</option>
           </select>
         </label>
+        <label>Match Timer
+          <select id="room-match-timer">
+            <option value="10">10 min</option>
+            <option value="20" selected>20 min</option>
+            <option value="30">30 min</option>
+            <option value="0">Unlimited</option>
+          </select>
+        </label>
         <div class="dialog-buttons">
           <button id="room-create-confirm">Create</button>
           <button id="room-create-cancel">Cancel</button>
@@ -81,12 +89,16 @@
 
       <!-- Status bar (below resource bar) -->
       <div id="status-bar">
+        <span id="status-timer" class="hidden"></span>
+        <span id="status-timer-sep" class="status-sep hidden">|</span>
         <span id="status-month">Month 0</span>
         <span class="status-sep">|</span>
         <span id="status-pops">Pop: 0/0</span>
         <span class="status-sep">|</span>
         <span id="status-growth">Growth: —</span>
         <div id="growth-bar-wrap"><div id="growth-bar-fill"></div></div>
+        <span class="status-sep">|</span>
+        <span id="status-vp">VP: 0</span>
       </div>
 
       <!-- Colony info panel (right side) -->
@@ -108,6 +120,25 @@
         <div class="panel-header">Research<button id="research-panel-close" class="panel-close">&times;</button></div>
         <div id="research-tracks"></div>
       </div>
+
+      <!-- Scoreboard overlay — toggled with Tab key -->
+      <div id="scoreboard" class="game-panel hidden">
+        <div class="panel-header">Scoreboard<button id="scoreboard-close" class="panel-close">&times;</button></div>
+        <div id="scoreboard-body"></div>
+      </div>
+
+      <!-- Game over overlay -->
+      <div id="game-over-overlay" class="hidden">
+        <div id="game-over-content">
+          <h2 id="game-over-title">Game Over</h2>
+          <div id="game-over-winner"></div>
+          <div id="game-over-scores"></div>
+          <button id="game-over-lobby-btn">Return to Lobby</button>
+        </div>
+      </div>
+
+      <!-- Match warning banner -->
+      <div id="match-warning" class="hidden"></div>
 
       <!-- Build menu — appears when empty tile clicked -->
       <div id="build-menu" class="game-panel hidden">

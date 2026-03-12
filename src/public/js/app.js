@@ -117,7 +117,11 @@
           players: msg.players,
           colonies: msg.colonies,
           yourId: msg.yourId,
+          matchTimerEnabled: msg.matchTimerEnabled || false,
+          matchTicksRemaining: msg.matchTicksRemaining || 0,
         };
+        // Reset game-over state
+        if (gameOverOverlay) gameOverOverlay.classList.add('hidden');
         showScreen('game');
         // Initialize Three.js renderer and wire tile selection
         if (window.ColonyRenderer) {
@@ -137,6 +141,8 @@
           gameState.tick = msg.tick;
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
+          if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
+          if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           // Update Three.js colony view
           if (window.ColonyRenderer) {
             const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
@@ -151,7 +157,15 @@
           if (researchPanel && !researchPanel.classList.contains('hidden')) {
             _renderResearchPanel();
           }
+        } else if (msg.eventType === 'matchWarning') {
+          _showMatchWarning('2 minutes remaining!');
+        } else if (msg.eventType === 'finalCountdown') {
+          _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
         }
+        break;
+
+      case 'gameOver':
+        _showGameOver(msg);
         break;
     }
   }
@@ -241,8 +255,30 @@
   const researchTracks = document.getElementById('research-tracks');
   const researchPanelClose = document.getElementById('research-panel-close');
 
+  // ── Scoreboard refs ──
+  const scoreboard = document.getElementById('scoreboard');
+  const scoreboardBody = document.getElementById('scoreboard-body');
+  const scoreboardClose = document.getElementById('scoreboard-close');
+
+  // ── Game over refs ──
+  const gameOverOverlay = document.getElementById('game-over-overlay');
+  const gameOverTitle = document.getElementById('game-over-title');
+  const gameOverWinner = document.getElementById('game-over-winner');
+  const gameOverScores = document.getElementById('game-over-scores');
+  const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
+
+  // ── Timer & warning refs ──
+  const statusTimer = document.getElementById('status-timer');
+  const statusTimerSep = document.getElementById('status-timer-sep');
+  const statusVP = document.getElementById('status-vp');
+  const matchWarning = document.getElementById('match-warning');
+
+  // ── Room dialog refs ──
+  const roomMatchTimer = document.getElementById('room-match-timer');
+
   let _selectedTileData = null;
   let _uiInterval = null;
+  let _warningTimeout = null;
 
   function _onTileSelect(tileData) {
     _hideAllPanels();
@@ -464,6 +500,26 @@
       _setNet(resBar.researchNet, totalResNet);
     }
 
+    // Match timer
+    if (gameState.matchTimerEnabled && statusTimer) {
+      const ticksLeft = gameState.matchTicksRemaining || 0;
+      const secsLeft = Math.max(0, Math.ceil(ticksLeft / 10));
+      const min = Math.floor(secsLeft / 60);
+      const sec = secsLeft % 60;
+      statusTimer.textContent = min + ':' + String(sec).padStart(2, '0');
+      statusTimer.classList.remove('hidden');
+      statusTimerSep.classList.remove('hidden');
+      // Color: red under 30s, yellow under 2min
+      if (secsLeft <= 30) statusTimer.style.color = '#e74c3c';
+      else if (secsLeft <= 120) statusTimer.style.color = '#f1c40f';
+      else statusTimer.style.color = '#2ecc71';
+    }
+
+    // VP display
+    if (player && statusVP) {
+      statusVP.textContent = 'VP: ' + (player.vp || 0);
+    }
+
     // Status bar
     const month = Math.floor((gameState.tick || 0) / 100);
     statusMonth.textContent = 'Month ' + month;
@@ -569,6 +625,70 @@
     return times[type] || 300;
   }
 
+  // ── Scoreboard ──
+  function _toggleScoreboard() {
+    if (!scoreboard) return;
+    if (scoreboard.classList.contains('hidden')) {
+      _renderScoreboard();
+      scoreboard.classList.remove('hidden');
+    } else {
+      scoreboard.classList.add('hidden');
+    }
+  }
+
+  function _renderScoreboard() {
+    if (!scoreboardBody || !gameState) return;
+    const players = [...(gameState.players || [])];
+    // Sort by VP descending
+    players.sort((a, b) => (b.vp || 0) - (a.vp || 0));
+
+    let html = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th></tr>';
+    players.forEach((p, i) => {
+      const isMe = p.id === gameState.yourId;
+      const cls = isMe ? ' class="scoreboard-me"' : '';
+      html += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td><td>${p.vp || 0}</td></tr>`;
+    });
+    html += '</table>';
+    scoreboardBody.innerHTML = html;
+  }
+
+  // ── Game Over ──
+  function _showGameOver(data) {
+    if (!gameOverOverlay) return;
+    if (_uiInterval) { clearInterval(_uiInterval); _uiInterval = null; }
+
+    const winner = data.winner;
+    const isMe = winner && winner.playerId === (gameState ? gameState.yourId : null);
+
+    gameOverTitle.textContent = isMe ? 'Victory!' : 'Game Over';
+    gameOverWinner.innerHTML = winner
+      ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
+      : '<div class="game-over-winner-name">No winner</div>';
+
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th></tr>';
+    (data.scores || []).forEach((s, i) => {
+      const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
+      scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
+        `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
+        `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
+        `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
+        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td></tr>`;
+    });
+    scoresHtml += '</table>';
+    gameOverScores.innerHTML = scoresHtml;
+
+    gameOverOverlay.classList.remove('hidden');
+  }
+
+  // ── Match Warning Banner ──
+  function _showMatchWarning(text) {
+    if (!matchWarning) return;
+    matchWarning.textContent = text;
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => matchWarning.classList.add('hidden'), 5000);
+  }
+
   // Panel close buttons
   if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
     _hideAllPanels();
@@ -581,16 +701,29 @@
   if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
     researchPanel.classList.add('hidden');
   });
+  if (scoreboardClose) scoreboardClose.addEventListener('click', () => {
+    scoreboard.classList.add('hidden');
+  });
 
-  // R key toggles research panel (only during game)
+  // Keyboard shortcuts (only during game)
   document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (!gameState) return;
+
     if (e.key === 'r' || e.key === 'R') {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (!gameState) return;
       _toggleResearchPanel();
     }
-    if (e.key === 'Escape' && researchPanel && !researchPanel.classList.contains('hidden')) {
-      researchPanel.classList.add('hidden');
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      _toggleScoreboard();
+    }
+    if (e.key === 'Escape') {
+      if (researchPanel && !researchPanel.classList.contains('hidden')) {
+        researchPanel.classList.add('hidden');
+      }
+      if (scoreboard && !scoreboard.classList.contains('hidden')) {
+        scoreboard.classList.add('hidden');
+      }
     }
   });
 
@@ -617,7 +750,8 @@
   roomCreateConfirm.addEventListener('click', () => {
     const name = roomNameInput.value.trim() || `${myName}'s Room`;
     const maxPlayers = parseInt(roomMaxPlayers.value, 10);
-    send({ type: 'createRoom', name, maxPlayers });
+    const matchTimer = roomMatchTimer ? parseInt(roomMatchTimer.value, 10) : 20;
+    send({ type: 'createRoom', name, maxPlayers, matchTimer });
     createRoomDialog.classList.add('hidden');
     roomNameInput.value = '';
   });
@@ -632,6 +766,12 @@
 
   launchBtn.addEventListener('click', () => {
     send({ type: 'launchGame' });
+  });
+
+  if (gameOverLobbyBtn) gameOverLobbyBtn.addEventListener('click', () => {
+    gameOverOverlay.classList.add('hidden');
+    gameState = null;
+    send({ type: 'leaveRoom' });
   });
 
   chatInput.addEventListener('keydown', (e) => {

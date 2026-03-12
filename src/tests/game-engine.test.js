@@ -1,18 +1,18 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS } = require('../../server/game-engine');
 
 // Helper: tick engine to next broadcast boundary (tickCount divisible by BROADCAST_EVERY)
 function tickToBroadcast(engine) {
   do { engine.tick(); } while (engine.tickCount % BROADCAST_EVERY !== 0);
 }
 
-function makeRoom(playerCount = 2) {
+function makeRoom(playerCount = 2, options = {}) {
   const players = new Map();
   for (let i = 1; i <= playerCount; i++) {
     players.set(i, { id: i, name: `Player${i}`, ready: true, isHost: i === 1 });
   }
-  return { id: 'test', name: 'Test', hostId: 1, maxPlayers: 4, status: 'playing', players };
+  return { id: 'test', name: 'Test', hostId: 1, maxPlayers: 4, status: 'playing', players, ...options };
 }
 
 describe('GameEngine — Initialization', () => {
@@ -1883,5 +1883,204 @@ describe('GameEngine — Energy Deficit', () => {
 
     const disabledCount = colony.districts.filter(d => d.disabled).length;
     assert.strictEqual(disabledCount, 0, 'no districts should be disabled when energy is positive');
+  });
+});
+
+// ── Victory Points ──
+describe('GameEngine — Victory Points', () => {
+  it('calculates VP from pops, districts, alloys, and research', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Starting: 8 pops * 2 = 16, 4 districts * 1 = 4, alloys 50/50 = 1, research 0
+    const vp = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp, 16 + 4 + 1 + 0); // 21
+  });
+
+  it('VP includes alloy stockpile divided by 50', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 250;
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 250/50=5
+    assert.strictEqual(vp, 16 + 4 + 5 + 0);
+  });
+
+  it('VP includes total research divided by 100', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.resources.research = { physics: 100, society: 100, engineering: 100 };
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 300/100=3
+    assert.strictEqual(vp, 16 + 4 + 0 + 3);
+  });
+
+  it('VP is 0 for unknown player', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(engine._calcVictoryPoints(999), 0);
+  });
+
+  it('VP included in getState() player data', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.ok(state.players[0].vp !== undefined, 'player should have vp field');
+    assert.strictEqual(typeof state.players[0].vp, 'number');
+  });
+
+  it('VP included in getPlayerState() for self and others', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const pState = engine.getPlayerState(1);
+    assert.ok(pState.players[0].vp !== undefined, 'own player should have vp');
+    assert.ok(pState.players[1].vp !== undefined, 'other player should have vp');
+  });
+
+  it('VP reflects additional districts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const vpBefore = engine._calcVictoryPoints(1);
+    engine._addBuiltDistrict(colony, 'mining');
+    const vpAfter = engine._calcVictoryPoints(1);
+    assert.strictEqual(vpAfter, vpBefore + 1, 'VP should increase by 1 per new district');
+  });
+});
+
+// ── Match Timer ──
+describe('GameEngine — Match Timer', () => {
+  it('no timer when matchTimer is 0 (unlimited)', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), { tickRate: 10 });
+    assert.strictEqual(engine._matchTimerEnabled, false);
+    assert.strictEqual(engine._matchTicksRemaining, 0);
+  });
+
+  it('timer enabled when matchTimer is set', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    assert.strictEqual(engine._matchTimerEnabled, true);
+    // 10 minutes * 60 seconds * 10 ticks/sec = 6000 ticks
+    assert.strictEqual(engine._matchTicksRemaining, 6000);
+  });
+
+  it('timer counts down each tick', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const startTicks = engine._matchTicksRemaining;
+    engine.tick();
+    assert.strictEqual(engine._matchTicksRemaining, startTicks - 1);
+  });
+
+  it('match timer included in getState when enabled', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.matchTimerEnabled, true);
+    assert.strictEqual(typeof state.matchTicksRemaining, 'number');
+  });
+
+  it('match timer included in getPlayerState when enabled', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const state = engine.getPlayerState(1);
+    assert.strictEqual(state.matchTimerEnabled, true);
+    assert.strictEqual(typeof state.matchTicksRemaining, 'number');
+  });
+
+  it('no match timer in state when unlimited', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.matchTimerEnabled, undefined);
+  });
+
+  it('2-minute warning event fires at correct time', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 2 minutes before end: 6000 - 1200 = 4800 ticks
+    const targetTicks = engine._matchTicksRemaining - (2 * 60 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    // Next tick should trigger the 2-minute warning
+    engine.tick();
+    const warning = events.find(e => e.eventType === 'matchWarning');
+    assert.ok(warning, 'matchWarning event should fire');
+    assert.strictEqual(warning.secondsRemaining, 120);
+  });
+
+  it('30-second countdown event fires', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 30 seconds before end: 6000 - 300 = 5700 ticks
+    const targetTicks = engine._matchTicksRemaining - (30 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    engine.tick();
+    const countdown = events.find(e => e.eventType === 'finalCountdown');
+    assert.ok(countdown, 'finalCountdown event should fire');
+    assert.strictEqual(countdown.secondsRemaining, 30);
+  });
+
+  it('game over triggers when timer expires', () => {
+    let gameOverData = null;
+    // Use a very short timer for testing: 1 minute = 600 ticks
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    assert.strictEqual(engine._matchTicksRemaining, 600);
+
+    // Tick through the whole timer
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData, 'onGameOver should have been called');
+    assert.ok(gameOverData.winner, 'should have a winner');
+    assert.strictEqual(gameOverData.winner.playerId, 1);
+    assert.ok(gameOverData.scores.length > 0, 'scores should be populated');
+  });
+
+  it('game stops ticking after game over', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => {},
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    const tickAfterGameOver = engine.tickCount;
+    engine.tick();
+    assert.strictEqual(engine.tickCount, tickAfterGameOver, 'tick count should not change after game over');
+  });
+
+  it('gameOver scores are sorted by VP descending', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    // Give player 2 more alloys for higher VP
+    const p2 = engine.playerStates.get(2);
+    p2.resources.alloys = 1000;
+
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.scores[0].playerId, 2, 'player 2 should be first (higher VP)');
+    assert.ok(gameOverData.scores[0].vp > gameOverData.scores[1].vp, 'scores should be in descending order');
+  });
+
+  it('gameOver breakdown includes correct VP components', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    const breakdown = gameOverData.scores[0].breakdown;
+    assert.ok(breakdown.pops > 0);
+    assert.ok(breakdown.popsVP > 0);
+    assert.strictEqual(breakdown.popsVP, breakdown.pops * 2);
+    assert.ok(breakdown.districts > 0);
+    assert.strictEqual(breakdown.districtsVP, breakdown.districts);
+    assert.strictEqual(typeof breakdown.alloysVP, 'number');
+    assert.strictEqual(typeof breakdown.researchVP, 'number');
   });
 });
