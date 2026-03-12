@@ -276,12 +276,73 @@
 
   function updateFromState(colony) {
     if (!colony) return;
-    // Rebuild grid if colony changed
-    if (!currentColony || currentColony.id !== colony.id ||
-        currentColony.districts.length !== colony.districts.length ||
-        currentColony.buildQueue.length !== colony.buildQueue.length) {
+
+    // Full rebuild if colony ID changed or grid doesn't exist
+    if (!currentColony || !gridGroup || currentColony.id !== colony.id) {
       buildColonyGrid(colony);
+      return;
     }
+
+    // Incremental update — swap geometry/materials on existing tile meshes in-place
+    // instead of tearing down and recreating all meshes
+    const totalSlots = colony.planet.size;
+    let changed = false;
+
+    for (let i = 0; i < totalSlots; i++) {
+      const district = colony.districts[i] || null;
+      const queueItem = _findQueueItem(colony, i);
+
+      // Determine what this tile should be
+      let wantType, wantConstruction, wantEmpty;
+      if (district) {
+        wantType = district.type;
+        wantConstruction = false;
+        wantEmpty = false;
+      } else if (queueItem) {
+        wantType = queueItem.type;
+        wantConstruction = true;
+        wantEmpty = false;
+      } else {
+        wantType = null;
+        wantConstruction = false;
+        wantEmpty = true;
+      }
+
+      // Find existing mesh for this tile (children[0] is ground, tiles start at [1])
+      const mesh = gridGroup.children[i + 1]; // +1 to skip ground
+      if (!mesh) continue;
+
+      // Check if tile state matches
+      const curType = mesh.userData.districtType || null;
+      const curConstruction = !!mesh.userData.construction;
+      const curEmpty = !!mesh.userData.empty;
+
+      if (curType === wantType && curConstruction === wantConstruction && curEmpty === wantEmpty) {
+        continue; // no change
+      }
+
+      // Update mesh in-place: swap geometry, material, and userData
+      changed = true;
+      if (wantEmpty) {
+        mesh.geometry = _geoCache.empty;
+        mesh.material = _matCache.empty;
+        mesh.position.y = TILE_HEIGHT / 2;
+        mesh.userData.districtType = undefined;
+        mesh.userData.construction = false;
+        mesh.userData.empty = true;
+      } else {
+        const height = DISTRICT_HEIGHTS[wantType] || 0.4;
+        mesh.geometry = _geoCache[wantType] || _geoCache.empty;
+        mesh.material = wantConstruction
+          ? (_matCache[wantType + '_wire'] || _matCache.empty)
+          : (_matCache[wantType] || _matCache.empty);
+        mesh.position.y = height / 2;
+        mesh.userData.districtType = wantType;
+        mesh.userData.construction = wantConstruction;
+        mesh.userData.empty = false;
+      }
+    }
+
     currentColony = colony;
   }
 

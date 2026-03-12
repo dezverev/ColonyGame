@@ -1123,3 +1123,35 @@ describe('GameEngine — Performance', () => {
     assert.ok(sizeKB < 25, `Payload is ${sizeKB.toFixed(1)}KB, limit is 25KB`);
   });
 });
+
+describe('GameEngine — Tick Profiling', () => {
+  it('tick budget stays under 50ms with 8 players fully built', () => {
+    const engine = new GameEngine(makeRoom(8), { profile: true });
+
+    // Max out every colony: 12 built districts + 3 in queue
+    for (const [, colony] of engine.colonies) {
+      for (let i = 0; i < 8; i++) {
+        engine._addBuiltDistrict(colony, ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'][i % 6]);
+      }
+      colony.buildQueue.push({ id: 'q1', type: 'mining', ticksRemaining: 50 });
+      colony.buildQueue.push({ id: 'q2', type: 'generator', ticksRemaining: 100 });
+      colony.buildQueue.push({ id: 'q3', type: 'research', ticksRemaining: 150 });
+    }
+
+    // Run 500 ticks (includes monthly processing)
+    for (let i = 0; i < 500; i++) engine.tick();
+
+    const stats = engine.getTickStats();
+    assert.ok(stats.avg < 50, `Avg tick ${stats.avg.toFixed(3)}ms exceeds 50ms budget`);
+    assert.ok(stats.max < 80, `Max tick ${stats.max.toFixed(3)}ms exceeds 80ms limit`);
+    assert.ok(stats.budgetPct < 50, `Tick uses ${stats.budgetPct.toFixed(1)}% of budget, limit 50%`);
+  });
+
+  it('getTickStats returns zeroes when profiling is disabled', () => {
+    const engine = new GameEngine(makeRoom(1));
+    for (let i = 0; i < 10; i++) engine.tick();
+    const stats = engine.getTickStats();
+    assert.strictEqual(stats.count, 0);
+    assert.strictEqual(stats.avg, 0);
+  });
+});

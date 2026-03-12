@@ -48,6 +48,12 @@ class GameEngine {
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._pendingEvents = []; // events to flush with next broadcast
 
+    // Tick profiling — enabled via GAME_DEBUG=1 env var or options.profile
+    this._profile = options.profile || (typeof process !== 'undefined' && process.env.GAME_DEBUG === '1');
+    this._tickTimings = []; // circular buffer of last 100 tick durations (ms)
+    this._tickTimingsIdx = 0;
+    this._tickTimingsMax = 100;
+
     this._initPlayerStates();
     this._initStartingColonies();
   }
@@ -363,6 +369,8 @@ class GameEngine {
   }
 
   tick() {
+    const t0 = this._profile ? process.hrtime.bigint() : 0n;
+
     this.tickCount++;
 
     // Process construction every tick
@@ -388,6 +396,26 @@ class GameEngine {
       this._dirty = false;
       this.onTick(this.getStateJSON());
     }
+
+    // Record tick timing
+    if (this._profile) {
+      const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+      this._tickTimings[this._tickTimingsIdx % this._tickTimingsMax] = durationMs;
+      this._tickTimingsIdx++;
+    }
+  }
+
+  // Get tick profiling stats (available when profile=true)
+  getTickStats() {
+    const n = Math.min(this._tickTimingsIdx, this._tickTimingsMax);
+    if (n === 0) return { avg: 0, max: 0, count: 0 };
+    let sum = 0, max = 0;
+    for (let i = 0; i < n; i++) {
+      const v = this._tickTimings[i];
+      sum += v;
+      if (v > max) max = v;
+    }
+    return { avg: sum / n, max, count: n, budgetPct: ((sum / n) / (1000 / this.tickRate)) * 100 };
   }
 
   handleCommand(playerId, cmd) {
