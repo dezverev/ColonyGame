@@ -117,15 +117,24 @@
           players: msg.players,
           colonies: msg.colonies,
           yourId: msg.yourId,
+          matchTimerEnabled: msg.matchTimerEnabled || false,
+          matchTicksRemaining: msg.matchTicksRemaining || 0,
+          galaxy: msg.galaxy || null,
         };
+        _refreshPlayerCache();
+        // Reset game-over state
+        if (gameOverOverlay) gameOverOverlay.classList.add('hidden');
         showScreen('game');
+        // Start in colony view
+        currentView = 'colony';
+        galaxyViewInitialized = false;
         // Initialize Three.js renderer and wire tile selection
         if (window.ColonyRenderer) {
           window.ColonyRenderer.init();
           window.ColonyRenderer.setOnTileSelect(_onTileSelect);
-          const myColony = msg.colonies.find(c => c.ownerId === msg.yourId);
-          if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+          if (_cachedMyColony) window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
+        _updateViewUI();
         // Start 2Hz HUD refresh
         if (_uiInterval) clearInterval(_uiInterval);
         _uiInterval = setInterval(_updateHUD, 500);
@@ -137,10 +146,16 @@
           gameState.tick = msg.tick;
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
+          if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
+          if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
+          _refreshPlayerCache();
           // Update Three.js colony view
-          if (window.ColonyRenderer) {
-            const myColony = msg.colonies.find(c => c.ownerId === gameState.yourId);
-            if (myColony) window.ColonyRenderer.updateFromState(myColony);
+          if (currentView === 'colony' && window.ColonyRenderer) {
+            if (_cachedMyColony) window.ColonyRenderer.updateFromState(_cachedMyColony);
+          }
+          // Update galaxy ownership rings
+          if (currentView === 'galaxy' && window.GalaxyView) {
+            window.GalaxyView.updateOwnership(msg.colonies, msg.players);
           }
         }
         break;
@@ -151,7 +166,15 @@
           if (researchPanel && !researchPanel.classList.contains('hidden')) {
             _renderResearchPanel();
           }
+        } else if (msg.eventType === 'matchWarning') {
+          _showMatchWarning('2 minutes remaining!');
+        } else if (msg.eventType === 'finalCountdown') {
+          _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
         }
+        break;
+
+      case 'gameOver':
+        _showGameOver(msg);
         break;
     }
   }
@@ -184,8 +207,8 @@
     generator:   { label: 'Generator',   color: '#f1c40f', cost: { minerals: 100 }, produces: '+6 Energy', consumes: '' },
     mining:      { label: 'Mining',      color: '#95a5a6', cost: { minerals: 100 }, produces: '+6 Minerals', consumes: '' },
     agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
-    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+3 Alloys', consumes: '-3 Energy' },
-    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+3 Phys/Soc/Eng', consumes: '-4 Energy' },
+    industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+4 Alloys', consumes: '-3 Energy' },
+    research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
   // ── Tech tree (client-side mirror for UI) ──
@@ -241,8 +264,46 @@
   const researchTracks = document.getElementById('research-tracks');
   const researchPanelClose = document.getElementById('research-panel-close');
 
+  // ── Scoreboard refs ──
+  const scoreboard = document.getElementById('scoreboard');
+  const scoreboardBody = document.getElementById('scoreboard-body');
+  const scoreboardClose = document.getElementById('scoreboard-close');
+
+  // ── Game over refs ──
+  const gameOverOverlay = document.getElementById('game-over-overlay');
+  const gameOverTitle = document.getElementById('game-over-title');
+  const gameOverWinner = document.getElementById('game-over-winner');
+  const gameOverScores = document.getElementById('game-over-scores');
+  const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
+
+  // ── Timer & warning refs ──
+  const statusTimer = document.getElementById('status-timer');
+  const statusTimerSep = document.getElementById('status-timer-sep');
+  const statusVP = document.getElementById('status-vp');
+  const matchWarning = document.getElementById('match-warning');
+
+  // ── Room dialog refs ──
+  const roomMatchTimer = document.getElementById('room-match-timer');
+
+  // ── View management ──
+  let currentView = 'colony'; // 'colony' | 'galaxy'
+  let galaxyViewInitialized = false;
+  let galaxyAnimFrame = null;
+
+  // ── Galaxy view refs ──
+  const viewIndicator = document.getElementById('view-indicator-label');
+  const systemPanel = document.getElementById('system-panel');
+  const systemPanelTitle = document.getElementById('system-panel-title');
+  const systemPanelBody = document.getElementById('system-panel-body');
+  const systemPanelClose = document.getElementById('system-panel-close');
+
   let _selectedTileData = null;
   let _uiInterval = null;
+  let _warningTimeout = null;
+  let _lastResearchKey = '';  // tracks research state to avoid redundant DOM rebuilds
+  let _lastQueueKey = '';      // tracks build queue state to avoid redundant DOM rebuilds
+  let _cachedMyPlayer = null;   // cached after each gameState update
+  let _cachedMyColony = null;   // cached after each gameState update
 
   function _onTileSelect(tileData) {
     _hideAllPanels();
@@ -318,11 +379,13 @@
     const ui = DISTRICT_UI[d.type];
     if (!ui) return;
 
-    districtInfoTitle.textContent = ui.label + ' District';
+    const disabledTag = d.disabled ? ' <span style="color:#e74c3c;font-weight:bold">[DISABLED]</span>' : '';
+    districtInfoTitle.innerHTML = ui.label + ' District' + disabledTag;
     districtInfoBody.innerHTML =
+      (d.disabled ? `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#e74c3c">Disabled (energy deficit)</span></div>` : '') +
       `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${ui.label}</span></div>` +
-      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:#2ecc71">${ui.produces}</span></div>` : '') +
-      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:#e74c3c">${ui.consumes}</span></div>` : '');
+      (ui.produces ? `<div class="info-row"><span class="info-label">Output</span><span class="info-value" style="color:${d.disabled ? '#666' : '#2ecc71'}">${d.disabled ? '<s>' + ui.produces + '</s>' : ui.produces}</span></div>` : '') +
+      (ui.consumes ? `<div class="info-row"><span class="info-label">Upkeep</span><span class="info-value" style="color:${d.disabled ? '#666' : '#e74c3c'}">${d.disabled ? '<s>' + ui.consumes + '</s>' : ui.consumes}</span></div>` : '');
 
     // Show demolish button (hide for capital buildings if needed)
     districtDemolishBtn.classList.remove('hidden');
@@ -340,6 +403,7 @@
   // ── Research panel ──
   function _toggleResearchPanel() {
     if (researchPanel.classList.contains('hidden')) {
+      _lastResearchKey = ''; // force re-render on open
       _renderResearchPanel();
       researchPanel.classList.remove('hidden');
     } else {
@@ -415,14 +479,18 @@
     }
   }
 
+  function _refreshPlayerCache() {
+    if (!gameState) { _cachedMyPlayer = null; _cachedMyColony = null; return; }
+    _cachedMyPlayer = gameState.players.find(p => p.id === gameState.yourId) || null;
+    _cachedMyColony = gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+  }
+
   function _getMyPlayer() {
-    if (!gameState) return null;
-    return gameState.players.find(p => p.id === gameState.yourId) || null;
+    return _cachedMyPlayer;
   }
 
   function _getMyColony() {
-    if (!gameState) return null;
-    return gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+    return _cachedMyColony;
   }
 
   // ── HUD update (throttled to 2Hz) ──
@@ -445,9 +513,14 @@
       resBar.research.textContent = totalResearch;
       resBar.influence.textContent = Math.floor(r.influence);
 
-      // Update research panel if open
+      // Update research panel if open — only re-render when research progress changes
       if (researchPanel && !researchPanel.classList.contains('hidden')) {
-        _renderResearchPanel();
+        const rr = r.research || {};
+        const resKey = (rr.physics || 0) + '|' + (rr.society || 0) + '|' + (rr.engineering || 0);
+        if (resKey !== _lastResearchKey) {
+          _lastResearchKey = resKey;
+          _renderResearchPanel();
+        }
       }
     }
 
@@ -460,6 +533,26 @@
       _setNet(resBar.alloysNet, np.alloys);
       const totalResNet = (np.physics || 0) + (np.society || 0) + (np.engineering || 0);
       _setNet(resBar.researchNet, totalResNet);
+    }
+
+    // Match timer
+    if (gameState.matchTimerEnabled && statusTimer) {
+      const ticksLeft = gameState.matchTicksRemaining || 0;
+      const secsLeft = Math.max(0, Math.ceil(ticksLeft / 10));
+      const min = Math.floor(secsLeft / 60);
+      const sec = secsLeft % 60;
+      statusTimer.textContent = min + ':' + String(sec).padStart(2, '0');
+      statusTimer.classList.remove('hidden');
+      statusTimerSep.classList.remove('hidden');
+      // Color: red under 30s, yellow under 2min
+      if (secsLeft <= 30) statusTimer.style.color = '#e74c3c';
+      else if (secsLeft <= 120) statusTimer.style.color = '#f1c40f';
+      else statusTimer.style.color = '#2ecc71';
+    }
+
+    // VP display
+    if (player && statusVP) {
+      statusVP.textContent = 'VP: ' + (player.vp || 0);
     }
 
     // Status bar
@@ -514,38 +607,181 @@
       cpHousing.textContent = colony.pops + '/' + colony.housing;
       cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
 
-      // Build queue
-      if (colony.buildQueue.length > 0) {
-        colonyQueueHeader.classList.remove('hidden');
-        colonyQueueList.innerHTML = '';
-        for (const q of colony.buildQueue) {
-          const ui = DISTRICT_UI[q.type] || {};
-          const def = DISTRICT_UI[q.type];
-          const totalTicks = def ? _getBuildTime(q.type) : 300;
-          const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
-          const secLeft = (q.ticksRemaining / 10).toFixed(0);
+      // Build queue — fingerprint to avoid redundant DOM rebuilds
+      const queueKey = colony.buildQueue.map(q => q.id + ':' + q.ticksRemaining).join(',');
+      if (queueKey !== _lastQueueKey) {
+        _lastQueueKey = queueKey;
+        if (colony.buildQueue.length > 0) {
+          colonyQueueHeader.classList.remove('hidden');
+          colonyQueueList.innerHTML = '';
+          for (const q of colony.buildQueue) {
+            const ui = DISTRICT_UI[q.type] || {};
+            const def = DISTRICT_UI[q.type];
+            const totalTicks = def ? _getBuildTime(q.type) : 300;
+            const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
+            const secLeft = (q.ticksRemaining / 10).toFixed(0);
 
-          const div = document.createElement('div');
-          div.className = 'queue-item';
-          div.innerHTML =
-            `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
-            `<span class="queue-item-name">${ui.label || q.type}</span>` +
-            `<span class="queue-item-time">${secLeft}s</span>` +
-            `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
-            `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+            const div = document.createElement('div');
+            div.className = 'queue-item';
+            div.innerHTML =
+              `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
+              `<span class="queue-item-name">${ui.label || q.type}</span>` +
+              `<span class="queue-item-time">${secLeft}s</span>` +
+              `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+              `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
 
-          const cancelBtn = div.querySelector('.queue-item-cancel');
-          cancelBtn.addEventListener('click', () => {
-            send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
-          });
+            const cancelBtn = div.querySelector('.queue-item-cancel');
+            cancelBtn.addEventListener('click', () => {
+              send({ type: 'demolish', colonyId: colony.id, districtId: q.id });
+            });
 
-          colonyQueueList.appendChild(div);
+            colonyQueueList.appendChild(div);
+          }
+        } else {
+          colonyQueueHeader.classList.add('hidden');
+          colonyQueueList.innerHTML = '';
         }
-      } else {
-        colonyQueueHeader.classList.add('hidden');
-        colonyQueueList.innerHTML = '';
       }
     }
+  }
+
+  // ── View toggle (G key) ──
+
+  function _toggleView() {
+    if (!gameState) return;
+    if (currentView === 'colony') {
+      _switchToGalaxy();
+    } else {
+      _switchToColony();
+    }
+  }
+
+  function _switchToGalaxy() {
+    currentView = 'galaxy';
+    _hideAllPanels();
+
+    // Hide colony UI elements
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.add('hidden');
+
+    // Stop colony renderer (stops rAF loop, releases WebGL resources)
+    if (window.ColonyRenderer) window.ColonyRenderer.destroy();
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+
+    // Init galaxy view
+    if (window.GalaxyView && gameState.galaxy) {
+      window.GalaxyView.init(renderContainer);
+      window.GalaxyView.buildGalaxy(gameState.galaxy);
+      window.GalaxyView.updateOwnership(gameState.colonies, gameState.players);
+      window.GalaxyView.setOnSystemSelect(_onSystemSelect);
+      galaxyViewInitialized = true;
+
+      // Start galaxy render loop
+      if (galaxyAnimFrame) cancelAnimationFrame(galaxyAnimFrame);
+      _galaxyAnimate();
+    }
+
+    _updateViewUI();
+  }
+
+  function _switchToColony() {
+    currentView = 'colony';
+
+    // Hide galaxy panels
+    if (systemPanel) systemPanel.classList.add('hidden');
+
+    // Stop galaxy render loop and destroy galaxy view
+    if (galaxyAnimFrame) {
+      cancelAnimationFrame(galaxyAnimFrame);
+      galaxyAnimFrame = null;
+    }
+    if (window.GalaxyView) window.GalaxyView.destroy();
+    galaxyViewInitialized = false;
+
+    // Re-init colony renderer
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+    if (window.ColonyRenderer) {
+      window.ColonyRenderer.init();
+      window.ColonyRenderer.setOnTileSelect(_onTileSelect);
+      const myColony = _getMyColony();
+      if (myColony) window.ColonyRenderer.buildColonyGrid(myColony);
+    }
+
+    // Show colony panel
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.remove('hidden');
+
+    _updateViewUI();
+  }
+
+  function _galaxyAnimate() {
+    galaxyAnimFrame = requestAnimationFrame(_galaxyAnimate);
+    if (window.GalaxyView) window.GalaxyView.render();
+  }
+
+  function _updateViewUI() {
+    if (viewIndicator) {
+      viewIndicator.textContent = currentView === 'colony' ? 'Colony' : 'Galaxy';
+    }
+  }
+
+  // ── System selection panel (galaxy view) ──
+
+  function _onSystemSelect(system) {
+    if (!systemPanel) return;
+    if (!system) {
+      systemPanel.classList.add('hidden');
+      return;
+    }
+
+    systemPanelTitle.textContent = system.name;
+
+    // Star type
+    const starLabel = {
+      yellow: 'Yellow Star', red: 'Red Dwarf', blue: 'Blue Giant',
+      white: 'White Star', orange: 'Orange Star',
+    };
+
+    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${system.starColor}"></span>${starLabel[system.starType] || system.starType}</div>`;
+
+    // Owner
+    if (system.owner) {
+      const ownerPlayer = gameState.players.find(p => p.id === system.owner);
+      if (ownerPlayer) {
+        html += `<div class="system-owner">Owner: <span style="color:${ownerPlayer.color}">${ownerPlayer.name}</span></div>`;
+      }
+    }
+
+    // Planets table
+    if (system.planets && system.planets.length > 0) {
+      html += '<table class="system-planet-table"><tr><th>#</th><th>Type</th><th>Size</th><th>Hab</th></tr>';
+      for (const p of system.planets) {
+        const habClass = p.habitability >= 60 ? 'hab-high' : p.habitability > 0 ? 'hab-med' : 'hab-none';
+        const typeLabel = p.type.charAt(0).toUpperCase() + p.type.slice(1);
+        html += `<tr><td>${p.orbit}</td><td>${typeLabel}</td><td>${p.size}</td><td class="${habClass}">${p.habitability}%</td></tr>`;
+      }
+      html += '</table>';
+    }
+
+    // Colony link button
+    const colony = gameState.colonies.find(c => c.systemId === system.id);
+    if (colony && colony.ownerId === gameState.yourId) {
+      html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
+    }
+
+    systemPanelBody.innerHTML = html;
+
+    // Wire colony button
+    const colBtn = systemPanelBody.querySelector('.system-colony-btn');
+    if (colBtn) {
+      colBtn.addEventListener('click', () => {
+        _switchToColony();
+      });
+    }
+
+    systemPanel.classList.remove('hidden');
   }
 
   function _setNet(el, value) {
@@ -567,6 +803,70 @@
     return times[type] || 300;
   }
 
+  // ── Scoreboard ──
+  function _toggleScoreboard() {
+    if (!scoreboard) return;
+    if (scoreboard.classList.contains('hidden')) {
+      _renderScoreboard();
+      scoreboard.classList.remove('hidden');
+    } else {
+      scoreboard.classList.add('hidden');
+    }
+  }
+
+  function _renderScoreboard() {
+    if (!scoreboardBody || !gameState) return;
+    const players = [...(gameState.players || [])];
+    // Sort by VP descending
+    players.sort((a, b) => (b.vp || 0) - (a.vp || 0));
+
+    let html = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th></tr>';
+    players.forEach((p, i) => {
+      const isMe = p.id === gameState.yourId;
+      const cls = isMe ? ' class="scoreboard-me"' : '';
+      html += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td><td>${p.vp || 0}</td></tr>`;
+    });
+    html += '</table>';
+    scoreboardBody.innerHTML = html;
+  }
+
+  // ── Game Over ──
+  function _showGameOver(data) {
+    if (!gameOverOverlay) return;
+    if (_uiInterval) { clearInterval(_uiInterval); _uiInterval = null; }
+
+    const winner = data.winner;
+    const isMe = winner && winner.playerId === (gameState ? gameState.yourId : null);
+
+    gameOverTitle.textContent = isMe ? 'Victory!' : 'Game Over';
+    gameOverWinner.innerHTML = winner
+      ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
+      : '<div class="game-over-winner-name">No winner</div>';
+
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th></tr>';
+    (data.scores || []).forEach((s, i) => {
+      const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
+      scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
+        `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
+        `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
+        `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
+        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td></tr>`;
+    });
+    scoresHtml += '</table>';
+    gameOverScores.innerHTML = scoresHtml;
+
+    gameOverOverlay.classList.remove('hidden');
+  }
+
+  // ── Match Warning Banner ──
+  function _showMatchWarning(text) {
+    if (!matchWarning) return;
+    matchWarning.textContent = text;
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => matchWarning.classList.add('hidden'), 5000);
+  }
+
   // Panel close buttons
   if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
     _hideAllPanels();
@@ -579,16 +879,39 @@
   if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
     researchPanel.classList.add('hidden');
   });
+  if (scoreboardClose) scoreboardClose.addEventListener('click', () => {
+    scoreboard.classList.add('hidden');
+  });
+  if (systemPanelClose) systemPanelClose.addEventListener('click', () => {
+    systemPanel.classList.add('hidden');
+    if (window.GalaxyView) window.GalaxyView.setOnSystemSelect(_onSystemSelect); // keep callback, just hide
+  });
 
-  // R key toggles research panel (only during game)
+  // Keyboard shortcuts (only during game)
   document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (!gameState) return;
+
+    if (e.key === 'g' || e.key === 'G') {
+      _toggleView();
+    }
     if (e.key === 'r' || e.key === 'R') {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-      if (!gameState) return;
       _toggleResearchPanel();
     }
-    if (e.key === 'Escape' && researchPanel && !researchPanel.classList.contains('hidden')) {
-      researchPanel.classList.add('hidden');
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      _toggleScoreboard();
+    }
+    if (e.key === 'Escape') {
+      if (researchPanel && !researchPanel.classList.contains('hidden')) {
+        researchPanel.classList.add('hidden');
+      }
+      if (scoreboard && !scoreboard.classList.contains('hidden')) {
+        scoreboard.classList.add('hidden');
+      }
+      if (systemPanel && !systemPanel.classList.contains('hidden')) {
+        systemPanel.classList.add('hidden');
+      }
     }
   });
 
@@ -615,7 +938,8 @@
   roomCreateConfirm.addEventListener('click', () => {
     const name = roomNameInput.value.trim() || `${myName}'s Room`;
     const maxPlayers = parseInt(roomMaxPlayers.value, 10);
-    send({ type: 'createRoom', name, maxPlayers });
+    const matchTimer = roomMatchTimer ? parseInt(roomMatchTimer.value, 10) : 20;
+    send({ type: 'createRoom', name, maxPlayers, matchTimer });
     createRoomDialog.classList.add('hidden');
     roomNameInput.value = '';
   });
@@ -630,6 +954,12 @@
 
   launchBtn.addEventListener('click', () => {
     send({ type: 'launchGame' });
+  });
+
+  if (gameOverLobbyBtn) gameOverLobbyBtn.addEventListener('click', () => {
+    gameOverOverlay.classList.add('hidden');
+    gameState = null;
+    send({ type: 'leaveRoom' });
   });
 
   chatInput.addEventListener('keydown', (e) => {

@@ -1,3 +1,5 @@
+const { generateGalaxy, assignStartingSystems, bestHabitablePlanet } = require('./galaxy');
+
 const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c', '#e67e22', '#ecf0f1'];
 
 // District definitions: type -> { produces, consumes, cost, buildTime }
@@ -7,8 +9,8 @@ const DISTRICT_DEFS = {
   generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   mining:      { produces: { minerals: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
-  industrial:  { produces: { alloys: 3 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 400 },
-  research:    { produces: { physics: 3, society: 3, engineering: 3 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
+  industrial:  { produces: { alloys: 4 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 400 },
+  research:    { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
 };
 
 // Planet types and their habitability ranges
@@ -25,6 +27,7 @@ const PLANET_TYPES = {
 };
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
+const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
 // Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
@@ -95,10 +98,22 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
+    this.onGameOver = options.onGameOver || null;
     this._dirtyPlayers = new Set(); // per-player dirty tracking
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._pendingEvents = []; // events to flush with next broadcast
+    this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
+    this._vpCacheTick = -1;   // tick when VP cache was last computed
+    this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
+    this._gameOver = false; // true after game ends
+
+    // Match timer: minutes from room settings, 0 = unlimited
+    const matchMinutes = Number(room.matchTimer) || 0;
+    this._matchTicksRemaining = matchMinutes > 0 ? matchMinutes * 60 * (options.tickRate || 10) : 0;
+    this._matchTimerEnabled = matchMinutes > 0;
+    this._warned2min = false;
+    this._warned30sec = false;
 
     // Tick profiling — enabled via GAME_DEBUG=1 env var or options.profile
     this._profile = options.profile || (typeof process !== 'undefined' && process.env.GAME_DEBUG === '1');
@@ -107,7 +122,17 @@ class GameEngine {
     this._tickTimingsMax = 100;
 
     this._initPlayerStates();
+
+    // Generate galaxy
+    const galaxySize = room.galaxySize || 'small';
+    const galaxySeed = options.galaxySeed != null ? options.galaxySeed : Math.floor(Math.random() * 2147483647);
+    this.galaxy = generateGalaxy({ size: galaxySize, seed: galaxySeed });
+
+    // Assign starting systems to players and place colonies
+    const playerIds = [...this.playerStates.keys()];
+    this._startingSystems = assignStartingSystems(this.galaxy, playerIds);
     this._initStartingColonies();
+
     // Mark all players dirty so first tick broadcasts initial state
     for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
   }
@@ -140,11 +165,25 @@ class GameEngine {
 
   _initStartingColonies() {
     for (const [playerId] of this.playerStates) {
-      const colony = this._createColony(playerId, `Colony ${playerId}`, {
-        size: 16,
-        type: 'continental',
-        habitability: 80,
-      });
+      // Use starting system's best habitable planet, or fallback defaults
+      const systemId = this._startingSystems[playerId];
+      let planet = { size: 16, type: 'continental', habitability: 80 };
+      let systemName = 'Home';
+
+      if (systemId != null && this.galaxy) {
+        const system = this.galaxy.systems[systemId];
+        if (system) {
+          systemName = system.name;
+          const best = bestHabitablePlanet(system);
+          if (best) {
+            planet = { size: best.size, type: best.type, habitability: best.habitability };
+            best.colonized = true;
+            best.colonyOwner = playerId;
+          }
+        }
+      }
+
+      const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
       this._addBuiltDistrict(colony, 'mining');
@@ -153,12 +192,13 @@ class GameEngine {
     }
   }
 
-  _createColony(ownerId, name, planet) {
+  _createColony(ownerId, name, planet, systemId) {
     const id = this._nextId();
     const colony = {
       id,
       ownerId,
       name,
+      systemId: systemId != null ? systemId : null,
       planet: {
         size: planet.size,         // max districts
         type: planet.type,
@@ -209,6 +249,7 @@ class GameEngine {
     this._dirtyPlayers.add(colony.ownerId);
     this._cachedState = null;
     this._cachedStateJSON = null;
+    this._vpCacheTick = -1; // VP depends on colonies — invalidate
   }
 
   // Count total districts (built + in queue)
@@ -221,6 +262,7 @@ class GameEngine {
     if (colony._cachedHousing !== null) return colony._cachedHousing;
     let housing = 10; // base housing from capital
     for (const d of colony.districts) {
+      if (d.disabled) continue; // disabled districts provide no housing
       const def = DISTRICT_DEFS[d.type];
       if (def) housing += def.housing;
     }
@@ -233,6 +275,7 @@ class GameEngine {
     if (colony._cachedJobs !== null) return colony._cachedJobs;
     let jobs = 0;
     for (const d of colony.districts) {
+      if (d.disabled) continue; // disabled districts provide no jobs
       const def = DISTRICT_DEFS[d.type];
       if (def) jobs += def.jobs;
     }
@@ -258,6 +301,9 @@ class GameEngine {
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
       if (!def) continue;
+
+      // Disabled districts produce nothing, consume nothing, provide no jobs
+      if (d.disabled) continue;
 
       // Jobless districts (e.g., housing) still consume resources
       if (def.jobs === 0) {
@@ -330,6 +376,7 @@ class GameEngine {
     }
     this._cachedState = null;
     this._cachedStateJSON = null;
+    this._vpCacheTick = -1; // resources changed — VP depends on alloys/research
   }
 
   // Process construction queues
@@ -338,8 +385,6 @@ class GameEngine {
       if (colony.buildQueue.length === 0) continue;
       // Mark owner dirty — ticksRemaining changed, client needs updated progress
       this._dirtyPlayers.add(colony.ownerId);
-      this._cachedState = null;
-      this._cachedStateJSON = null;
       const item = colony.buildQueue[0];
       item.ticksRemaining--;
       if (item.ticksRemaining <= 0) {
@@ -404,10 +449,11 @@ class GameEngine {
       }
 
       colony.growthProgress++;
-      // Mark owner dirty — growth progress changed, client needs updated progress bar
-      this._dirtyPlayers.add(colony.ownerId);
-      this._cachedState = null;
-      this._cachedStateJSON = null;
+      // Throttle growth-progress broadcasts to every 10 ticks (~1Hz) — progress bar
+      // doesn't need per-tick updates. Actual pop growth (below) always marks dirty.
+      if (this.tickCount % 10 === 0) {
+        this._dirtyPlayers.add(colony.ownerId);
+      }
       if (colony.growthProgress >= growthTarget) {
         colony.pops++;
         colony.growthProgress = 0;
@@ -436,12 +482,111 @@ class GameEngine {
     }
   }
 
-  // Get district output multipliers from completed techs
+  // Process energy deficit: disable/re-enable districts based on energy balance
+  // Called after monthly resource processing
+  _processEnergyDeficit() {
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (!colonyIds) continue;
+
+      // --- DISABLE phase: energy stockpile < 0 ---
+      if (state.resources.energy < 0) {
+        // Gather all enabled, energy-consuming districts across player colonies
+        const candidates = [];
+        for (const colonyId of colonyIds) {
+          const colony = this.colonies.get(colonyId);
+          if (!colony) continue;
+          for (const d of colony.districts) {
+            if (d.disabled) continue;
+            const def = DISTRICT_DEFS[d.type];
+            if (!def) continue;
+            const energyCost = def.consumes.energy || 0;
+            if (energyCost > 0) {
+              candidates.push({ district: d, colony, energyCost, energyProd: def.produces.energy || 0 });
+            }
+          }
+        }
+        // Sort by energy consumption descending (disable highest consumers first)
+        candidates.sort((a, b) => b.energyCost - a.energyCost);
+
+        for (const c of candidates) {
+          if (state.resources.energy >= 0) break;
+          c.district.disabled = true;
+          // Reverse this month's impact: add back consumption, subtract production
+          state.resources.energy += c.energyCost;
+          state.resources.energy -= c.energyProd;
+          this._invalidateColonyCache(c.colony);
+          this._emitEvent('districtDisabled', playerId, {
+            colonyId: c.colony.id,
+            colonyName: c.colony.name,
+            districtId: c.district.id,
+            districtType: c.district.type,
+          });
+        }
+      }
+
+      // --- RE-ENABLE phase: try to bring back disabled districts (cheapest first) ---
+      // Only if energy is non-negative after any disables
+      if (state.resources.energy >= 0) {
+        const disabled = [];
+        for (const colonyId of colonyIds) {
+          const colony = this.colonies.get(colonyId);
+          if (!colony) continue;
+          for (const d of colony.districts) {
+            if (!d.disabled) continue;
+            const def = DISTRICT_DEFS[d.type];
+            if (!def) continue;
+            const energyCost = def.consumes.energy || 0;
+            disabled.push({ district: d, colony, energyCost, energyProd: def.produces.energy || 0 });
+          }
+        }
+        // Sort by energy consumption ascending (re-enable cheapest first)
+        disabled.sort((a, b) => a.energyCost - b.energyCost);
+
+        // Calculate net energy once, then adjust incrementally as we re-enable
+        let currentNetEnergy = this._calcPlayerNetEnergy(playerId);
+
+        for (const c of disabled) {
+          const netChange = c.energyProd - c.energyCost;
+          if (currentNetEnergy + netChange >= 0) {
+            delete c.district.disabled;
+            this._invalidateColonyCache(c.colony);
+            currentNetEnergy += netChange; // adjust incrementally
+            this._emitEvent('districtEnabled', playerId, {
+              colonyId: c.colony.id,
+              colonyName: c.colony.name,
+              districtId: c.district.id,
+              districtType: c.district.type,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Calculate net energy production/month across all colonies for a player
+  _calcPlayerNetEnergy(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    let net = 0;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      const { production, consumption } = this._calcProduction(colony);
+      net += (production.energy || 0) - (consumption.energy || 0);
+    }
+    return net;
+  }
+
+  // Get district output multipliers from completed techs (cached per player)
   _getTechModifiers(playerState) {
+    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1 };
+
+    // Return cached value if available and tech count unchanged
+    const cached = this._techModCache.get(playerState.id);
+    if (cached && cached._techCount === playerState.completedTechs.length) return cached;
+
     const modifiers = {}; // districtType -> multiplier
     let growthMultiplier = 1;
-
-    if (!playerState || !playerState.completedTechs) return { district: modifiers, growth: growthMultiplier };
 
     for (const techId of playerState.completedTechs) {
       const tech = TECH_TREE[techId];
@@ -459,7 +604,129 @@ class GameEngine {
       }
     }
 
-    return { district: modifiers, growth: growthMultiplier };
+    const result = { district: modifiers, growth: growthMultiplier, _techCount: playerState.completedTechs.length };
+    this._techModCache.set(playerState.id, result);
+    return result;
+  }
+
+  // Calculate victory points for a player (tick-scoped cache: O(N) per broadcast instead of O(N²))
+  _calcVictoryPoints(playerId) {
+    // Return cached value if computed this tick
+    if (this._vpCacheTick === this.tickCount && this._vpCache.has(playerId)) {
+      return this._vpCache.get(playerId);
+    }
+
+    const state = this.playerStates.get(playerId);
+    if (!state) return 0;
+
+    // Pops × 2
+    let totalPops = 0;
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) totalPops += colony.pops;
+    }
+
+    // Districts × 1
+    let totalDistricts = 0;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) totalDistricts += colony.districts.length;
+    }
+
+    // Alloys stockpiled / 25
+    const alloysVP = Math.floor(state.resources.alloys / 25);
+
+    // Total research / 100
+    const totalResearch = (state.resources.research.physics || 0)
+      + (state.resources.research.society || 0)
+      + (state.resources.research.engineering || 0);
+    const researchVP = Math.floor(totalResearch / 100);
+
+    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP;
+    this._vpCacheTick = this.tickCount;
+    this._vpCache.set(playerId, vp);
+    return vp;
+  }
+
+  // Process match timer countdown
+  _processMatchTimer() {
+    if (!this._matchTimerEnabled || this._gameOver) return;
+
+    this._matchTicksRemaining--;
+
+    // 2-minute warning (1200 ticks at 10Hz)
+    const twoMinTicks = 2 * 60 * this.tickRate;
+    if (!this._warned2min && this._matchTicksRemaining <= twoMinTicks && this._matchTicksRemaining > 0) {
+      this._warned2min = true;
+      for (const [playerId] of this.playerStates) {
+        this._emitEvent('matchWarning', playerId, { secondsRemaining: 120 });
+      }
+    }
+
+    // 30-second countdown (300 ticks at 10Hz)
+    const thirtySec = 30 * this.tickRate;
+    if (!this._warned30sec && this._matchTicksRemaining <= thirtySec && this._matchTicksRemaining > 0) {
+      this._warned30sec = true;
+      for (const [playerId] of this.playerStates) {
+        this._emitEvent('finalCountdown', playerId, { secondsRemaining: 30 });
+      }
+    }
+
+    // Timer expired — game over
+    if (this._matchTicksRemaining <= 0) {
+      this._matchTicksRemaining = 0;
+      this._triggerGameOver();
+    }
+  }
+
+  // End the game and determine winner
+  _triggerGameOver() {
+    if (this._gameOver) return;
+    this._gameOver = true;
+
+    const scores = [];
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId) || [];
+      let totalPops = 0, totalDistricts = 0;
+      for (const cId of colonyIds) {
+        const c = this.colonies.get(cId);
+        if (c) { totalPops += c.pops; totalDistricts += c.districts.length; }
+      }
+      const vp = this._calcVictoryPoints(playerId);
+      scores.push({
+        playerId,
+        name: state.name,
+        color: state.color,
+        vp,
+        breakdown: {
+          pops: totalPops,
+          popsVP: totalPops * 2,
+          districts: totalDistricts,
+          districtsVP: totalDistricts,
+          alloys: state.resources.alloys,
+          alloysVP: Math.floor(state.resources.alloys / 25),
+          totalResearch: (state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0),
+          researchVP: Math.floor(((state.resources.research.physics || 0) + (state.resources.research.society || 0) + (state.resources.research.engineering || 0)) / 100),
+        },
+      });
+    }
+
+    // Sort by VP descending
+    scores.sort((a, b) => b.vp - a.vp);
+    const winner = scores.length > 0 ? scores[0] : null;
+
+    const gameOverData = {
+      winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
+      scores,
+      finalTick: this.tickCount,
+    };
+
+    if (this.onGameOver) {
+      this.onGameOver(gameOverData);
+    }
+
+    this.stop();
   }
 
   // Process research each month — consume accumulated research toward active techs
@@ -486,6 +753,7 @@ class GameEngine {
           state.completedTechs.push(techId);
           state.currentResearch[track] = null;
           delete state.researchProgress[techId];
+          this._techModCache.delete(playerId); // invalidate cached modifiers
 
           // Invalidate production caches for all player colonies (modifiers changed)
           const colonyIds = this._playerColonies.get(playerId) || [];
@@ -516,9 +784,17 @@ class GameEngine {
   }
 
   tick() {
+    if (this._gameOver) return;
+
     const t0 = this._profile ? process.hrtime.bigint() : 0n;
 
     this.tickCount++;
+
+    // Match timer countdown
+    if (this._matchTimerEnabled) {
+      this._processMatchTimer();
+      if (this._gameOver) return; // game ended this tick
+    }
 
     // Process construction every tick
     this._processConstruction();
@@ -529,6 +805,7 @@ class GameEngine {
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
+      this._processEnergyDeficit();
       this._processResearch();
       this._processPopStarvation();
     }
@@ -539,8 +816,9 @@ class GameEngine {
       this.onEvent(events);
     }
 
-    // Only broadcast to players whose state actually changed
-    if (this.onTick && this._dirtyPlayers.size > 0) {
+    // Throttled broadcast — send state at ~3.3Hz instead of every tick.
+    // Dirty set accumulates between broadcasts so no updates are lost.
+    if (this.onTick && this._dirtyPlayers.size > 0 && this.tickCount % BROADCAST_EVERY === 0) {
       for (const playerId of this._dirtyPlayers) {
         this.onTick(playerId, this.getPlayerStateJSON(playerId));
       }
@@ -569,6 +847,7 @@ class GameEngine {
   }
 
   handleCommand(playerId, cmd) {
+    if (this._gameOver) return { error: 'Game is over' };
     switch (cmd.type) {
       case 'buildDistrict': {
         const { colonyId, districtType } = cmd;
@@ -700,6 +979,7 @@ class GameEngine {
         id: p.id, name: p.name, color: p.color, resources: p.resources,
         currentResearch: p.currentResearch, researchProgress: p.researchProgress,
         completedTechs: p.completedTechs,
+        vp: this._calcVictoryPoints(p.id),
       });
     }
     const coloniesArr = [];
@@ -707,6 +987,10 @@ class GameEngine {
       coloniesArr.push(this._serializeColony(c));
     }
     const state = { tick: this.tickCount, players: playersArr, colonies: coloniesArr };
+    if (this._matchTimerEnabled) {
+      state.matchTicksRemaining = this._matchTicksRemaining;
+      state.matchTimerEnabled = true;
+    }
     this._cachedState = state;
     return state;
   }
@@ -725,18 +1009,19 @@ class GameEngine {
     const player = this.playerStates.get(playerId);
     if (!player) return this.getState(); // fallback
 
-    // Own resources + research state
+    // Own resources + research state + VP
     const me = {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
+      vp: this._calcVictoryPoints(playerId),
     };
 
-    // Other players: name/color only (no resources — saves bandwidth, not needed by client)
+    // Other players: name/color + VP for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
-      others.push({ id: p.id, name: p.name, color: p.color });
+      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id) });
     }
 
     // Own colonies (full detail)
@@ -748,7 +1033,15 @@ class GameEngine {
       coloniesArr.push(this._serializeColony(c));
     }
 
-    return { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+    const state = { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+
+    // Include match timer info
+    if (this._matchTimerEnabled) {
+      state.matchTicksRemaining = this._matchTicksRemaining;
+      state.matchTimerEnabled = true;
+    }
+
+    return state;
   }
 
   // Pre-stringified per-player gameState payload
@@ -782,7 +1075,7 @@ class GameEngine {
       else growthStatus = 'slow';
     }
     return {
-      id: c.id, ownerId: c.ownerId, name: c.name, planet: c.planet,
+      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
@@ -797,8 +1090,26 @@ class GameEngine {
   }
 
   getInitState() {
-    return this.getState();
+    const state = this.getState();
+    // Include full galaxy data on init (systems, hyperlanes) — sent once
+    if (this.galaxy) {
+      state.galaxy = {
+        seed: this.galaxy.seed,
+        size: this.galaxy.size,
+        systems: this.galaxy.systems.map(s => ({
+          id: s.id,
+          name: s.name,
+          x: s.x, y: s.y, z: s.z,
+          starType: s.starType,
+          starColor: s.starColor,
+          planets: s.planets,
+          owner: s.owner,
+        })),
+        hyperlanes: this.galaxy.hyperlanes,
+      };
+    }
+    return state;
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, generateGalaxy, assignStartingSystems };

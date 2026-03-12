@@ -40,6 +40,14 @@
             <option value="8">8</option>
           </select>
         </label>
+        <label>Match Timer
+          <select id="room-match-timer">
+            <option value="10">10 min</option>
+            <option value="20" selected>20 min</option>
+            <option value="30">30 min</option>
+            <option value="0">Unlimited</option>
+          </select>
+        </label>
         <div class="dialog-buttons">
           <button id="room-create-confirm">Create</button>
           <button id="room-create-cancel">Cancel</button>
@@ -81,12 +89,16 @@
 
       <!-- Status bar (below resource bar) -->
       <div id="status-bar">
+        <span id="status-timer" class="hidden"></span>
+        <span id="status-timer-sep" class="status-sep hidden">|</span>
         <span id="status-month">Month 0</span>
         <span class="status-sep">|</span>
         <span id="status-pops">Pop: 0/0</span>
         <span class="status-sep">|</span>
         <span id="status-growth">Growth: —</span>
         <div id="growth-bar-wrap"><div id="growth-bar-fill"></div></div>
+        <span class="status-sep">|</span>
+        <span id="status-vp">VP: 0</span>
       </div>
 
       <!-- Colony info panel (right side) -->
@@ -109,6 +121,34 @@
         <div id="research-tracks"></div>
       </div>
 
+      <!-- Scoreboard overlay — toggled with Tab key -->
+      <div id="scoreboard" class="game-panel hidden">
+        <div class="panel-header">Scoreboard<button id="scoreboard-close" class="panel-close">&times;</button></div>
+        <div id="scoreboard-body"></div>
+      </div>
+
+      <!-- Game over overlay -->
+      <div id="game-over-overlay" class="hidden">
+        <div id="game-over-content">
+          <h2 id="game-over-title">Game Over</h2>
+          <div id="game-over-winner"></div>
+          <div id="game-over-scores"></div>
+          <button id="game-over-lobby-btn">Return to Lobby</button>
+        </div>
+      </div>
+
+      <!-- Match warning banner -->
+      <div id="match-warning" class="hidden"></div>
+
+      <!-- View indicator (bottom-left) -->
+      <div id="view-indicator"><span id="view-indicator-label">Colony</span> <span class="view-hint">[G] toggle</span></div>
+
+      <!-- System info panel (galaxy view, right side) -->
+      <div id="system-panel" class="game-panel hidden">
+        <div class="panel-header"><span id="system-panel-title">System</span><button id="system-panel-close" class="panel-close">&times;</button></div>
+        <div id="system-panel-body"></div>
+      </div>
+
       <!-- Build menu — appears when empty tile clicked -->
       <div id="build-menu" class="game-panel hidden">
         <div class="panel-header">Build District<button id="build-menu-close" class="panel-close">&times;</button></div>
@@ -127,6 +167,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="js/lobby.js"></script>
   <script src="js/renderer.js"></script>
+  <script src="js/galaxy-view.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

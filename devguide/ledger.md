@@ -567,3 +567,203 @@ Each entry records an iteration of automated development.
 - Research panel centered as overlay rather than permanent side panel — avoids cluttering the colony view
 
 **Next:** Energy deficit consequences (auto-disable districts when energy negative)
+
+---
+
+## Entry 18 — 2026-03-11 — Energy Deficit Consequences
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Auto-disable system: when a player's energy stockpile goes negative at monthly processing, the highest-energy-consuming district is disabled until energy balance is restored
+- Disabled districts produce nothing, consume nothing, provide no jobs or housing — pops become unemployed
+- Re-enable system: each month, cheapest disabled districts are re-enabled if the monthly net energy balance can support them
+- `_processEnergyDeficit()` method runs after monthly resource processing, before research/starvation
+- `_calcPlayerNetEnergy()` helper calculates net energy production across all player colonies
+- `_calcProduction`, `_calcJobs`, `_calcHousing` all skip disabled districts
+- `districtDisabled` and `districtEnabled` events emitted for UI notifications
+- Client renderer: disabled districts rendered with desaturated gray material (MeshStandardMaterial color #444444, 50% opacity)
+- Client UI: district info panel shows [DISABLED] tag with struck-through production/upkeep values
+- Disabled material pool created in renderer.js `_initPools()` for each district type
+- Incremental renderer update tracks disabled state to swap materials without full grid rebuild
+
+**Files changed:**
+- `server/game-engine.js` — `_processEnergyDeficit`, `_calcPlayerNetEnergy`, disabled checks in `_calcProduction`/`_calcJobs`/`_calcHousing`, wired into monthly tick
+- `src/public/js/renderer.js` — disabled materials in pool, `_createDistrictMesh` accepts disabled param, `updateFromState` tracks disabled state
+- `src/public/js/app.js` — district info panel shows disabled status with struck-through values
+- `src/tests/game-engine.test.js` — 10 new energy deficit tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 150 total (10 new: disable on negative energy, disabled districts produce/consume nothing, multi-district disable, re-enable when energy supports, no re-enable if would go negative, disable/enable events, disabled housing provides no housing, disabled districts have no jobs, monthly tick integration). All passing.
+
+**Key decisions:**
+- Disable logic reverses the current month's impact (adds back consumption, subtracts production) so the stockpile immediately reflects the disabled state
+- Re-enable uses net monthly energy balance check (not stockpile) to prevent oscillating enable/disable cycles
+- `delete district.disabled` on re-enable rather than `= false` to keep district objects clean
+- Disabled materials are pre-allocated in the pool (one per district type) to avoid per-frame allocations
+- No separate "disabled district 3D rendering" task needed for basic visuals — desaturated material is sufficient; the existing design doc task for red X overlay is a future enhancement
+
+**Next:** Dead code fix (first-3-districts discount for newly colonized planets), or score timer + VP scoring
+
+---
+
+## Entry 19 — 2026-03-11 — Score Timer + VP Scoring
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Victory Points (VP) calculation: `_calcVictoryPoints(playerId)` — VP = pops×2 + districts×1 + alloys/50 + totalResearch/100
+- Configurable match timer: 10/20/30 minutes or unlimited, selectable in room creation dialog
+- Timer countdown in server ticks, with 2-minute warning and 30-second final countdown events
+- `gameOver` broadcast when timer expires: winner (highest VP), per-player scores with VP breakdown
+- Game engine stops ticking after game over
+- Server.js `onGameOver` callback broadcasts `gameOver` to all room players, marks room as finished
+- Room settings: `matchTimer` option with defaults (10 min practice, 20 min multiplayer), validation against [0,10,20,30]
+- Client: Tab key toggles live scoreboard overlay showing all players sorted by VP
+- Client: Match timer countdown in status bar (color-coded: green > 2min, yellow < 2min, red < 30s)
+- Client: VP display in status bar
+- Client: Match warning banner with pulse animation for 2-minute and 30-second warnings
+- Client: Post-game overlay with winner announcement, full score breakdown table, "Return to Lobby" button
+- Client: Match timer selector in create room dialog
+
+**Files changed:**
+- `server/game-engine.js` — `_calcVictoryPoints`, `_processMatchTimer`, `_triggerGameOver`, match timer state, VP in serialization, `onGameOver` callback
+- `server/server.js` — `onGameOver` handler, pass `matchTimer` to room creation
+- `server/room-manager.js` — `matchTimer` room setting with validation/defaults, included in serialization/listing
+- `src/public/js/app.js` — scoreboard toggle/render, game-over overlay, match warning banner, timer/VP in HUD, `matchTimer` in room creation, `gameOver` message handler
+- `src/public/index.html` — scoreboard overlay, game-over overlay, match warning banner, timer/VP in status bar, match timer selector in create room dialog
+- `src/public/css/style.css` — scoreboard table, game-over overlay, match warning banner with pulse animation, VP display
+- `src/tests/game-engine.test.js` — 19 new tests (7 VP, 12 match timer)
+- `src/tests/room-manager.test.js` — 6 new match timer tests
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 182 total (25 new: 7 VP calculation, 12 match timer/game over, 6 room manager match timer). All passing.
+
+**Key decisions:**
+- VP formula uses floor division for alloys/50 and research/100 — prevents fractional VP, keeps scoring clean
+- Match timer defaults: 10 min for practice (fast iteration), 20 min for multiplayer (competitive but not too long)
+- Timer validation restricts to [0,10,20,30] — prevents arbitrary values that could break pacing
+- Game engine `_gameOver` flag prevents any processing after game ends, `stop()` called in `_triggerGameOver`
+- VP recalculated per-broadcast rather than cached — simple and accurate, no performance concern with current player counts
+- Warning events use the existing `_emitEvent` system — consistent with other event types
+- Post-game overlay shows full VP breakdown (pops, districts, alloys, research) so players understand scoring
+
+**Next:** Research & Industrial output bump (3→4), then starting minerals & alloys adjustment
+
+---
+
+## Entry 20 — 2026-03-12 — Procedural Galaxy Generation
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- `server/galaxy.js` — standalone galaxy generation module with seeded PRNG (mulberry32) for deterministic generation
+- Poisson disc sampling in 2D for even star system distribution within a circular galaxy radius
+- Relative Neighborhood Graph algorithm for hyperlane connections, with connectivity enforcement (BFS), minimum degree supplement (≥2), and maximum degree cap (≤6)
+- Procedural star name generator from curated syllable lists (prefix + suffix + optional designation)
+- 5 star types (yellow, red, blue, white, orange) with weighted random selection
+- 9 planet types with proper habitability values, 1-6 planets per system, orbit slots, size variation
+- 3 galaxy sizes: small (50 systems, r=200), medium (100 systems, r=300), large (200 systems, r=450)
+- Starting system assignment: greedy spread algorithm maximizing minimum distance between players, prefers habitable systems
+- Starting colonies now placed on actual galaxy planets (best habitable planet in assigned system)
+- `galaxySize` room setting with validation (small/medium/large), passed through room creation flow
+- `getInitState()` sends full galaxy data (systems + hyperlanes) to clients on game start
+- Colony serialization includes `systemId` linking colonies to galaxy systems
+
+**Files changed:**
+- `server/galaxy.js` — new file (galaxy generation module)
+- `server/game-engine.js` — galaxy integration: generate on init, assign starting systems, colony placement on galaxy planets, galaxy in getInitState(), systemId in colonies
+- `server/room-manager.js` — galaxySize room setting with validation, included in serialization/listing
+- `server/server.js` — pass galaxySize through from createRoom message
+- `src/tests/galaxy.test.js` — new file (33 tests)
+- `src/tests/game-engine.test.js` — updated 1 test (starting colony now uses galaxy planet)
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 228 total (33 new galaxy tests: PRNG determinism, name uniqueness, Poisson disc spacing/bounds, hyperlane connectivity/degree bounds, full galaxy structure, determinism, size variants, planet validity, habitable planets, hyperlane validity, starting system assignment/spread/ownership, best habitable planet selection, GameEngine integration). All passing.
+
+**Key decisions:**
+- Used Relative Neighborhood Graph instead of Delaunay triangulation — simpler to implement, naturally produces sparse planar-ish connections without complex computational geometry
+- Seeded PRNG (mulberry32) ensures identical galaxies from same seed — critical for multiplayer synchronization and replay
+- Galaxy generated server-side and sent to clients in `gameInit` — keeps server-authoritative design
+- Starting colonies use `bestHabitablePlanet()` to pick the best planet in the assigned system — players always start on a viable world
+- Planet generation is per-system, not global — each system rolls its own planets with weighted type distribution
+- Galaxy data sent once on init (not every tick) — clients cache it locally
+
+**Next:** Galaxy map view (Three.js) — PerspectiveCamera rendering star systems and hyperlanes
+
+---
+
+## Entry 21 — 2026-03-12 — Galaxy Map View + System Panel + View Toggle
+
+**Phase:** 3 (Galaxy & Exploration) + Phase 1 (view toggle)
+**Status:** Complete
+
+**What was built:**
+- `galaxy-view.js` — full Three.js galaxy map renderer with PerspectiveCamera, orbit camera controls (left-drag rotate, scroll zoom, middle-drag pan)
+- Star systems rendered as emissive SphereGeometry meshes, sized by star type (blue=3.0, orange=2.2, yellow=2.0, white=1.8, red=1.5), colored by STAR_TYPES
+- Hyperlanes rendered as a single LineSegments object with BufferGeometry for efficiency (one draw call for all lanes)
+- Player-owned systems get colored RingGeometry halos matching player color
+- System name labels on hover (DOM overlay positioned relative to mouse)
+- Click system to select (green highlight ring) — triggers system info panel
+- System selection panel (right-side game-panel): star type with color dot, owner name, planet table (orbit, type, size, habitability%), "View Colony" button for owned colonies
+- G key toggles between colony view (isometric) and galaxy view (3D perspective)
+- View indicator (bottom-left) shows current view with [G] toggle hint
+- Camera auto-fits to galaxy bounds on init (~36° from top-down)
+- Colony renderer destroyed on switch to galaxy, re-initialized on switch back (clean WebGL context management)
+
+**Files changed:**
+- `src/public/js/galaxy-view.js` — new file (galaxy map Three.js renderer)
+- `src/public/js/app.js` — view toggle (G key), galaxy data storage in gameState, system panel rendering, view management functions, system panel close/escape handlers
+- `src/public/index.html` — galaxy-view.js script tag, view indicator, system panel HTML
+- `src/public/css/style.css` — view indicator, system panel, planet table, colony button styles
+- `devguide/design.md` — marked 4 tasks complete (galaxy map view, system panel, view toggle, priority order)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 261 total. All passing (no new server tests needed — all changes are client-side Three.js rendering).
+
+**Key decisions:**
+- Separate Three.js scenes for colony and galaxy (destroy one when switching to other) rather than showing/hiding — cleaner WebGL context, no conflicting cameras
+- Galaxy view uses MeshBasicMaterial for stars (not MeshStandard) — emissive glow effect, unaffected by lighting for consistent star brightness
+- Orbit camera implemented from scratch rather than importing OrbitControls — avoids CDN dependency for a single class, keeps it simple
+- System selection panel reuses game-panel CSS class — consistent visual language with colony panels
+- Hyperlane positions offset -0.5 Y below star positions to prevent z-fighting
+- Planet habitability color-coded in table: green (60%+), yellow (1-59%), gray (0%) — instant visual parsing
+
+**Next:** Alloy VP fix + industrial output bump (game-designer R17-2, R17-3), then event toast HUD
+
+---
+
+## Entry 22 — 2026-03-12 — Balance Fix: Alloy VP Weight + Industrial/Research Output Bump
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Doubled alloy VP weight: changed VP formula from `alloys/50` to `alloys/25` in `_calcVictoryPoints` and `_triggerGameOver` breakdown — Industrial districts now produce ~0.16 VP/month, competitive with Housing's ~0.08 VP/month
+- Increased Industrial district alloy output from 3 to 4 per month in DISTRICT_DEFS
+- Increased Research district output from 3/3/3 to 4/4/4 (physics/society/engineering) per month in DISTRICT_DEFS
+- Updated client DISTRICT_UI to show "+4 Alloys" and "+4 Phys/Soc/Eng"
+- Updated all VP tests to use new alloys/25 divisor (7 existing tests updated)
+- Added 3 new tests: Industrial output=4, Research output=4/4/4, VP alloy divisor=25
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS industrial/research output values, _calcVictoryPoints alloys/25, _triggerGameOver breakdown alloys/25
+- `src/public/js/app.js` — DISTRICT_UI industrial/research produces strings
+- `src/tests/game-engine.test.js` — updated 7 VP tests, added 3 new balance tests
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 282 total (3 new). All passing.
+
+**Key decisions:**
+- Alloys/25 makes Industrial VP-competitive: 4 alloys/month × 1/25 = 0.16 VP/month vs Housing ~0.08 VP/month from pop growth — still slightly behind but no longer a 33x disadvantage
+- Research 4/4/4 output justifies the 200 mineral + 20 energy premium over basic districts (4 vs 6 for basics, but across 3 types = 12 total)
+- Energy consumption unchanged (Industrial: 3, Research: 4) — the buff is output-only, energy pressure remains the same
+
+**Next:** Event toast notification HUD (game-designer R18 priority #2)

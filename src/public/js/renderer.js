@@ -20,6 +20,9 @@
   const _geoCache = {};   // key -> BufferGeometry
   const _matCache = {};   // key -> MeshStandardMaterial
 
+  // Animation frame tracking
+  let _animFrame = null;
+
   // FPS counter (enabled with ?debug=1)
   let _fpsEnabled = false;
   let _fpsEl = null;
@@ -138,12 +141,13 @@
     _geoCache.empty = new THREE.BoxGeometry(TILE_SIZE * 0.9, TILE_HEIGHT, TILE_SIZE * 0.9);
     _matCache.empty = new THREE.MeshStandardMaterial({ color: 0x2a2a4e, opacity: 0.6, transparent: true });
 
-    // District types — one geometry + solid material + wireframe material each
+    // District types — one geometry + solid material + wireframe material + disabled material each
     for (const [type, color] of Object.entries(DISTRICT_COLORS)) {
       const height = DISTRICT_HEIGHTS[type] || 0.4;
       _geoCache[type] = new THREE.BoxGeometry(TILE_SIZE * 0.85, height, TILE_SIZE * 0.85);
       _matCache[type] = new THREE.MeshStandardMaterial({ color });
       _matCache[type + '_wire'] = new THREE.MeshStandardMaterial({ color, wireframe: true, opacity: 0.5, transparent: true });
+      _matCache[type + '_disabled'] = new THREE.MeshStandardMaterial({ color: 0x444444, opacity: 0.5, transparent: true });
     }
 
     // Highlight ring for selected tile
@@ -198,7 +202,7 @@
 
       let mesh;
       if (district) {
-        mesh = _createDistrictMesh(district.type);
+        mesh = _createDistrictMesh(district.type, district.disabled);
       } else if (queueItem) {
         mesh = _createConstructionMesh(queueItem);
       } else {
@@ -247,11 +251,15 @@
     housing:     0.45,
   };
 
-  function _createDistrictMesh(type) {
+  function _createDistrictMesh(type, disabled) {
     const height = DISTRICT_HEIGHTS[type] || 0.4;
-    const mesh = new THREE.Mesh(_geoCache[type] || _geoCache.empty, _matCache[type] || _matCache.empty);
+    const mat = disabled
+      ? (_matCache[type + '_disabled'] || _matCache.empty)
+      : (_matCache[type] || _matCache.empty);
+    const mesh = new THREE.Mesh(_geoCache[type] || _geoCache.empty, mat);
     mesh.userData.yOffset = height / 2;
     mesh.userData.districtType = type;
+    mesh.userData.disabled = !!disabled;
     return mesh;
   }
 
@@ -293,19 +301,22 @@
       const queueItem = _findQueueItem(colony, i);
 
       // Determine what this tile should be
-      let wantType, wantConstruction, wantEmpty;
+      let wantType, wantConstruction, wantEmpty, wantDisabled;
       if (district) {
         wantType = district.type;
         wantConstruction = false;
         wantEmpty = false;
+        wantDisabled = !!district.disabled;
       } else if (queueItem) {
         wantType = queueItem.type;
         wantConstruction = true;
         wantEmpty = false;
+        wantDisabled = false;
       } else {
         wantType = null;
         wantConstruction = false;
         wantEmpty = true;
+        wantDisabled = false;
       }
 
       // Find existing mesh for this tile (children[0] is ground, tiles start at [1])
@@ -316,8 +327,9 @@
       const curType = mesh.userData.districtType || null;
       const curConstruction = !!mesh.userData.construction;
       const curEmpty = !!mesh.userData.empty;
+      const curDisabled = !!mesh.userData.disabled;
 
-      if (curType === wantType && curConstruction === wantConstruction && curEmpty === wantEmpty) {
+      if (curType === wantType && curConstruction === wantConstruction && curEmpty === wantEmpty && curDisabled === wantDisabled) {
         continue; // no change
       }
 
@@ -330,16 +342,22 @@
         mesh.userData.districtType = undefined;
         mesh.userData.construction = false;
         mesh.userData.empty = true;
+        mesh.userData.disabled = false;
       } else {
         const height = DISTRICT_HEIGHTS[wantType] || 0.4;
         mesh.geometry = _geoCache[wantType] || _geoCache.empty;
-        mesh.material = wantConstruction
-          ? (_matCache[wantType + '_wire'] || _matCache.empty)
-          : (_matCache[wantType] || _matCache.empty);
+        if (wantConstruction) {
+          mesh.material = _matCache[wantType + '_wire'] || _matCache.empty;
+        } else if (wantDisabled) {
+          mesh.material = _matCache[wantType + '_disabled'] || _matCache.empty;
+        } else {
+          mesh.material = _matCache[wantType] || _matCache.empty;
+        }
         mesh.position.y = height / 2;
         mesh.userData.districtType = wantType;
         mesh.userData.construction = wantConstruction;
         mesh.userData.empty = false;
+        mesh.userData.disabled = wantDisabled;
       }
     }
 
@@ -482,7 +500,7 @@
   // ── Render loop ──
 
   function _animate() {
-    requestAnimationFrame(_animate);
+    _animFrame = requestAnimationFrame(_animate);
     _processKeys();
     if (renderer && scene && camera) {
       renderer.render(scene, camera);
@@ -501,11 +519,38 @@
     }
   }
 
+  // ── Cleanup ──
+
+  function destroy() {
+    if (_animFrame) {
+      cancelAnimationFrame(_animFrame);
+      _animFrame = null;
+    }
+    if (renderer && renderer.domElement) {
+      renderer.domElement.removeEventListener('wheel', _onWheel);
+      renderer.domElement.removeEventListener('mousedown', _onMouseDown);
+      renderer.domElement.removeEventListener('click', _onClick);
+    }
+    window.removeEventListener('mousemove', _onMouseMove);
+    window.removeEventListener('mouseup', _onMouseUp);
+    window.removeEventListener('keydown', _onKeyDown);
+    window.removeEventListener('keyup', _onKeyUp);
+    window.removeEventListener('resize', _onResize);
+    if (renderer) renderer.dispose();
+    scene = null;
+    camera = null;
+    renderer = null;
+    container = null;
+    gridGroup = null;
+    currentColony = null;
+  }
+
   // ── Public API ──
   const ColonyRenderer = {
     init,
     buildColonyGrid,
     updateFromState,
+    destroy,
     deselectTile: _deselectTile,
     getSelectedTile: () => selectedTileIndex,
     getCurrentColony: () => currentColony,

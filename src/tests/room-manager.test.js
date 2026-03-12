@@ -163,3 +163,46 @@ describe('RoomManager', () => {
     assert.ok(!rm.canLaunch(room.id));
   });
 });
+
+describe('RoomManager — Match Timer', () => {
+  it('defaults to 10 minutes for practice mode', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Practice', 1, 'Alice', { practiceMode: true });
+    assert.strictEqual(room.matchTimer, 10);
+  });
+
+  it('defaults to 20 minutes for multiplayer', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Multi', 1, 'Alice');
+    assert.strictEqual(room.matchTimer, 20);
+  });
+
+  it('accepts valid matchTimer values (0, 10, 20, 30)', () => {
+    const rm = new RoomManager();
+    for (const val of [0, 10, 20, 30]) {
+      const room = rm.createRoom(`Room${val}`, 1, 'Alice', { matchTimer: val });
+      assert.strictEqual(room.matchTimer, val);
+      rm.leaveRoom(1);
+    }
+  });
+
+  it('rejects invalid matchTimer and uses default', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Bad', 1, 'Alice', { matchTimer: 99 });
+    assert.strictEqual(room.matchTimer, 20); // default for multiplayer
+  });
+
+  it('matchTimer appears in room list', () => {
+    const rm = new RoomManager();
+    rm.createRoom('Test', 1, 'Alice', { matchTimer: 30 });
+    const list = rm.listRooms();
+    assert.strictEqual(list[0].matchTimer, 30);
+  });
+
+  it('matchTimer appears in serialized room', () => {
+    const rm = new RoomManager();
+    const room = rm.createRoom('Test', 1, 'Alice', { matchTimer: 10 });
+    const data = rm.serializeRoom(room);
+    assert.strictEqual(data.matchTimer, 10);
+  });
+});

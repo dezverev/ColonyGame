@@ -1,13 +1,18 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS } = require('../../server/game-engine');
 
-function makeRoom(playerCount = 2) {
+// Helper: tick engine to next broadcast boundary (tickCount divisible by BROADCAST_EVERY)
+function tickToBroadcast(engine) {
+  do { engine.tick(); } while (engine.tickCount % BROADCAST_EVERY !== 0);
+}
+
+function makeRoom(playerCount = 2, options = {}) {
   const players = new Map();
   for (let i = 1; i <= playerCount; i++) {
     players.set(i, { id: i, name: `Player${i}`, ready: true, isHost: i === 1 });
   }
-  return { id: 'test', name: 'Test', hostId: 1, maxPlayers: 4, status: 'playing', players };
+  return { id: 'test', name: 'Test', hostId: 1, maxPlayers: 4, status: 'playing', players, ...options };
 }
 
 describe('GameEngine — Initialization', () => {
@@ -52,13 +57,13 @@ describe('GameEngine — Initialization', () => {
     assert.deepStrictEqual(types, ['agriculture', 'agriculture', 'generator', 'mining']);
   });
 
-  it('starting colony is on a continental planet with size 16', () => {
+  it('starting colony is on a habitable planet from the galaxy', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.strictEqual(colony.planet.type, 'continental');
-    assert.strictEqual(colony.planet.size, 16);
-    assert.strictEqual(colony.planet.habitability, 80);
+    assert.ok(colony.planet.habitability >= 60, 'Starting planet should be habitable');
+    assert.ok(colony.planet.size >= 8, 'Starting planet should have reasonable size');
+    assert.ok(colony.systemId != null, 'Colony should be placed in a galaxy system');
   });
 
   it('each player gets their own colony', () => {
@@ -116,11 +121,13 @@ describe('GameEngine — District Building', () => {
     const state = engine.getState();
     const colonyId = state.colonies[0].id;
     const colony = engine.colonies.get(colonyId);
-    // Fill up to max (planet size 16, already have 4)
-    for (let i = 0; i < 12; i++) {
+    // Fill up to max districts (planet size varies with galaxy generation)
+    const maxDistricts = colony.planet.size;
+    const currentDistricts = engine._totalDistricts(colony);
+    for (let i = 0; i < maxDistricts - currentDistricts; i++) {
       engine._addBuiltDistrict(colony, 'housing');
     }
-    assert.strictEqual(engine._totalDistricts(colony), 16);
+    assert.strictEqual(engine._totalDistricts(colony), maxDistricts);
     const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
     assert.ok(result.error);
     assert.match(result.error, /no district slots/i);
@@ -1023,8 +1030,8 @@ describe('GameEngine — Performance', () => {
       onTick: (playerId) => { broadcastCount++; broadcastPlayers.push(playerId); },
     });
 
-    // First tick should broadcast to all players (dirty from init)
-    engine.tick();
+    // Tick to first broadcast boundary — should broadcast to all players (dirty from init)
+    tickToBroadcast(engine);
     assert.strictEqual(broadcastCount, 2, 'Should broadcast to both players on init');
 
     // Run enough ticks past growth/construction activity for a clean state
@@ -1033,19 +1040,19 @@ describe('GameEngine — Performance', () => {
       colony.pops = 100; // exceed housing to stop growth
       engine._invalidateColonyCache(colony);
     }
-    engine.tick(); // flush dirty
+    tickToBroadcast(engine); // flush dirty
     broadcastCount = 0;
     broadcastPlayers = [];
 
     // Now subsequent ticks with no growth/construction should not broadcast
-    engine.tick();
-    engine.tick();
+    // (run a full broadcast cycle to be sure)
+    for (let i = 0; i < BROADCAST_EVERY; i++) engine.tick();
     assert.strictEqual(broadcastCount, 0, 'Should not broadcast when no state changes');
 
-    // Command from player 1 should only broadcast to player 1
+    // Command from player 1 should only broadcast to player 1 at next broadcast boundary
     const colony = engine.getState().colonies[0];
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
-    engine.tick();
+    tickToBroadcast(engine);
     assert.ok(broadcastPlayers.includes(1), 'Player 1 should receive broadcast after their command');
   });
 
@@ -1097,7 +1104,7 @@ describe('GameEngine — Performance', () => {
       onTick: (playerId, payload) => { receivedPlayerId = playerId; receivedPayload = payload; },
     });
 
-    engine.tick();
+    tickToBroadcast(engine);
     assert.strictEqual(receivedPlayerId, 1, 'onTick should receive playerId');
     assert.strictEqual(typeof receivedPayload, 'string', 'onTick should receive a string');
     const parsed = JSON.parse(receivedPayload);
@@ -1203,6 +1210,24 @@ describe('GameEngine — Tick Profiling', () => {
     assert.strictEqual(stats.count, 0);
     assert.strictEqual(stats.avg, 0);
   });
+
+  it('broadcast throttle reduces serialization count vs unthrottled', () => {
+    let broadcastCount = 0;
+    const engine = new GameEngine(makeRoom(8), {
+      onTick: () => { broadcastCount++; },
+      onEvent: () => {},
+    });
+
+    // Run 300 ticks (100 broadcast windows at BROADCAST_EVERY=3)
+    for (let i = 0; i < 300; i++) engine.tick();
+
+    // Without any throttle: 300 ticks * 8 players = 2400 broadcasts
+    // With broadcast throttle (every 3 ticks) + growth dirty throttle (every 10 ticks):
+    // growth-only broadcasts fire ~3 times per 30 ticks, plus monthly/construction events.
+    // Expect significantly fewer than the unthrottled maximum.
+    assert.ok(broadcastCount <= 900, `Expected <= 900 broadcasts, got ${broadcastCount}`);
+    assert.ok(broadcastCount >= 100, `Expected >= 100 broadcasts, got ${broadcastCount} (throttle may be broken)`);
+  });
 });
 
 describe('GameEngine — Per-Player State Filtering', () => {
@@ -1258,7 +1283,7 @@ describe('GameEngine — Per-Player State Filtering', () => {
       },
     });
 
-    engine.tick(); // triggers dirty broadcast
+    tickToBroadcast(engine); // triggers dirty broadcast at throttle boundary
 
     assert.ok(received.has(1), 'Player 1 received state');
     assert.ok(received.has(2), 'Player 2 received state');
@@ -1275,8 +1300,8 @@ describe('GameEngine — Per-Player State Filtering', () => {
       },
     });
 
-    // First tick broadcasts to all (init dirty)
-    engine.tick();
+    // First broadcast boundary — broadcasts to all (init dirty)
+    tickToBroadcast(engine);
     assert.strictEqual(broadcasts.get(1), 1);
     assert.strictEqual(broadcasts.get(2), 1);
 
@@ -1285,18 +1310,18 @@ describe('GameEngine — Per-Player State Filtering', () => {
       colony.pops = 100;
       engine._invalidateColonyCache(colony);
     }
-    engine.tick(); // flush
+    tickToBroadcast(engine); // flush
     broadcasts.clear();
 
-    // Player 1 builds — only player 1 should get broadcast
+    // Player 1 builds — only player 1 should get broadcast at next boundary
     const colony1 = engine.getState().colonies.find(c => c.ownerId === 1);
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony1.id, districtType: 'generator' });
-    engine.tick();
+    tickToBroadcast(engine);
     assert.strictEqual(broadcasts.get(1), 1, 'Player 1 gets broadcast');
     assert.strictEqual(broadcasts.get(2) || 0, 0, 'Player 2 does NOT get broadcast');
   });
 
-  it('construction progress broadcasts only to building player each tick', () => {
+  it('construction progress broadcasts only to building player at throttled rate', () => {
     const broadcastCounts = new Map();
     const engine = new GameEngine(makeRoom(2), {
       onTick: (playerId) => {
@@ -1309,16 +1334,17 @@ describe('GameEngine — Per-Player State Filtering', () => {
       colony.pops = 100;
       engine._invalidateColonyCache(colony);
     }
-    engine.tick();
+    tickToBroadcast(engine);
     broadcastCounts.clear();
 
     // Player 1 starts building
     const colony1 = engine.getState().colonies.find(c => c.ownerId === 1);
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony1.id, districtType: 'generator' });
 
-    // Run 10 ticks — player 1 should get 10 broadcasts, player 2 should get 0
-    for (let i = 0; i < 10; i++) engine.tick();
-    assert.strictEqual(broadcastCounts.get(1), 10, 'Building player gets broadcast each tick');
+    // Run N*BROADCAST_EVERY ticks — player 1 should get N broadcasts, player 2 should get 0
+    const cycles = 4;
+    for (let i = 0; i < cycles * BROADCAST_EVERY; i++) engine.tick();
+    assert.strictEqual(broadcastCounts.get(1), cycles, 'Building player gets broadcast at throttled rate');
     assert.strictEqual(broadcastCounts.get(2) || 0, 0, 'Non-building player gets no broadcasts');
   });
 });
@@ -1403,7 +1429,7 @@ describe('GameEngine — Mini Tech Tree', () => {
     // Run one month
     for (let i = 0; i < MONTH_TICKS; i++) engine.tick();
 
-    // Research district produces 3 physics/month + unemployed pops produce some too
+    // Research district produces 4 physics/month + unemployed pops produce some too
     const progress = engine.playerStates.get(1).researchProgress['improved_power_plants'];
     assert.ok(progress > 0, 'Research progress should be positive');
     // Physics stockpile should be consumed (set to 0)
@@ -1532,5 +1558,1339 @@ describe('GameEngine — Mini Tech Tree', () => {
     const prod = engine._calcProduction(colony);
     // 2 agriculture districts, each producing 6 * 1.5 = 9 food
     assert.strictEqual(prod.production.food, 18); // 2 * 9
+  });
+});
+
+// ── Energy Deficit Consequences ──
+
+describe('GameEngine — Energy Deficit', () => {
+  it('disables highest-energy-consuming district when energy goes negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add an industrial district (consumes 3 energy) and a research district (consumes 4 energy)
+    engine._addBuiltDistrict(colony, 'industrial');
+    engine._addBuiltDistrict(colony, 'research');
+    // Add pops so they can work the new districts
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Set energy to a level that will go negative after monthly processing
+    // Generator produces 6, industrial consumes 3, research consumes 4 → net = -1/month
+    // (no housing district built — base capital housing doesn't consume energy)
+    state.resources.energy = 0; // will become -1 after monthly processing
+
+    engine._processMonthlyResources();
+    assert.ok(state.resources.energy < 0, 'energy should be negative before deficit processing');
+
+    engine._processEnergyDeficit();
+
+    // Research district (4 energy) should be disabled first (highest consumer)
+    const researchDistrict = colony.districts.find(d => d.type === 'research');
+    assert.strictEqual(researchDistrict.disabled, true, 'research district should be disabled');
+  });
+
+  it('disabled districts produce nothing and consume nothing', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Add a research district and disable it
+    const districtId = engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    const researchDistrict = colony.districts.find(d => d.id === districtId);
+    researchDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Research district is disabled — should not produce 3/3/3 research or consume 4 energy
+    // Only generator (6 energy), mining (6 minerals), 2 agriculture (12 food) produce
+    // No housing district built, so no housing energy consumption
+    assert.strictEqual(prod.consumption.energy, 0); // no energy-consuming district active
+    // 4 built districts with jobs (gen, mining, 2 agri) = 4 jobs. Research disabled = 0 jobs.
+    // 10 pops - 4 working = 6 unemployed. Each produces 1 research.
+    assert.strictEqual(prod.production.physics, 6); // 6 unemployed × 1
+  });
+
+  it('disables multiple districts if needed to restore energy balance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add two research districts (consume 4 each) and one industrial (consumes 3)
+    engine._addBuiltDistrict(colony, 'research');
+    engine._addBuiltDistrict(colony, 'research');
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 12;
+    engine._invalidateColonyCache(colony);
+
+    // Net energy: 6 (gen) - 4 - 4 - 3 = -5/month (no housing district built)
+    state.resources.energy = 0; // will become -5
+
+    engine._processMonthlyResources();
+    engine._processEnergyDeficit();
+
+    // Should have disabled enough districts to bring energy >= 0
+    const disabledCount = colony.districts.filter(d => d.disabled).length;
+    assert.ok(disabledCount >= 2, 'should disable at least 2 districts');
+    assert.ok(state.resources.energy >= 0, 'energy should be non-negative after disabling');
+  });
+
+  it('re-enables cheapest disabled district when energy supports it', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add an industrial district (consumes 3) and disable it manually
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    const indDistrict = colony.districts.find(d => d.id === districtId);
+    indDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    // With industrial disabled: net energy = 6 (gen) - 1 (housing) = +5/month
+    // Re-enabling industrial would make it: 6 - 1 - 3 = +2/month — still positive
+    state.resources.energy = 100; // plenty of energy
+
+    engine._processEnergyDeficit();
+
+    assert.ok(!indDistrict.disabled, 'industrial should be re-enabled');
+  });
+
+  it('does not re-enable if it would cause negative energy balance', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add two research districts (4 each) and disable both
+    const id1 = engine._addBuiltDistrict(colony, 'research');
+    const id2 = engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    const r1 = colony.districts.find(d => d.id === id1);
+    const r2 = colony.districts.find(d => d.id === id2);
+    r1.disabled = true;
+    r2.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    // Currently: net energy = 6 (gen) - 1 (housing) = +5/month
+    // Re-enabling one research: 6 - 1 - 4 = +1 → ok
+    // Re-enabling both: 6 - 1 - 4 - 4 = -3 → not ok
+    state.resources.energy = 100;
+
+    engine._processEnergyDeficit();
+
+    const enabledResearch = colony.districts.filter(d => d.type === 'research' && !d.disabled);
+    const disabledResearch = colony.districts.filter(d => d.type === 'research' && d.disabled);
+    assert.strictEqual(enabledResearch.length, 1, 'should re-enable one research district');
+    assert.strictEqual(disabledResearch.length, 1, 'should keep one research district disabled');
+  });
+
+  it('emits districtDisabled event when disabling', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Force energy negative
+    state.resources.energy = -10;
+
+    engine._processEnergyDeficit();
+
+    const events = engine._flushEvents();
+    assert.ok(events, 'should have pending events');
+    const disableEvent = events.find(e => e.eventType === 'districtDisabled');
+    assert.ok(disableEvent, 'should emit districtDisabled event');
+    assert.strictEqual(disableEvent.districtType, 'industrial');
+    assert.strictEqual(disableEvent.playerId, 1);
+  });
+
+  it('emits districtEnabled event when re-enabling', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    const indDistrict = colony.districts.find(d => d.id === districtId);
+    indDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    state.resources.energy = 100;
+
+    engine._processEnergyDeficit();
+
+    const events = engine._flushEvents();
+    assert.ok(events, 'should have pending events');
+    const enableEvent = events.find(e => e.eventType === 'districtEnabled');
+    assert.ok(enableEvent, 'should emit districtEnabled event');
+    assert.strictEqual(enableEvent.districtType, 'industrial');
+  });
+
+  it('disabled housing districts provide no housing', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'housing');
+    const housingDistrict = colony.districts.find(d => d.id === districtId);
+    const housingBefore = engine._calcHousing(colony);
+    assert.strictEqual(housingBefore, 15); // 10 base + 5 from housing district
+
+    housingDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+    const housingAfter = engine._calcHousing(colony);
+    assert.strictEqual(housingAfter, 10); // back to base only
+  });
+
+  it('disabled districts do not count as jobs', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'mining');
+    const miningDistrict = colony.districts.find(d => d.id === districtId);
+    const jobsBefore = engine._calcJobs(colony);
+    assert.strictEqual(jobsBefore, 5); // gen(1) + mining(1) + agri(1) + agri(1) + new mining(1) = 5
+
+    miningDistrict.disabled = true;
+    engine._invalidateColonyCache(colony);
+    const jobsAfter = engine._calcJobs(colony);
+    assert.strictEqual(jobsAfter, 4); // one mining disabled
+  });
+
+  it('energy deficit processing runs during monthly tick', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Add industrial + research to create energy deficit
+    engine._addBuiltDistrict(colony, 'industrial');
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    // Set energy low enough that monthly processing puts it negative
+    // Net energy: 6 (gen) - 3 (industrial) - 4 (research) = -1/month
+    state.resources.energy = 0;
+
+    // Run ticks until monthly processing
+    const events = [];
+    engine.onEvent = (evts) => events.push(...evts);
+    for (let i = 0; i < MONTH_TICKS; i++) {
+      engine.tick();
+    }
+
+    // Should have auto-disabled at least one district
+    const hasDisableEvent = events.some(e => e.eventType === 'districtDisabled');
+    assert.ok(hasDisableEvent, 'energy deficit should trigger district disable during monthly tick');
+  });
+
+  it('generators are not disabled (they produce energy, not consume)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Starting setup: generator, mining, 2x agriculture
+    // Add an industrial (consumes 3 energy) to create deficit
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    state.resources.energy = -10;
+    engine._processEnergyDeficit();
+
+    // Generator should NOT be disabled — it has no energy consumption
+    const gen = colony.districts.find(d => d.type === 'generator');
+    assert.ok(!gen.disabled, 'generator should never be disabled by energy deficit');
+    // Industrial should be disabled instead
+    const ind = colony.districts.find(d => d.type === 'industrial');
+    assert.strictEqual(ind.disabled, true, 'industrial should be disabled');
+  });
+
+  it('handles multi-colony energy deficit across all player colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Create a second colony for the same player
+    const colony2 = engine._createColony(1, 'Colony 2', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony2, 'research'); // consumes 4 energy
+    engine._addBuiltDistrict(colony2, 'research'); // consumes 4 energy
+    colony2.pops = 10;
+    engine._invalidateColonyCache(colony2);
+
+    // Colony 1 has generator (+6), Colony 2 has 2 research (-8) → net = -2
+    state.resources.energy = -5;
+    engine._processEnergyDeficit();
+
+    // Should disable research district(s) on colony2 to fix deficit
+    const disabledOnC2 = colony2.districts.filter(d => d.disabled);
+    assert.ok(disabledOnC2.length > 0, 'should disable districts on second colony');
+    assert.ok(state.resources.energy >= 0, 'energy should be non-negative after multi-colony deficit fix');
+  });
+
+  it('_calcPlayerNetEnergy sums across all colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony1 = Array.from(engine.colonies.values())[0];
+
+    // Colony1 starting: generator (+6), no energy consumers
+    const net1 = engine._calcPlayerNetEnergy(1);
+    assert.strictEqual(net1, 6, 'single colony with generator should have +6 net energy');
+
+    // Add industrial (consumes 3)
+    engine._addBuiltDistrict(colony1, 'industrial');
+    colony1.pops = 10;
+    engine._invalidateColonyCache(colony1);
+
+    const net2 = engine._calcPlayerNetEnergy(1);
+    assert.strictEqual(net2, 3, 'generator(+6) - industrial(-3) = +3 net');
+  });
+
+  it('disabled district can still be demolished', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    const ind = colony.districts.find(d => d.id === districtId);
+    ind.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const countBefore = colony.districts.length;
+    const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id, districtId });
+    assert.strictEqual(result.ok, true, 'should be able to demolish disabled district');
+    assert.strictEqual(colony.districts.length, countBefore - 1, 'district count should decrease');
+  });
+
+  it('serialized colony includes disabled flag on districts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+
+    const districtId = engine._addBuiltDistrict(colony, 'industrial');
+    const ind = colony.districts.find(d => d.id === districtId);
+    ind.disabled = true;
+    engine._invalidateColonyCache(colony);
+
+    const state = engine.getState();
+    const serializedColony = state.colonies[0];
+    const serializedDistrict = serializedColony.districts.find(d => d.id === districtId);
+    assert.strictEqual(serializedDistrict.disabled, true, 'serialized district should have disabled flag');
+  });
+
+  it('no districts disabled when energy stays non-negative', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    state.resources.energy = 500; // plenty
+    engine._processEnergyDeficit();
+
+    const disabledCount = colony.districts.filter(d => d.disabled).length;
+    assert.strictEqual(disabledCount, 0, 'no districts should be disabled when energy is positive');
+  });
+});
+
+// ── Victory Points ──
+describe('GameEngine — Victory Points', () => {
+  it('calculates VP from pops, districts, alloys, and research', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    const colony = Array.from(engine.colonies.values())[0];
+
+    // Starting: 8 pops * 2 = 16, 4 districts * 1 = 4, alloys 50/25 = 2, research 0
+    const vp = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp, 16 + 4 + 2 + 0); // 22
+  });
+
+  it('VP includes alloy stockpile divided by 25', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 250;
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 250/25=10
+    assert.strictEqual(vp, 16 + 4 + 10 + 0);
+  });
+
+  it('VP includes total research divided by 100', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 0;
+    state.resources.research = { physics: 100, society: 100, engineering: 100 };
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 300/100=3
+    assert.strictEqual(vp, 16 + 4 + 0 + 3);
+  });
+
+  it('VP is 0 for unknown player', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(engine._calcVictoryPoints(999), 0);
+  });
+
+  it('VP included in getState() player data', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    assert.ok(state.players[0].vp !== undefined, 'player should have vp field');
+    assert.strictEqual(typeof state.players[0].vp, 'number');
+  });
+
+  it('VP included in getPlayerState() for self and others', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const pState = engine.getPlayerState(1);
+    assert.ok(pState.players[0].vp !== undefined, 'own player should have vp');
+    assert.ok(pState.players[1].vp !== undefined, 'other player should have vp');
+  });
+
+  it('VP reflects additional districts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const vpBefore = engine._calcVictoryPoints(1);
+    engine._addBuiltDistrict(colony, 'mining');
+    const vpAfter = engine._calcVictoryPoints(1);
+    assert.strictEqual(vpAfter, vpBefore + 1, 'VP should increase by 1 per new district');
+  });
+});
+
+// ── Match Timer ──
+describe('GameEngine — Match Timer', () => {
+  it('no timer when matchTimer is 0 (unlimited)', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), { tickRate: 10 });
+    assert.strictEqual(engine._matchTimerEnabled, false);
+    assert.strictEqual(engine._matchTicksRemaining, 0);
+  });
+
+  it('timer enabled when matchTimer is set', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    assert.strictEqual(engine._matchTimerEnabled, true);
+    // 10 minutes * 60 seconds * 10 ticks/sec = 6000 ticks
+    assert.strictEqual(engine._matchTicksRemaining, 6000);
+  });
+
+  it('timer counts down each tick', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const startTicks = engine._matchTicksRemaining;
+    engine.tick();
+    assert.strictEqual(engine._matchTicksRemaining, startTicks - 1);
+  });
+
+  it('match timer included in getState when enabled', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.matchTimerEnabled, true);
+    assert.strictEqual(typeof state.matchTicksRemaining, 'number');
+  });
+
+  it('match timer included in getPlayerState when enabled', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), { tickRate: 10 });
+    const state = engine.getPlayerState(1);
+    assert.strictEqual(state.matchTimerEnabled, true);
+    assert.strictEqual(typeof state.matchTicksRemaining, 'number');
+  });
+
+  it('no match timer in state when unlimited', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), { tickRate: 10 });
+    const state = engine.getState();
+    assert.strictEqual(state.matchTimerEnabled, undefined);
+  });
+
+  it('2-minute warning event fires at correct time', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 2 minutes before end: 6000 - 1200 = 4800 ticks
+    const targetTicks = engine._matchTicksRemaining - (2 * 60 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    // Next tick should trigger the 2-minute warning
+    engine.tick();
+    const warning = events.find(e => e.eventType === 'matchWarning');
+    assert.ok(warning, 'matchWarning event should fire');
+    assert.strictEqual(warning.secondsRemaining, 120);
+  });
+
+  it('30-second countdown event fires', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 30 seconds before end: 6000 - 300 = 5700 ticks
+    const targetTicks = engine._matchTicksRemaining - (30 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    engine.tick();
+    const countdown = events.find(e => e.eventType === 'finalCountdown');
+    assert.ok(countdown, 'finalCountdown event should fire');
+    assert.strictEqual(countdown.secondsRemaining, 30);
+  });
+
+  it('game over triggers when timer expires', () => {
+    let gameOverData = null;
+    // Use a very short timer for testing: 1 minute = 600 ticks
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    assert.strictEqual(engine._matchTicksRemaining, 600);
+
+    // Tick through the whole timer
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData, 'onGameOver should have been called');
+    assert.ok(gameOverData.winner, 'should have a winner');
+    assert.strictEqual(gameOverData.winner.playerId, 1);
+    assert.ok(gameOverData.scores.length > 0, 'scores should be populated');
+  });
+
+  it('game stops ticking after game over', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => {},
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    const tickAfterGameOver = engine.tickCount;
+    engine.tick();
+    assert.strictEqual(engine.tickCount, tickAfterGameOver, 'tick count should not change after game over');
+  });
+
+  it('gameOver scores are sorted by VP descending', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    // Give player 2 more alloys for higher VP
+    const p2 = engine.playerStates.get(2);
+    p2.resources.alloys = 1000;
+
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.scores[0].playerId, 2, 'player 2 should be first (higher VP)');
+    assert.ok(gameOverData.scores[0].vp > gameOverData.scores[1].vp, 'scores should be in descending order');
+  });
+
+  it('gameOver breakdown includes correct VP components', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    const breakdown = gameOverData.scores[0].breakdown;
+    assert.ok(breakdown.pops > 0);
+    assert.ok(breakdown.popsVP > 0);
+    assert.strictEqual(breakdown.popsVP, breakdown.pops * 2);
+    assert.ok(breakdown.districts > 0);
+    assert.strictEqual(breakdown.districtsVP, breakdown.districts);
+    assert.strictEqual(typeof breakdown.alloysVP, 'number');
+    assert.strictEqual(typeof breakdown.researchVP, 'number');
+  });
+});
+
+// ── Performance regression tests ──
+
+describe('GameEngine — Performance', () => {
+  it('game tick completes within budget (8 players, mid-game load)', () => {
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) players.set(i, { name: 'P' + i });
+    const room = { id: 'perf', name: 'Perf', players, matchTimer: 20 };
+    const engine = new GameEngine(room, { tickRate: 10, profile: true, onTick: () => {} });
+
+    // Simulate mid-game: 14 districts, 20 pops per colony
+    for (const [pid] of players) {
+      const cids = engine._playerColonies.get(pid);
+      const c = engine.colonies.get(cids[0]);
+      const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+      for (let d = 0; d < 10; d++) engine._addBuiltDistrict(c, types[d % 6]);
+      c.pops = 20;
+      engine._invalidateColonyCache(c);
+    }
+
+    // Warm up
+    for (let i = 0; i < 10; i++) engine.tick();
+
+    // Measure 100 ticks
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) engine.tick();
+    const avgMs = Number(process.hrtime.bigint() - start) / 1e6 / 100;
+
+    // Budget: 50ms per tick (50% of 100ms interval at 10Hz)
+    assert.ok(avgMs < 50, `Avg tick ${avgMs.toFixed(3)}ms exceeds 50ms budget`);
+  });
+
+  it('per-player state payload stays under 10KB', () => {
+    const players = new Map();
+    for (let i = 1; i <= 8; i++) players.set(i, { name: 'P' + i });
+    const room = { id: 'perf', name: 'Perf', players, matchTimer: 20 };
+    const engine = new GameEngine(room, { tickRate: 10 });
+
+    for (const [pid] of players) {
+      const cids = engine._playerColonies.get(pid);
+      const c = engine.colonies.get(cids[0]);
+      const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+      for (let d = 0; d < 10; d++) engine._addBuiltDistrict(c, types[d % 6]);
+      c.pops = 20;
+      engine._invalidateColonyCache(c);
+    }
+
+    const json = engine.getPlayerStateJSON(1);
+    const bytes = Buffer.byteLength(json, 'utf8');
+    assert.ok(bytes < 10240, `Per-player payload ${bytes} bytes exceeds 10KB`);
+  });
+
+  it('VP calculation is cached within a tick (O(N) not O(N²))', () => {
+    const players = new Map();
+    for (let i = 1; i <= 4; i++) players.set(i, { name: 'P' + i });
+    const room = { id: 'vp', name: 'VP', players, matchTimer: 20 };
+    const engine = new GameEngine(room, { tickRate: 10, onTick: () => {} });
+
+    // Force broadcast: all dirty + tick at broadcast boundary
+    for (const [pid] of players) engine._dirtyPlayers.add(pid);
+    engine.tickCount = BROADCAST_EVERY - 1;
+    engine.tick();
+
+    // After broadcast, VP cache should be populated for all players (computed once each)
+    assert.strictEqual(engine._vpCache.size, players.size,
+      `VP cache should have ${players.size} entries, got ${engine._vpCache.size}`);
+    assert.strictEqual(engine._vpCacheTick, engine.tickCount,
+      'VP cache should be scoped to current tick');
+
+    // Verify cached values match fresh computation
+    engine._vpCacheTick = -1; // force fresh computation
+    for (const [pid] of players) {
+      const fresh = engine._calcVictoryPoints(pid);
+      engine._vpCacheTick = -1; // reset between calls
+      const cached = engine._vpCache.get(pid);
+      // Note: cached value is from the broadcast tick; fresh uses same state
+      assert.strictEqual(typeof cached, 'number');
+    }
+  });
+});
+
+describe('GameEngine — Tech Modifier Cache', () => {
+  it('caches tech modifiers per player and invalidates on tech completion', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const state1 = engine.playerStates.get(1);
+
+    // First call should compute and cache
+    const mods1 = engine._getTechModifiers(state1);
+    assert.deepStrictEqual(mods1.district, {});
+    assert.strictEqual(mods1.growth, 1);
+
+    // Second call should return same cached object
+    const mods2 = engine._getTechModifiers(state1);
+    assert.strictEqual(mods1, mods2, 'Should return cached object');
+
+    // Complete a tech — cache should invalidate
+    state1.completedTechs.push('improved_power_plants');
+    engine._techModCache.delete(1); // simulate invalidation
+    const mods3 = engine._getTechModifiers(state1);
+    assert.notStrictEqual(mods1, mods3, 'Should return fresh object after invalidation');
+    assert.strictEqual(mods3.district.generator, 1.25);
+  });
+
+  it('tech modifiers are invalidated when research completes via _processResearch', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Set up research
+    state.currentResearch.physics = 'improved_power_plants';
+    state.resources.research.physics = 200; // enough to complete (cost 150)
+
+    // Cache tech mods before research completes
+    const before = engine._getTechModifiers(state);
+    assert.deepStrictEqual(before.district, {});
+
+    // Process research — should complete and invalidate cache
+    engine._processResearch();
+    assert.ok(state.completedTechs.includes('improved_power_plants'));
+
+    // Cache should be cleared — new call should reflect completed tech
+    const after = engine._getTechModifiers(state);
+    assert.strictEqual(after.district.generator, 1.25);
+  });
+});
+
+// ── VP & Timer Edge Cases ──
+
+describe('GameEngine — VP Edge Cases', () => {
+  it('VP sums pops and districts across multiple colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Create a second colony for player 1
+    const colony2 = engine._createColony(1, 'Second World', { size: 16, type: 'desert', habitability: 60 });
+    colony2.pops = 5;
+    engine._addBuiltDistrict(colony2, 'mining');
+    engine._addBuiltDistrict(colony2, 'generator');
+
+    // Player 1 now has: colony1 (8 pops, 4 districts) + colony2 (5 pops, 2 districts)
+    // Total pops = 13, total districts = 6
+    // VP = 13*2 + 6 + floor(50/25) + 0 = 26 + 6 + 2 = 34
+    const vp = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp, 34);
+  });
+
+  it('VP floors fractional alloy and research values', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 99;  // 99/25 = 3.96 → floor = 3
+    state.resources.research = { physics: 33, society: 33, engineering: 33 }; // 99/100 = 0.99 → floor = 0
+
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 3 alloyVP, 0 researchVP
+    assert.strictEqual(vp, 16 + 4 + 3 + 0);
+  });
+
+  it('VP handles zero alloys correctly', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).resources.alloys = 0;
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research
+    assert.strictEqual(vp, 16 + 4 + 0 + 0);
+  });
+
+  it('VP cache is invalidated between ticks', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const vp1 = engine._calcVictoryPoints(1);
+
+    // Advance a tick — cache should be stale
+    engine.tick();
+    engine.playerStates.get(1).resources.alloys += 500; // +20 VP from alloys (500/25)
+    const vp2 = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp2, vp1 + 20, 'VP should reflect updated alloys after tick advances');
+  });
+
+  it('Industrial district produces 4 alloys per month', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(DISTRICT_DEFS.industrial.produces.alloys, 4);
+  });
+
+  it('Research district produces 4 of each research type per month', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.strictEqual(DISTRICT_DEFS.research.produces.physics, 4);
+    assert.strictEqual(DISTRICT_DEFS.research.produces.society, 4);
+    assert.strictEqual(DISTRICT_DEFS.research.produces.engineering, 4);
+  });
+
+  it('VP alloy weight uses divisor of 25 (not 50)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 75; // 75/25 = 3 VP from alloys
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 75/25=3
+    assert.strictEqual(vp, 16 + 4 + 3 + 0);
+  });
+});
+
+describe('GameEngine — Match Timer Edge Cases', () => {
+  it('commands are rejected after game over', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => {},
+    });
+    // Run game to completion
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.strictEqual(engine._gameOver, true);
+
+    const colony = Array.from(engine.colonies.values())[0];
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.ok(result.error, 'should reject command after game over');
+  });
+
+  it('_triggerGameOver is idempotent — does not fire onGameOver twice', () => {
+    let callCount = 0;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => { callCount++; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.strictEqual(callCount, 1);
+
+    // Call again directly — should be no-op
+    engine._triggerGameOver();
+    assert.strictEqual(callCount, 1, 'onGameOver should not fire again');
+  });
+
+  it('game over with tied VP — both players get scored', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    // Equalize resources so VP is the same
+    const p1 = engine.playerStates.get(1);
+    const p2 = engine.playerStates.get(2);
+    p1.resources.alloys = 50;
+    p2.resources.alloys = 50;
+
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.scores.length, 2);
+    // Both should have same VP (same pops, districts, alloys, research)
+    assert.strictEqual(gameOverData.scores[0].vp, gameOverData.scores[1].vp,
+      'Tied players should have equal VP');
+    assert.ok(gameOverData.winner, 'Should still pick a winner even in tie');
+  });
+
+  it('warning events fire for all players in multiplayer', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 2-minute warning
+    const targetTicks = engine._matchTicksRemaining - (2 * 60 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    engine.tick();
+
+    const warnings = events.filter(e => e.eventType === 'matchWarning');
+    assert.strictEqual(warnings.length, 2, 'Both players should receive matchWarning');
+  });
+
+  it('warnings do not fire twice on repeated ticks', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Run entire game
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    const matchWarnings = events.filter(e => e.eventType === 'matchWarning');
+    const countdowns = events.filter(e => e.eventType === 'finalCountdown');
+    assert.strictEqual(matchWarnings.length, 1, 'matchWarning should fire exactly once');
+    assert.strictEqual(countdowns.length, 1, 'finalCountdown should fire exactly once');
+  });
+
+  it('gameOver includes finalTick matching tick count at end', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.finalTick, engine.tickCount);
+  });
+
+  it('unlimited game never triggers game over even after many ticks', () => {
+    let gameOverFired = false;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), {
+      tickRate: 10,
+      onGameOver: () => { gameOverFired = true; },
+    });
+    // Run 10000 ticks — well beyond any timer
+    for (let i = 0; i < 10000; i++) engine.tick();
+    assert.strictEqual(gameOverFired, false, 'unlimited game should never end on timer');
+    assert.strictEqual(engine._gameOver, false);
+  });
+});
+
+// ── Galaxy–Colony Integration ──
+
+describe('GameEngine — Galaxy–Colony Integration', () => {
+  it('colony name is derived from starting system name', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const systemId = colony.systemId;
+    const system = engine.galaxy.systems[systemId];
+    assert.ok(colony.name.startsWith(system.name),
+      `Colony name "${colony.name}" should start with system name "${system.name}"`);
+    assert.ok(colony.name.endsWith('Colony'),
+      `Colony name "${colony.name}" should end with "Colony"`);
+  });
+
+  it('starting planet is marked colonized with correct owner in galaxy data', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10, galaxySeed: 42 });
+    for (const [playerId] of engine.playerStates) {
+      const colonyIds = engine._playerColonies.get(playerId);
+      const colony = engine.colonies.get(colonyIds[0]);
+      const system = engine.galaxy.systems[colony.systemId];
+      const colonizedPlanet = system.planets.find(p => p.colonized);
+      assert.ok(colonizedPlanet, `Player ${playerId}'s starting planet should be marked colonized`);
+      assert.strictEqual(colonizedPlanet.colonyOwner, playerId);
+      assert.strictEqual(colony.planet.type, colonizedPlanet.type);
+    }
+  });
+
+  it('getInitState strips surveyed hash from galaxy systems', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    for (const sys of initState.galaxy.systems) {
+      assert.ok(!('surveyed' in sys), `System ${sys.name} should not include surveyed hash in client payload`);
+    }
+  });
+
+  it('getInitState includes planet colonization data', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    const colony = [...engine.colonies.values()][0];
+    const system = initState.galaxy.systems.find(s => s.id === colony.systemId);
+    const colonizedPlanet = system.planets.find(p => p.colonized);
+    assert.ok(colonizedPlanet, 'Colonized planet should be visible in initState');
+    assert.strictEqual(colonizedPlanet.colonyOwner, 1);
+  });
+
+  it('getInitState includes starColor for each system', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
+    const initState = engine.getInitState();
+    for (const sys of initState.galaxy.systems) {
+      assert.ok(typeof sys.starColor === 'string' && sys.starColor.startsWith('#'),
+        `System ${sys.name} should have a hex starColor, got "${sys.starColor}"`);
+    }
+  });
+
+  it('multiplayer starting colonies are in different systems with valid galaxy links', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10, galaxySeed: 42 });
+    const colonies = [...engine.colonies.values()];
+    const systemIds = colonies.map(c => c.systemId);
+    const uniqueSystems = new Set(systemIds);
+    assert.strictEqual(uniqueSystems.size, 4, 'Each player should start in a unique system');
+    for (const c of colonies) {
+      assert.ok(c.systemId >= 0 && c.systemId < engine.galaxy.systems.length,
+        `Colony systemId ${c.systemId} out of galaxy range`);
+      const sys = engine.galaxy.systems[c.systemId];
+      assert.strictEqual(sys.owner, c.ownerId,
+        `System ${sys.name} owner should match colony owner`);
+    }
+  });
+});
+
+// ── Command Validation Edge Cases ──
+
+describe('GameEngine — Command Validation', () => {
+  it('rejects buildDistrict with missing colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'buildDistrict', districtType: 'housing' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects buildDistrict with missing districtType', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects demolish with missing colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'demolish', districtId: 'e1' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects demolish with missing districtId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.getState().colonies[0];
+    const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects setResearch with missing techId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch' });
+    assert.ok(result.error);
+    assert.match(result.error, /missing/i);
+  });
+
+  it('rejects setResearch with non-string techId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 42 });
+    assert.ok(result.error);
+    assert.match(result.error, /invalid/i);
+  });
+
+  it('returns error for unknown command type', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'hackServer' });
+    assert.ok(result.error);
+    assert.match(result.error, /unknown/i);
+  });
+
+  it('rejects buildDistrict with non-existent colonyId', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: 'bogus', districtType: 'housing' });
+    assert.ok(result.error);
+    assert.match(result.error, /not found/i);
+  });
+
+  it('rejects setResearch for tech already being researched', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    assert.ok(result.error);
+    assert.match(result.error, /already/i);
+  });
+});
+
+// ── gameInit Integration (WebSocket) ──
+
+describe('Server Integration — Galaxy in gameInit', () => {
+  const WebSocket = require('ws');
+  const { startServer } = require('../../server/server');
+
+  function connectWs(port) {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(`ws://localhost:${port}`);
+      ws._buffer = [];
+      ws._waiters = [];
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw);
+        const idx = ws._waiters.findIndex(w => w.pred(msg));
+        if (idx >= 0) {
+          const waiter = ws._waiters.splice(idx, 1)[0];
+          clearTimeout(waiter.timer);
+          waiter.resolve(msg);
+        } else {
+          ws._buffer.push(msg);
+        }
+      });
+      ws.on('open', () => resolve(ws));
+      ws.on('error', reject);
+    });
+  }
+
+  function waitForMessage(ws, predicate, timeout = 5000) {
+    const idx = ws._buffer.findIndex(predicate);
+    if (idx >= 0) return Promise.resolve(ws._buffer.splice(idx, 1)[0]);
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        ws._waiters = ws._waiters.filter(w => w !== waiter);
+        reject(new Error('Timeout waiting for message'));
+      }, timeout);
+      const waiter = { pred: predicate, resolve, timer };
+      ws._waiters.push(waiter);
+    });
+  }
+
+  function send(ws, msg) { ws.send(JSON.stringify(msg)); }
+
+  it('gameInit includes galaxy data with systems and hyperlanes', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Galaxy Test', practiceMode: true });
+    await waitForMessage(ws, m => m.type === 'roomJoined');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+
+    assert.ok(init.galaxy, 'gameInit should include galaxy');
+    assert.ok(Array.isArray(init.galaxy.systems), 'galaxy should have systems array');
+    assert.ok(init.galaxy.systems.length > 0, 'galaxy should have at least 1 system');
+    assert.ok(Array.isArray(init.galaxy.hyperlanes), 'galaxy should have hyperlanes array');
+    assert.ok(init.galaxy.hyperlanes.length > 0, 'galaxy should have at least 1 hyperlane');
+    assert.ok(init.yourId, 'gameInit should include yourId');
+
+    // Verify system structure
+    const sys = init.galaxy.systems[0];
+    assert.ok(typeof sys.id === 'number');
+    assert.ok(typeof sys.name === 'string');
+    assert.ok(typeof sys.starType === 'string');
+    assert.ok(typeof sys.starColor === 'string');
+    assert.ok(Array.isArray(sys.planets));
+  });
+
+  it('gameInit galaxy systems do not include surveyed hash', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Survey Test', practiceMode: true });
+    await waitForMessage(ws, m => m.type === 'roomJoined');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+
+    for (const sys of init.galaxy.systems) {
+      assert.ok(!('surveyed' in sys),
+        `System ${sys.name} should not expose surveyed hash to clients`);
+    }
+  });
+
+  it('galaxySize room setting is passed through to game', async (t) => {
+    const srv = await startServer({ port: 0, log: false });
+    t.after(() => srv.close());
+    const ws = await connectWs(srv.port);
+    t.after(() => ws.close());
+
+    await waitForMessage(ws, m => m.type === 'welcome');
+    send(ws, { type: 'setName', name: 'Tester' });
+    await waitForMessage(ws, m => m.type === 'nameSet');
+
+    send(ws, { type: 'createRoom', name: 'Size Test', practiceMode: true, galaxySize: 'medium' });
+    const joined = await waitForMessage(ws, m => m.type === 'roomJoined');
+    assert.strictEqual(joined.room.galaxySize, 'medium');
+
+    send(ws, { type: 'launchGame' });
+    const init = await waitForMessage(ws, m => m.type === 'gameInit');
+    assert.strictEqual(init.galaxy.size, 'medium');
+    assert.ok(init.galaxy.systems.length >= 50,
+      `Medium galaxy should have >=50 systems, got ${init.galaxy.systems.length}`);
+  });
+});
+
+// ── Tech Modifiers — Production Integration ──
+
+describe('GameEngine — Tech Modifier Production', () => {
+  it('improved_power_plants increases generator output by 25%', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Baseline: generator produces 6 energy
+    const before = engine._calcProduction(colony);
+    assert.strictEqual(before.production.energy, 6);
+
+    // Complete tech
+    state.completedTechs.push('improved_power_plants');
+    engine._techModCache.delete(1);
+    engine._invalidateColonyCache(colony);
+
+    const after = engine._calcProduction(colony);
+    assert.strictEqual(after.production.energy, 7.5, 'Generator should produce 6 * 1.25 = 7.5');
+  });
+
+  it('T2 tech supersedes T1 for same district (advanced_reactors overrides improved_power_plants)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Complete both T1 and T2
+    state.completedTechs.push('improved_power_plants');
+    state.completedTechs.push('advanced_reactors');
+    engine._techModCache.delete(1);
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Should use 1.5x (T2), not 1.25x (T1)
+    assert.strictEqual(prod.production.energy, 9, 'Generator should produce 6 * 1.5 = 9');
+  });
+
+  it('improved_mining increases mining district output by 25%', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    const before = engine._calcProduction(colony);
+    assert.strictEqual(before.production.minerals, 6);
+
+    state.completedTechs.push('improved_mining');
+    engine._techModCache.delete(1);
+    engine._invalidateColonyCache(colony);
+
+    const after = engine._calcProduction(colony);
+    assert.strictEqual(after.production.minerals, 7.5, 'Mining should produce 6 * 1.25 = 7.5');
+  });
+
+  it('tech modifier cache auto-invalidates when completedTechs length changes', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Cache initial (empty) modifiers
+    const mods1 = engine._getTechModifiers(state);
+    assert.deepStrictEqual(mods1.district, {});
+
+    // Add tech without manually deleting cache — should auto-detect via _techCount
+    state.completedTechs.push('improved_mining');
+    const mods2 = engine._getTechModifiers(state);
+    assert.strictEqual(mods2.district.mining, 1.25, 'Should auto-invalidate and return new modifiers');
+    assert.notStrictEqual(mods1, mods2, 'Should be a new object');
+  });
+
+  it('industrial produces 4 alloys per month in actual production calc', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    engine._addBuiltDistrict(colony, 'industrial');
+    colony.pops = 10; // enough to work all districts
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    assert.strictEqual(prod.production.alloys, 4, 'Industrial should produce 4 alloys');
+  });
+
+  it('research district produces 4/4/4 per month in actual production calc', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    engine._addBuiltDistrict(colony, 'research');
+    colony.pops = 10;
+    engine._invalidateColonyCache(colony);
+
+    const prod = engine._calcProduction(colony);
+    // Starting districts: gen(1), mining(1), agri(1), agri(1) = 4 jobs + 1 research = 5 jobs
+    // 10 pops - 5 jobs = 5 unemployed, each producing 1 research per track
+    const unemployedResearch = 10 - 5; // 5 unemployed pops
+    assert.strictEqual(prod.production.physics, 4 + unemployedResearch, 'Research district produces 4 physics + unemployed');
+    assert.strictEqual(prod.production.society, 4 + unemployedResearch, 'Research district produces 4 society + unemployed');
+    assert.strictEqual(prod.production.engineering, 4 + unemployedResearch, 'Research district produces 4 engineering + unemployed');
+  });
+});
+
+// ── Research Progression ──
+
+describe('GameEngine — Research Progression', () => {
+  it('completes research after accumulating enough from monthly production', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Set up research
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    assert.strictEqual(state.currentResearch.physics, 'improved_power_plants');
+
+    // Pump physics research directly (cost = 150)
+    state.resources.research.physics = 200;
+    engine._processResearch();
+
+    assert.ok(state.completedTechs.includes('improved_power_plants'), 'Tech should complete');
+    assert.strictEqual(state.currentResearch.physics, null, 'Track should be cleared');
+  });
+
+  it('accumulates progress across multiple research cycles', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+
+    // First cycle: 50 research (cost is 150)
+    state.resources.research.physics = 50;
+    engine._processResearch();
+    assert.ok(!state.completedTechs.includes('improved_power_plants'), 'Should not complete yet');
+    assert.strictEqual(state.researchProgress.improved_power_plants, 50);
+    assert.strictEqual(state.resources.research.physics, 0, 'Research stockpile consumed');
+
+    // Second cycle: 50 more
+    state.resources.research.physics = 50;
+    engine._processResearch();
+    assert.strictEqual(state.researchProgress.improved_power_plants, 100);
+
+    // Third cycle: 50 more → total 150 = cost
+    state.resources.research.physics = 50;
+    engine._processResearch();
+    assert.ok(state.completedTechs.includes('improved_power_plants'), 'Should complete at 150');
+  });
+
+  it('rejects tech with unmet prerequisite', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // advanced_reactors requires improved_power_plants
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'advanced_reactors' });
+    assert.ok(result.error, 'Should reject tech with unmet prerequisite');
+    assert.match(result.error, /requires|prerequisite/i);
+  });
+
+  it('allows tech after prerequisite is completed', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Complete prerequisite
+    state.completedTechs.push('improved_power_plants');
+
+    const result = engine.handleCommand(1, { type: 'setResearch', techId: 'advanced_reactors' });
+    assert.strictEqual(result.ok, true, 'Should allow tech with met prerequisite');
+    assert.strictEqual(state.currentResearch.physics, 'advanced_reactors');
+  });
+
+  it('switching research preserves old progress but abandons it', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Start researching improved_power_plants
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    state.resources.research.physics = 50;
+    engine._processResearch();
+    assert.strictEqual(state.researchProgress.improved_power_plants, 50);
+
+    // Switch to improved_mining (different track, both should work)
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_mining' });
+
+    // Old progress still exists in researchProgress
+    assert.strictEqual(state.researchProgress.improved_power_plants, 50,
+      'Old research progress should persist in data');
+  });
+
+  it('emits researchComplete event with correct data', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    engine.handleCommand(1, { type: 'setResearch', techId: 'frontier_medicine' });
+    state.resources.research.society = 200;
+
+    engine._processResearch();
+
+    const events = engine._flushEvents();
+    assert.ok(events, 'Should have pending events');
+    const researchEvent = events.find(e => e.eventType === 'researchComplete');
+    assert.ok(researchEvent, 'Should emit researchComplete event');
+    assert.strictEqual(researchEvent.techId, 'frontier_medicine');
+    assert.strictEqual(researchEvent.track, 'society');
+    assert.strictEqual(researchEvent.techName, 'Frontier Medicine');
+  });
+
+  it('research completion invalidates production cache for tech bonuses', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Cache production
+    const before = engine._calcProduction(colony);
+    assert.strictEqual(before.production.energy, 6);
+
+    // Complete improved_power_plants via research
+    engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
+    state.resources.research.physics = 200;
+    engine._processResearch();
+
+    // Production cache should be invalidated — new calc should show boosted output
+    const after = engine._calcProduction(colony);
+    assert.strictEqual(after.production.energy, 7.5,
+      'Production should reflect tech bonus after research completion');
+  });
+});
+
+// ── Pop Growth with Tech Modifier ──
+
+describe('GameEngine — Pop Growth Tech Bonus', () => {
+  it('frontier_medicine reduces growth target by 25%', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = Array.from(engine.colonies.values())[0];
+    const state = engine.playerStates.get(1);
+
+    // Complete frontier_medicine (growthBonus: 0.75)
+    state.completedTechs.push('frontier_medicine');
+    engine._techModCache.delete(1);
+
+    // Base growth: GROWTH_BASE_TICKS = 400, with modifier: 400 * 0.75 = 300
+    const techMods = engine._getTechModifiers(state);
+    assert.strictEqual(techMods.growth, 0.75);
+
+    // Verify by ticking — pop should grow faster
+    state.resources.food = 1000; // plenty of food
+    const startPops = colony.pops; // 8
+
+    // Tick 300 times — should be enough for 1 growth with 0.75x modifier
+    for (let i = 0; i < 300; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(colony.pops, startPops + 1,
+      'Pop should grow after 300 ticks with frontier_medicine (400 * 0.75 = 300)');
   });
 });

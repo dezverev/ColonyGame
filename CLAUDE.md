@@ -179,6 +179,7 @@ Isometric projection is achieved with a Three.js OrthographicCamera positioned a
 | `game-designer` | `/game-designer [focus]` | Analyze game from a design/playstyle perspective, recommend improvements |
 | `perf` | `/perf [focus]` | Performance audit — profile server ticks, client FPS, memory, network payloads, apply fixes |
 | `test` | `/test [focus]` | Test coverage audit — find gaps, write missing tests, validate edge cases, fix bugs found |
+| `mcp-tool-maker` | `/mcp-tool-maker [focus]` | Create MCP tools for Claude Code — live game inspection, server control, design tracking |
 | `ship` | `/ship [description]` | Commit changes, create branch, push, create PR, and merge — one-command ship-it workflow |
 
 ## Conventions
