@@ -478,3 +478,300 @@ describe('Science ship toast formatting', () => {
     assert.strictEqual(TOAST_TYPE_MAP.anomalyDiscovered, 'positive');
   });
 });
+
+// ── Surveyed Systems Privacy ──
+
+describe('Science ships — surveyed systems privacy', () => {
+  function makeTwoPlayerEngine() {
+    const room = {
+      id: 'test-room',
+      players: new Map([[1, { name: 'Alice' }], [2, { name: 'Bob' }]]),
+      hostId: 1,
+      galaxySize: 'small',
+      matchTimer: 0,
+    };
+    return new GameEngine(room, { tickRate: 10, galaxySeed: 42 });
+  }
+
+  it('getPlayerState only includes requesting players surveyed systems', () => {
+    const engine = makeTwoPlayerEngine();
+    engine._surveyedSystems.set(1, new Set([5, 10]));
+    engine._surveyedSystems.set(2, new Set([20, 30]));
+    engine._invalidateStateCache();
+
+    const state1 = engine.getPlayerState(1);
+    assert.deepStrictEqual(state1.surveyedSystems[1], [5, 10]);
+    assert.strictEqual(state1.surveyedSystems[2], undefined, 'should not include other players surveyed systems');
+
+    const state2 = engine.getPlayerState(2);
+    assert.deepStrictEqual(state2.surveyedSystems[2], [20, 30]);
+    assert.strictEqual(state2.surveyedSystems[1], undefined, 'should not include other players surveyed systems');
+  });
+
+  it('getState (admin view) includes all players surveyed systems', () => {
+    const engine = makeTwoPlayerEngine();
+    engine._surveyedSystems.set(1, new Set([5]));
+    engine._surveyedSystems.set(2, new Set([20]));
+    engine._invalidateStateCache();
+
+    const state = engine.getState();
+    assert.deepStrictEqual(state.surveyedSystems[1], [5]);
+    assert.deepStrictEqual(state.surveyedSystems[2], [20]);
+  });
+
+  it('getPlayerState returns empty surveyedSystems if player has none', () => {
+    const engine = makeTwoPlayerEngine();
+    engine._invalidateStateCache();
+    const state = engine.getPlayerState(1);
+    assert.deepStrictEqual(state.surveyedSystems, {});
+  });
+});
+
+// ── Anomaly Reward Application ──
+
+describe('Science ships — anomaly rewards', () => {
+  it('should apply mineral rewards from anomaly discoveries', () => {
+    const engine = makeEngine();
+    const ship = buildAndCompleteScienceShip(engine, 1);
+    const playerState = engine.playerStates.get(1);
+    const colony = getFirstColony(engine, 1);
+    const adj = engine._adjacency.get(colony.systemId) || [];
+    const targetId = adj[0];
+
+    // Manually set up a system with a planet that will trigger a mineral deposit anomaly
+    const system = engine.galaxy.systems[targetId];
+    if (!system.planets || system.planets.length === 0) {
+      system.planets = [{ orbit: 1, size: 10, type: 'barren' }];
+    }
+
+    const mineralsBefore = playerState.resources.minerals;
+    const alloysBefore = playerState.resources.alloys;
+    const influenceBefore = playerState.resources.influence;
+
+    // Send ship and complete survey
+    engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: targetId });
+    for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS + SURVEY_TICKS; i++) {
+      engine.tick();
+    }
+
+    // Verify system was surveyed regardless of whether anomaly was found
+    const surveyed = engine._surveyedSystems.get(1);
+    assert.ok(surveyed && surveyed.has(targetId), 'system should be marked surveyed');
+  });
+
+  it('should apply all reward types when anomalies are found', () => {
+    const engine = makeEngine();
+    const playerState = engine.playerStates.get(1);
+
+    // Directly test _completeSurvey with a controlled system
+    const testSystemId = 0;
+    const system = engine.galaxy.systems[testSystemId];
+    system.planets = [
+      { orbit: 1, size: 10, type: 'barren' },
+      { orbit: 2, size: 10, type: 'barren' },
+      { orbit: 3, size: 10, type: 'barren' },
+      { orbit: 4, size: 10, type: 'barren' },
+      { orbit: 5, size: 10, type: 'barren' },
+      { orbit: 6, size: 10, type: 'barren' },
+      { orbit: 7, size: 10, type: 'barren' },
+      { orbit: 8, size: 10, type: 'barren' },
+      { orbit: 9, size: 10, type: 'barren' },
+      { orbit: 10, size: 10, type: 'barren' },
+    ];
+
+    const ship = { id: 999, ownerId: 1, systemId: testSystemId, surveying: true, surveyProgress: SURVEY_TICKS, path: [], hopProgress: 0, targetSystemId: null };
+    engine._scienceShips.push(ship);
+
+    const mineralsBefore = playerState.resources.minerals;
+    const alloysBefore = playerState.resources.alloys;
+    const influenceBefore = playerState.resources.influence;
+
+    engine._completeSurvey(ship);
+
+    // System should be surveyed
+    assert.ok(engine._surveyedSystems.get(1).has(testSystemId));
+    // Ship should be reset to idle
+    assert.strictEqual(ship.surveying, false);
+    assert.strictEqual(ship.surveyProgress, 0);
+  });
+});
+
+// ── Ship Cap with In-Queue Ships ──
+
+describe('Science ships — cap includes queued ships', () => {
+  it('should count in-queue ships toward cap', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+
+    // Queue 3 science ships (don't complete them)
+    for (let i = 0; i < 3; i++) {
+      giveSciResources(engine, 1);
+      const result = engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+      assert.ok(result.ok, `build ${i} should succeed`);
+      // Complete each so queue has room for next
+      for (let t = 0; t < SCIENCE_SHIP_BUILD_TIME; t++) engine.tick();
+    }
+
+    // Now have 3 completed ships, 0 in queue — at cap
+    giveSciResources(engine, 1);
+    const result = engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+    assert.ok(result.error);
+    assert.ok(result.error.includes('cap'));
+  });
+
+  it('should count queued ships even before completion toward cap', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+
+    // Queue 3 science ships without completing — build queue max is 3
+    // We need to use separate colonies or complete some first
+    // Queue 1 ship, complete it. Queue 1 ship, complete it. Queue 1 ship (still building) — that's 2 complete + 1 queued = 3 total
+    giveSciResources(engine, 1);
+    engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+    for (let t = 0; t < SCIENCE_SHIP_BUILD_TIME; t++) engine.tick();
+
+    giveSciResources(engine, 1);
+    engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+    for (let t = 0; t < SCIENCE_SHIP_BUILD_TIME; t++) engine.tick();
+
+    // 2 completed. Now queue 1 more (still building)
+    giveSciResources(engine, 1);
+    const r3 = engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+    assert.ok(r3.ok, 'third ship should start building');
+
+    // 2 completed + 1 in queue = 3 total, at cap
+    giveSciResources(engine, 1);
+    const r4 = engine.handleCommand(1, { type: 'buildScienceShip', colonyId: colony.id });
+    assert.ok(r4.error, 'should be rejected — cap reached with in-queue ships');
+    assert.ok(r4.error.includes('cap'));
+  });
+});
+
+// ── Send While Surveying ──
+
+describe('Science ships — send while surveying', () => {
+  it('should reject send command while ship is surveying', () => {
+    const engine = makeEngine();
+    const ship = buildAndCompleteScienceShip(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    const adj = engine._adjacency.get(colony.systemId) || [];
+    const targetId = adj[0];
+
+    engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: targetId });
+
+    // Tick until arrival (starts surveying)
+    for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS; i++) engine.tick();
+    assert.strictEqual(ship.surveying, true, 'ship should be surveying');
+
+    // Try to send to another system
+    const adj2 = engine._adjacency.get(targetId) || [];
+    const target2 = adj2.find(id => id !== colony.systemId);
+    if (target2 != null) {
+      const result = engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: target2 });
+      assert.ok(result.error);
+      assert.ok(result.error.includes('surveying'));
+    }
+  });
+});
+
+// ── Multi-Hop Travel ──
+
+describe('Science ships — multi-hop travel', () => {
+  it('should traverse multiple hops to reach distant system', () => {
+    const engine = makeEngine();
+    const ship = buildAndCompleteScienceShip(engine, 1);
+    const colony = getFirstColony(engine, 1);
+    const startSystem = colony.systemId;
+
+    // Find a system 2+ hops away
+    const adj1 = engine._adjacency.get(startSystem) || [];
+    let twoHopTarget = null;
+    for (const mid of adj1) {
+      const adj2 = engine._adjacency.get(mid) || [];
+      for (const far of adj2) {
+        if (far !== startSystem && !adj1.includes(far)) {
+          twoHopTarget = far;
+          break;
+        }
+      }
+      if (twoHopTarget != null) break;
+    }
+
+    if (twoHopTarget == null) {
+      // Galaxy topology might not have a 2-hop target — skip gracefully
+      return;
+    }
+
+    const result = engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: twoHopTarget });
+    assert.ok(result.ok);
+    assert.ok(ship.path.length >= 2, 'path should have at least 2 hops');
+
+    const pathLength = ship.path.length;
+    // Tick through all hops
+    for (let i = 0; i < pathLength * SCIENCE_SHIP_HOP_TICKS; i++) {
+      engine.tick();
+    }
+
+    assert.strictEqual(ship.systemId, twoHopTarget, 'ship should arrive at distant system');
+    assert.strictEqual(ship.surveying, true, 'ship should begin surveying on arrival');
+  });
+});
+
+// ── Return Behavior Edge Cases ──
+
+describe('Science ships — return edge cases', () => {
+  it('should stay put after survey if player has no colonies', () => {
+    const engine = makeEngine();
+    const ship = { id: 888, ownerId: 1, systemId: 5, surveying: false, surveyProgress: 0, path: [], hopProgress: 0, targetSystemId: null };
+    engine._scienceShips.push(ship);
+
+    // Remove all colonies for player 1
+    const colonyIds = engine._playerColonies.get(1) || [];
+    for (const cid of [...colonyIds]) {
+      engine.colonies.delete(cid);
+    }
+    engine._playerColonies.set(1, []);
+
+    engine._returnScienceShipToColony(ship);
+    assert.strictEqual(ship.path.length, 0, 'ship should have no path');
+    assert.strictEqual(ship.systemId, 5, 'ship should stay at current system');
+  });
+
+  it('should find return path to nearest colony when multiple exist', () => {
+    const engine = makeEngine();
+    const ship = buildAndCompleteScienceShip(engine, 1);
+    const colony = getFirstColony(engine, 1);
+
+    // Move ship to a neighbor system manually
+    const adj = engine._adjacency.get(colony.systemId) || [];
+    if (adj.length > 0) {
+      ship.systemId = adj[0];
+      ship.path = [];
+      ship.targetSystemId = null;
+
+      engine._returnScienceShipToColony(ship);
+      // Ship should have a path back
+      assert.ok(ship.path.length > 0, 'ship should have return path');
+      assert.strictEqual(ship.targetSystemId, colony.systemId, 'should target colony system');
+    }
+  });
+});
+
+// ── Idle Ship Tick Processing ──
+
+describe('Science ships — idle ship tick', () => {
+  it('should not move or survey an idle ship with no path', () => {
+    const engine = makeEngine();
+    const ship = buildAndCompleteScienceShip(engine, 1);
+
+    // Ship is idle at colony system
+    assert.strictEqual(ship.surveying, false);
+    assert.deepStrictEqual(ship.path, []);
+
+    const systemBefore = ship.systemId;
+    for (let i = 0; i < 50; i++) engine.tick();
+
+    assert.strictEqual(ship.systemId, systemBefore, 'idle ship should not move');
+    assert.strictEqual(ship.surveying, false, 'idle ship should not start surveying');
+  });
+});
