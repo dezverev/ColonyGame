@@ -256,3 +256,30 @@ Each entry records an iteration of automated development.
 - Growth tests no longer need extra housing districts added since there's natural headroom
 
 **Next:** Generator cost parity (150→100 minerals), then variable build times
+
+---
+
+## Entry 9 — 2026-03-11 — Balance Fix: Generator Cost Parity
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Reduced Generator district cost from 150 to 100 minerals in DISTRICT_DEFS
+- All 4 basic districts (Housing, Generator, Mining, Agriculture) now cost a uniform 100 minerals
+- Industrial and Research remain at 200 minerals as clear "tier 2" districts
+- Added 3 new tests validating cost parity across tiers
+
+**Files changed:**
+- `server/game-engine.js` — Generator cost 150→100
+- `src/tests/game-engine.test.js` — 3 new generator cost parity tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 89 total (68 game-engine + 12 room-manager + 6 integration + 3 performance). All passing.
+
+**Key decisions:**
+- Uniform 100-mineral cost for basic districts simplifies early-game decisions — players compare district output, not cost
+- Clear tier separation: 100 minerals (basic) vs 200 minerals (advanced) makes progression intuitive
+
+**Next:** Variable build times (Housing 200, basic 300, advanced 400), then colony idle event notifications

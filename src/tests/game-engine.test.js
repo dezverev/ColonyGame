@@ -608,6 +608,36 @@ describe('DISTRICT_DEFS', () => {
   });
 });
 
+describe('Generator cost parity', () => {
+  it('generator costs 100 minerals — same as housing, mining, agriculture', () => {
+    const basicDistricts = ['housing', 'generator', 'mining', 'agriculture'];
+    for (const type of basicDistricts) {
+      assert.strictEqual(DISTRICT_DEFS[type].cost.minerals, 100, `${type} should cost 100 minerals`);
+    }
+  });
+
+  it('tier 2 districts (industrial, research) cost 200 minerals', () => {
+    assert.strictEqual(DISTRICT_DEFS.industrial.cost.minerals, 200);
+    assert.strictEqual(DISTRICT_DEFS.research.cost.minerals, 200);
+  });
+
+  it('player can build 3 generators with 300 starting minerals', () => {
+    const players = new Map();
+    players.set(1, { id: 1, name: 'P1', ready: true, isHost: true });
+    const room = { id: 'r', name: 'R', hostId: 1, maxPlayers: 2, status: 'playing', players };
+    const engine = new GameEngine(room);
+    const colony = engine.colonies.values().next().value;
+
+    const r1 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    const r2 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    const r3 = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    assert.strictEqual(r1.ok, true);
+    assert.strictEqual(r2.ok, true);
+    assert.strictEqual(r3.ok, true);
+    assert.strictEqual(engine.playerStates.get(1).resources.minerals, 0);
+  });
+});
+
 describe('PLANET_TYPES', () => {
   it('has habitability values for all types', () => {
     const expected = ['continental', 'ocean', 'tropical', 'arctic', 'desert', 'arid', 'barren', 'molten', 'gasGiant'];
