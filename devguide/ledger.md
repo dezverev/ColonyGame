@@ -314,3 +314,32 @@ Each entry records an iteration of automated development.
 - practiceMode flag stored on room object and exposed in serialization so client can show "Practice" badge
 
 **Next:** CLIENT UX SPRINT 2/5 — Stale client cleanup (strip RTS rendering, add colony 4X containers)
+
+---
+
+## Entry 11 — 2026-03-11 — Balance Fix: Variable Build Times
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Tiered build times: Housing 200 ticks (20 sec), Generator/Mining/Agriculture 300 ticks (30 sec), Industrial/Research 400 ticks (40 sec)
+- Quick Housing lets players unblock pop growth fast; slower advanced districts create anticipation
+- 50% new-colony discount still applies correctly to all tiers (Housing=100, basic=150, advanced=200)
+- Updated existing build time tests, added 5 new variable build time tests
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS buildTime values (housing 300→200, industrial/research 300→400)
+- `src/tests/game-engine.test.js` — updated 2 existing tests, added 5 new variable build time tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 101 total (73 game-engine + 18 room-manager + 7 integration + 3 performance). All passing.
+
+**Key decisions:**
+- Housing is fastest (200 ticks) because it's the growth-unblocking district — players shouldn't wait long to fix a housing bottleneck
+- Basic resource districts stay at 300 ticks (unchanged) as the default baseline
+- Advanced districts at 400 ticks create meaningful anticipation for the more powerful alloy/research production
+- Three clear tiers: fast (200), standard (300), slow (400) — intuitive progression
+
+**Next:** Colony idle event notifications, then energy deficit consequences

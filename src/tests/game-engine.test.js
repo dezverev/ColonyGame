@@ -147,8 +147,8 @@ describe('GameEngine — District Building', () => {
     engine.playerStates.get(1).resources.minerals = 10000;
 
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
-    // housing buildTime is 300, 50% = 150
-    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 150);
+    // housing buildTime is 200, 50% = 100
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 100);
   });
 
   it('districts after the first 3 build at full time', () => {
@@ -159,8 +159,8 @@ describe('GameEngine — District Building', () => {
 
     engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
     const colony = engine.colonies.get(colonyId);
-    // Should be full build time (300) since colony already has 3 districts
-    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 300);
+    // Should be full build time (200) since colony already has 3+ districts (housing buildTime=200)
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200);
   });
 });
 
@@ -635,6 +635,78 @@ describe('Generator cost parity', () => {
     assert.strictEqual(r2.ok, true);
     assert.strictEqual(r3.ok, true);
     assert.strictEqual(engine.playerStates.get(1).resources.minerals, 0);
+  });
+});
+
+describe('Variable build times', () => {
+  it('housing builds faster than basic districts (200 vs 300 ticks)', () => {
+    assert.strictEqual(DISTRICT_DEFS.housing.buildTime, 200);
+    assert.strictEqual(DISTRICT_DEFS.generator.buildTime, 300);
+    assert.strictEqual(DISTRICT_DEFS.mining.buildTime, 300);
+    assert.strictEqual(DISTRICT_DEFS.agriculture.buildTime, 300);
+  });
+
+  it('advanced districts build slower than basic districts (400 vs 300 ticks)', () => {
+    assert.strictEqual(DISTRICT_DEFS.industrial.buildTime, 400);
+    assert.strictEqual(DISTRICT_DEFS.research.buildTime, 400);
+  });
+
+  it('housing completes in 200 ticks at full build time', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    engine.playerStates.get(1).resources.minerals = 10000;
+
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    const colony = engine.colonies.get(colonyId);
+    // Housing buildTime=200, colony has 4+ districts so no discount
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200);
+
+    // After 199 ticks, still building
+    for (let i = 0; i < 199; i++) engine.tick();
+    assert.strictEqual(colony.buildQueue.length, 1);
+
+    // Tick 200 completes it
+    engine.tick();
+    assert.strictEqual(colony.buildQueue.length, 0);
+  });
+
+  it('industrial completes in 400 ticks at full build time', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    engine.playerStates.get(1).resources.minerals = 10000;
+
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'industrial' });
+    const colony = engine.colonies.get(colonyId);
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 400);
+
+    // After 399 ticks, still building
+    for (let i = 0; i < 399; i++) engine.tick();
+    assert.strictEqual(colony.buildQueue.length, 1);
+
+    // Tick 400 completes it
+    engine.tick();
+    assert.strictEqual(colony.buildQueue.length, 0);
+  });
+
+  it('50% new-colony discount applies to variable build times', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).resources.minerals = 10000;
+    engine.playerStates.get(1).resources.energy = 10000;
+
+    // Create a fresh colony with no districts
+    const colony = engine._createColony(1, 'New World', { size: 16, type: 'desert', habitability: 60 });
+
+    // Housing: 200 * 0.5 = 100
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 100);
+
+    // Industrial: 400 * 0.5 = 200
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'industrial' });
+    assert.strictEqual(colony.buildQueue[1].ticksRemaining, 200);
+
+    // Research: 400 * 0.5 = 200
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'research' });
+    assert.strictEqual(colony.buildQueue[2].ticksRemaining, 200);
   });
 });
 
