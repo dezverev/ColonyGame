@@ -842,14 +842,28 @@
   }
 
   // ── Colony list sidebar ──
+  let _lastColonyListKey = '';
+
   function _updateColonyList() {
     const sidebar = document.getElementById('colony-list-sidebar');
     if (!sidebar || !gameState) return;
     const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
     if (myColonies.length <= 1) {
       sidebar.classList.add('hidden');
+      _lastColonyListKey = '';
       return;
     }
+
+    // Fingerprint: colony count + active index + pop counts + ship states
+    const myShips = (gameState.colonyShips || []).filter(s => s.ownerId === gameState.yourId);
+    const idle = myShips.filter(s => !s.path || s.path.length === 0).length;
+    const transit = myShips.length - idle;
+    let key = _viewingColonyIndex + '|';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ',';
+    key += '|' + idle + ':' + transit;
+    if (key === _lastColonyListKey) return;
+    _lastColonyListKey = key;
+
     sidebar.classList.remove('hidden');
     sidebar.innerHTML = '<div class="colony-list-title">Colonies</div>';
     myColonies.forEach((col, idx) => {
@@ -865,17 +879,15 @@
           window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _lastQueueKey = ''; // force queue rebuild
+        _lastColonyListKey = ''; // force sidebar rebuild
         _updateColonyList();
       });
       sidebar.appendChild(entry);
     });
     // Colony ship count
-    const myShips = (gameState.colonyShips || []).filter(s => s.ownerId === gameState.yourId);
     if (myShips.length > 0) {
       const shipInfo = document.createElement('div');
       shipInfo.className = 'colony-list-ships';
-      const idle = myShips.filter(s => !s.path || s.path.length === 0).length;
-      const transit = myShips.length - idle;
       shipInfo.textContent = `Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
       sidebar.appendChild(shipInfo);
     }
