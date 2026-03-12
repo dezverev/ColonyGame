@@ -14,6 +14,8 @@
     housingFull: 'warning',
     foodDeficit: 'crisis',
     districtDisabled: 'crisis',
+    surveyComplete: 'positive',
+    anomalyDiscovered: 'positive',
   };
 
   function formatGameEvent(msg) {
@@ -21,6 +23,7 @@
     switch (msg.eventType) {
       case 'constructionComplete':
         if (d.districtType === 'colonyShip') return 'Colony Ship built at ' + (d.colonyName || 'colony') + ' — ready to launch!';
+        if (d.districtType === 'scienceShip') return 'Science Ship built at ' + (d.colonyName || 'colony') + ' — ready to explore!';
         return 'Construction complete: ' + (d.districtType || 'district') + ' on ' + (d.colonyName || 'colony');
       case 'colonyFounded':
         if (d.colonyId) return 'Colony founded in ' + (d.systemName || 'system') + '!';
@@ -41,6 +44,10 @@
         return 'Food deficit on ' + (d.colonyName || 'colony') + ' — pops are starving!';
       case 'districtDisabled':
         return 'Energy deficit: ' + (d.districtType || 'district') + ' disabled on ' + (d.colonyName || 'colony');
+      case 'surveyComplete':
+        return 'Survey complete: ' + (d.systemName || 'system') + (d.discoveries && d.discoveries.length > 0 ? ' — ' + d.discoveries.length + ' anomal' + (d.discoveries.length === 1 ? 'y' : 'ies') + ' found!' : '');
+      case 'anomalyDiscovered':
+        return 'Anomaly: ' + (d.anomalyLabel || 'Unknown') + ' discovered at ' + (d.systemName || 'system') + '!';
       default:
         return null;
     }

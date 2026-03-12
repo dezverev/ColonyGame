@@ -43,6 +43,21 @@ const COLONY_SHIP_HOP_TICKS = 50;   // 5 seconds per hyperlane hop
 const MAX_COLONIES = 5;
 const COLONY_SHIP_STARTING_POPS = 2;
 
+// Science ship constants
+const SCIENCE_SHIP_COST = { minerals: 100, alloys: 50 };
+const SCIENCE_SHIP_BUILD_TIME = 300; // 30 seconds at 10Hz
+const SCIENCE_SHIP_HOP_TICKS = 30;  // 3 seconds per hyperlane hop (faster than colony ships)
+const MAX_SCIENCE_SHIPS = 3;
+const SURVEY_TICKS = 100; // 10 seconds to survey a system
+const ANOMALY_CHANCE = 0.20; // 20% chance per planet
+const ANOMALY_TYPES = [
+  { type: 'ancientRuins', label: 'Ancient Ruins', reward: { research: { physics: 50, society: 50, engineering: 50 } } },
+  { type: 'mineralDeposit', label: 'Mineral Deposit', reward: { minerals: 100 } },
+  { type: 'habitableMoon', label: 'Habitable Moon', reward: { planetSizeBonus: 2 } },
+  { type: 'precursorArtifact', label: 'Precursor Artifact', reward: { influence: 25 } },
+  { type: 'derelictShip', label: 'Derelict Ship', reward: { alloys: 50 } },
+];
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -126,6 +141,8 @@ class GameEngine {
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
+    this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
     this.onGameOver = options.onGameOver || null;
@@ -465,6 +482,27 @@ class GameEngine {
             colonyId: colony.id,
             colonyName: colony.name,
             districtType: 'colonyShip',
+            shipId,
+            playerName: ownerName,
+          }, true);
+        } else if (item.type === 'scienceShip') {
+          // Spawn science ship at colony's system
+          const shipId = this._nextId();
+          this._scienceShips.push({
+            id: shipId,
+            ownerId: colony.ownerId,
+            systemId: colony.systemId,
+            targetSystemId: null,
+            path: [],
+            hopProgress: 0,
+            surveying: false,
+            surveyProgress: 0,
+          });
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+          this._emitEvent('constructionComplete', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            districtType: 'scienceShip',
             shipId,
             playerName: ownerName,
           }, true);
@@ -814,6 +852,165 @@ class GameEngine {
     this._vpCacheTick = -1;
   }
 
+  // Process science ship movement and surveying each tick
+  _processScienceShipMovement() {
+    const completed = [];
+    for (const ship of this._scienceShips) {
+      // Ship is surveying a system
+      if (ship.surveying) {
+        ship.surveyProgress++;
+        if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
+        if (ship.surveyProgress >= SURVEY_TICKS) {
+          completed.push(ship);
+        }
+        continue;
+      }
+
+      // Ship is traveling
+      if (!ship.path || ship.path.length === 0) continue;
+
+      ship.hopProgress++;
+      if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
+
+      if (ship.hopProgress >= SCIENCE_SHIP_HOP_TICKS) {
+        ship.systemId = ship.path.shift();
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(ship.ownerId);
+
+        if (ship.path.length === 0) {
+          // Arrived at target — begin surveying
+          ship.surveying = true;
+          ship.surveyProgress = 0;
+        }
+      }
+    }
+
+    // Process completed surveys
+    for (const ship of completed) {
+      this._completeSurvey(ship);
+    }
+  }
+
+  // Complete a survey and discover anomalies
+  _completeSurvey(ship) {
+    const system = this.galaxy ? this.galaxy.systems[ship.systemId] : null;
+    if (!system) return;
+
+    // Mark system as surveyed for this player (persistent fog penetration)
+    if (!this._surveyedSystems.has(ship.ownerId)) {
+      this._surveyedSystems.set(ship.ownerId, new Set());
+    }
+    this._surveyedSystems.get(ship.ownerId).add(ship.systemId);
+
+    // Check each planet for anomalies
+    const discoveries = [];
+    const playerState = this.playerStates.get(ship.ownerId);
+    if (system.planets) {
+      for (const planet of system.planets) {
+        // Seeded random based on system + planet orbit for determinism
+        const roll = this._seededRandom(ship.systemId * 100 + planet.orbit);
+        if (roll < ANOMALY_CHANCE) {
+          const anomalyIdx = Math.floor(this._seededRandom(ship.systemId * 100 + planet.orbit + 50) * ANOMALY_TYPES.length);
+          const anomaly = ANOMALY_TYPES[anomalyIdx];
+
+          // Apply reward
+          if (anomaly.reward.research && playerState) {
+            for (const [track, amount] of Object.entries(anomaly.reward.research)) {
+              playerState.resources.research = playerState.resources.research || { physics: 0, society: 0, engineering: 0 };
+              playerState.resources.research[track] = (playerState.resources.research[track] || 0) + amount;
+            }
+          }
+          if (anomaly.reward.minerals && playerState) {
+            playerState.resources.minerals += anomaly.reward.minerals;
+          }
+          if (anomaly.reward.alloys && playerState) {
+            playerState.resources.alloys += anomaly.reward.alloys;
+          }
+          if (anomaly.reward.influence && playerState) {
+            playerState.resources.influence += anomaly.reward.influence;
+          }
+          if (anomaly.reward.planetSizeBonus) {
+            planet.size += anomaly.reward.planetSizeBonus;
+          }
+
+          discoveries.push({ planetOrbit: planet.orbit, anomalyType: anomaly.type, anomalyLabel: anomaly.label });
+        }
+      }
+    }
+
+    // Emit survey complete event
+    const ownerName = playerState ? playerState.name : 'Unknown';
+    this._emitEvent('surveyComplete', ship.ownerId, {
+      systemId: ship.systemId,
+      systemName: system.name,
+      playerName: ownerName,
+      discoveries,
+    }, true);
+
+    // Emit individual anomaly events for each discovery
+    for (const d of discoveries) {
+      this._emitEvent('anomalyDiscovered', ship.ownerId, {
+        systemName: system.name,
+        anomalyType: d.anomalyType,
+        anomalyLabel: d.anomalyLabel,
+        planetOrbit: d.planetOrbit,
+        playerName: ownerName,
+      });
+    }
+
+    // Reset ship to idle at surveyed system
+    ship.surveying = false;
+    ship.surveyProgress = 0;
+    ship.targetSystemId = null;
+
+    // Return to nearest colony
+    this._returnScienceShipToColony(ship);
+
+    this._dirtyPlayers.add(ship.ownerId);
+    this._invalidateStateCache();
+    this._vpCacheTick = -1;
+  }
+
+  // Simple seeded random for survey determinism (hash-based, not stored)
+  _seededRandom(seed) {
+    let x = Math.sin(seed * 9301 + 49297) * 49297;
+    return x - Math.floor(x);
+  }
+
+  // Send science ship back to nearest owned colony after survey
+  _returnScienceShipToColony(ship) {
+    const colonyIds = this._playerColonies.get(ship.ownerId) || [];
+    if (colonyIds.length === 0) return; // no colonies, ship stays put
+
+    // Find nearest colony by BFS hop count
+    let nearestSystemId = null;
+    let nearestDist = Infinity;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      const path = this._findPath(ship.systemId, colony.systemId);
+      if (path && path.length < nearestDist) {
+        nearestDist = path.length;
+        nearestSystemId = colony.systemId;
+      }
+    }
+
+    if (nearestSystemId != null && nearestDist > 0) {
+      const path = this._findPath(ship.systemId, nearestSystemId);
+      if (path) {
+        ship.targetSystemId = nearestSystemId;
+        ship.path = path;
+        ship.hopProgress = 0;
+      }
+    }
+  }
+
+  // Remove a science ship by reference
+  _removeScienceShip(ship) {
+    const idx = this._scienceShips.indexOf(ship);
+    if (idx !== -1) this._scienceShips.splice(idx, 1);
+  }
+
   // Get district output multipliers from completed techs (cached per player)
   _getTechModifiers(playerState) {
     if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1 };
@@ -1095,6 +1292,9 @@ class GameEngine {
     // Process colony ship movement every tick
     this._processColonyShipMovement();
 
+    // Process science ship movement and surveying every tick
+    this._processScienceShipMovement();
+
     // Pop growth every tick
     this._processPopGrowth();
 
@@ -1211,7 +1411,7 @@ class GameEngine {
         const qIdx = colony.buildQueue.findIndex(q => q.id === districtId);
         if (qIdx !== -1) {
           const qItem = colony.buildQueue[qIdx];
-          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
+          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : qItem.type === 'scienceShip' ? SCIENCE_SHIP_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
           if (costTable) {
             const player = this.playerStates.get(playerId);
             for (const [resource, amount] of Object.entries(costTable)) {
@@ -1294,6 +1494,86 @@ class GameEngine {
         const flyingShips = this._colonyShips.filter(s => s.ownerId === playerId && s.id !== shipId && s.path && s.path.length > 0).length;
         if (colCount + flyingShips + 1 > MAX_COLONIES) {
           return { error: `Colony cap reached (max ${MAX_COLONIES})` };
+        }
+
+        // Find path via BFS
+        const path = this._findPath(ship.systemId, targetSysId);
+        if (!path) return { error: 'No path to target system' };
+
+        ship.targetSystemId = targetSysId;
+        ship.path = path;
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'buildScienceShip': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Check science ship cap
+        const ownedScienceShips = this._scienceShips.filter(s => s.ownerId === playerId).length;
+        const buildingShips = [];
+        for (const [, c] of this.colonies) {
+          if (c.ownerId === playerId) {
+            for (const q of c.buildQueue) {
+              if (q.type === 'scienceShip') buildingShips.push(q);
+            }
+          }
+        }
+        if (ownedScienceShips + buildingShips.length >= MAX_SCIENCE_SHIPS) {
+          return { error: `Science ship cap reached (max ${MAX_SCIENCE_SHIPS})` };
+        }
+
+        // Check build queue
+        if (colony.buildQueue.length >= 3) {
+          return { error: 'Build queue full (max 3)' };
+        }
+
+        // Check resources
+        const sciState = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(SCIENCE_SHIP_COST)) {
+          if (!Number.isFinite(sciState.resources[resource]) || sciState.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(SCIENCE_SHIP_COST)) {
+          sciState.resources[resource] -= amount;
+        }
+
+        const sciId = this._nextId();
+        colony.buildQueue.push({ id: sciId, type: 'scienceShip', ticksRemaining: SCIENCE_SHIP_BUILD_TIME });
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true, id: sciId };
+      }
+
+      case 'sendScienceShip': {
+        const { shipId, targetSystemId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
+
+        const targetSysId = Number(targetSystemId);
+        const ship = this._scienceShips.find(s => s.id === shipId && s.ownerId === playerId);
+        if (!ship) return { error: 'Science ship not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+        if (ship.surveying) return { error: 'Ship is currently surveying' };
+
+        // Validate target system exists
+        if (!this.galaxy || !this.galaxy.systems[targetSysId]) {
+          return { error: 'Invalid target system' };
+        }
+
+        // Check if already surveyed by this player
+        const surveyed = this._surveyedSystems.get(playerId);
+        if (surveyed && surveyed.has(targetSysId)) {
+          return { error: 'System already surveyed' };
         }
 
         // Find path via BFS
@@ -1397,6 +1677,19 @@ class GameEngine {
       path: s.path || [],
       hopProgress: s.hopProgress,
     }));
+    state.scienceShips = this._scienceShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path || [],
+      hopProgress: s.hopProgress,
+      surveying: s.surveying || false,
+      surveyProgress: s.surveyProgress || 0,
+    }));
+    // Surveyed systems per player
+    state.surveyedSystems = {};
+    for (const [pid, sysSet] of this._surveyedSystems) {
+      state.surveyedSystems[pid] = [...sysSet];
+    }
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
@@ -1457,6 +1750,21 @@ class GameEngine {
       path: s.path || [],
       hopProgress: s.hopProgress,
     }));
+
+    // Include science ships
+    state.scienceShips = this._scienceShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path || [],
+      hopProgress: s.hopProgress,
+      surveying: s.surveying || false,
+      surveyProgress: s.surveyProgress || 0,
+    }));
+    // Surveyed systems — own player's surveyed set
+    state.surveyedSystems = {};
+    for (const [pid, sysSet] of this._surveyedSystems) {
+      state.surveyedSystems[pid] = [...sysSet];
+    }
 
     // Include match timer info
     if (this._matchTimerEnabled) {
@@ -1542,4 +1850,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, generateGalaxy, assignStartingSystems };

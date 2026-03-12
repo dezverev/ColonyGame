@@ -531,3 +531,17 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   cursor: pointer; font-size: 0.8rem; text-align: center;
 }
 .system-send-ship-btn:hover { background: #00ffaa; color: #000; }
+
+.system-send-sci-btn {
+  display: block; width: 100%; margin-top: 0.4rem;
+  padding: 0.4rem; background: #0a2530; color: #00e5ff;
+  border: 1px solid #00e5ff; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.system-send-sci-btn:hover { background: #00e5ff; color: #000; }
+
+.system-surveyed-badge {
+  display: inline-block; margin-top: 0.3rem; padding: 0.2rem 0.5rem;
+  background: rgba(0, 229, 255, 0.15); color: #00e5ff;
+  border: 1px solid #00e5ff44; border-radius: 3px; font-size: 0.75rem;
+}

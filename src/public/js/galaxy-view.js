@@ -21,6 +21,8 @@
   let onSystemSelect = null;   // callback: (system) => void
   let colonyShipMeshes = [];   // active colony ship marker meshes
   let colonyShipPool = [];     // reusable colony ship mesh pool
+  let scienceShipMeshes = [];  // active science ship marker meshes
+  let scienceShipPool = [];    // reusable science ship mesh pool
 
   // Fog of war state
   let _adjacency = null;       // adjacency list built from hyperlanes
@@ -147,6 +149,12 @@
     _matCache.colonyShip = new THREE.MeshBasicMaterial({
       color: 0x00ffaa, transparent: true, opacity: 0.9,
     });
+
+    // Science ship: smaller diamond, cyan
+    _geoCache.scienceShip = new THREE.OctahedronGeometry(2.0, 0);
+    _matCache.scienceShip = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff, transparent: true, opacity: 0.9,
+    });
   }
 
   // ── Build galaxy scene ──
@@ -210,6 +218,10 @@
     colonyShipMeshes = [];
     for (const mesh of colonyShipPool) scene.remove(mesh);
     colonyShipPool = [];
+    for (const mesh of scienceShipMeshes) scene.remove(mesh);
+    scienceShipMeshes = [];
+    for (const mesh of scienceShipPool) scene.remove(mesh);
+    scienceShipPool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -540,6 +552,71 @@
     }
   }
 
+  function updateScienceShips(ships) {
+    if (!scene || !galaxyData) return;
+
+    // Return active meshes to pool
+    for (const mesh of scienceShipMeshes) {
+      mesh.visible = false;
+      scienceShipPool.push(mesh);
+    }
+    scienceShipMeshes = [];
+
+    if (!ships || ships.length === 0) return;
+
+    const now = performance.now();
+    for (const ship of ships) {
+      const playerColor = _playerColorMap[ship.ownerId] || '#00e5ff';
+      const matKey = 'scienceShip_' + playerColor;
+      if (!_matCache[matKey]) {
+        _matCache[matKey] = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
+        });
+      }
+
+      let mesh;
+      if (scienceShipPool.length > 0) {
+        mesh = scienceShipPool.pop();
+        mesh.material = _matCache[matKey];
+        mesh.visible = true;
+      } else {
+        mesh = new THREE.Mesh(_geoCache.scienceShip, _matCache[matKey]);
+        scene.add(mesh);
+      }
+
+      const currentSys = galaxyData.systems[ship.systemId];
+      if (!currentSys) { mesh.visible = false; scienceShipPool.push(mesh); continue; }
+
+      if (ship.path && ship.path.length > 0 && !ship.surveying) {
+        const nextSys = galaxyData.systems[ship.path[0]];
+        if (nextSys) {
+          const t = ship.hopProgress / 30; // SCIENCE_SHIP_HOP_TICKS = 30
+          mesh.position.set(
+            currentSys.x + (nextSys.x - currentSys.x) * t,
+            (currentSys.y || 0) + 4 + ((nextSys.y || 0) - (currentSys.y || 0)) * t,
+            currentSys.z + (nextSys.z - currentSys.z) * t,
+          );
+        } else {
+          mesh.position.set(currentSys.x, (currentSys.y || 0) + 4, currentSys.z);
+        }
+      } else if (ship.surveying) {
+        // Orbiting during survey — circle around system
+        const angle = now * 0.003;
+        mesh.position.set(
+          currentSys.x + Math.cos(angle) * 6,
+          (currentSys.y || 0) + 4,
+          currentSys.z + Math.sin(angle) * 6,
+        );
+      } else {
+        // Idle at system — offset slightly
+        mesh.position.set(currentSys.x - 5, (currentSys.y || 0) + 5, currentSys.z - 5);
+      }
+
+      mesh.rotation.y = now * 0.003;
+      scienceShipMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -586,6 +663,14 @@
 
     const ownedIds = FoW.getOwnedSystemIds(colonies, myId);
     _knownSystemIds = FoW.computeVisibility(ownedIds, _adjacency);
+
+    // Add surveyed systems (persistent fog penetration from science ships)
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    if (gs && gs.surveyedSystems && gs.surveyedSystems[myId]) {
+      for (const sysId of gs.surveyedSystems[myId]) {
+        _knownSystemIds.add(sysId);
+      }
+    }
   }
 
   function _applyFog() {
@@ -713,6 +798,7 @@
     buildGalaxy,
     updateOwnership,
     updateColonyShips,
+    updateScienceShips,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,

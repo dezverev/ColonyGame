@@ -123,6 +123,8 @@
           players: msg.players,
           colonies: msg.colonies,
           colonyShips: msg.colonyShips || [],
+          scienceShips: msg.scienceShips || [],
+          surveyedSystems: msg.surveyedSystems || {},
           yourId: msg.yourId,
           matchTimerEnabled: msg.matchTimerEnabled || false,
           matchTicksRemaining: msg.matchTicksRemaining || 0,
@@ -157,6 +159,8 @@
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
           if (msg.colonyShips) gameState.colonyShips = msg.colonyShips;
+          if (msg.scienceShips) gameState.scienceShips = msg.scienceShips;
+          if (msg.surveyedSystems) gameState.surveyedSystems = msg.surveyedSystems;
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
@@ -170,6 +174,9 @@
           if (currentView === 'galaxy' && window.GalaxyView) {
             window.GalaxyView.updateOwnership(msg.colonies, msg.players);
             window.GalaxyView.updateColonyShips(gameState.colonyShips);
+            if (window.GalaxyView.updateScienceShips) {
+              window.GalaxyView.updateScienceShips(gameState.scienceShips);
+            }
           }
           // Update colony list sidebar
           _updateColonyList();
@@ -382,6 +389,7 @@
     switch (msg.eventType) {
       case 'constructionComplete':
         if (msg.districtType === 'colonyShip') return `${player} built a Colony Ship`;
+        if (msg.districtType === 'scienceShip') return `${player} built a Science Ship`;
         return `${player} built a ${msg.districtType} district on ${msg.colonyName || 'colony'}`;
       case 'popMilestone':
         return `${player}'s ${msg.colonyName || 'colony'} reached ${msg.pops} pops`;
@@ -389,6 +397,8 @@
         return `${player} founded a colony in ${msg.systemName || 'a system'}`;
       case 'researchComplete':
         return `${player} researched ${msg.techName || 'a technology'}`;
+      case 'surveyComplete':
+        return `${player} surveyed ${msg.systemName || 'a system'}` + (msg.discoveries && msg.discoveries.length > 0 ? ` — ${msg.discoveries.length} anomal${msg.discoveries.length === 1 ? 'y' : 'ies'} found!` : '');
       default:
         return null;
     }
@@ -539,6 +549,48 @@
       });
 
       buildMenuOptions.appendChild(shipBtn);
+    }
+
+    // Science Ship build option
+    {
+      const sciBtn = document.createElement('div');
+      sciBtn.className = 'build-option build-option-ship';
+      const sciCost = { minerals: 100, alloys: 50 };
+      let canAffordSci = true;
+      const sciCostParts = [];
+      for (const [res, amt] of Object.entries(sciCost)) {
+        sciCostParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordSci = false;
+      }
+      // Check science ship cap (3 max, including building)
+      const mySciShips = gameState && gameState.scienceShips ? gameState.scienceShips.filter(s => s.ownerId === gameState.yourId) : [];
+      let sciBuildingCount = 0;
+      if (gameState) {
+        const myCols = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        for (const c of myCols) {
+          for (const q of (c.buildQueue || [])) {
+            if (q.type === 'scienceShip') sciBuildingCount++;
+          }
+        }
+      }
+      const atSciCap = mySciShips.length + sciBuildingCount >= 3;
+      if (!canAffordSci || queueFull || atSciCap) sciBtn.classList.add('disabled');
+
+      sciBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#00e5ff"></div>' +
+        '<div class="build-option-name">Science Ship</div>' +
+        '<div class="build-option-prod">Explore &amp; survey systems</div>' +
+        `<div class="build-option-cost">${sciCostParts.join(', ')}</div>`;
+
+      sciBtn.addEventListener('click', () => {
+        if (sciBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildScienceShip', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(sciBtn);
     }
 
     buildMenu.classList.remove('hidden');
@@ -811,9 +863,9 @@
           colonyQueueHeader.classList.remove('hidden');
           colonyQueueList.innerHTML = '';
           for (const q of colony.buildQueue) {
-            const isShip = q.type === 'colonyShip';
-            const ui = isShip ? { label: 'Colony Ship', color: '#00ffaa' } : (DISTRICT_UI[q.type] || {});
-            const totalTicks = isShip ? 600 : _getBuildTime(q.type);
+            const isShip = q.type === 'colonyShip' || q.type === 'scienceShip';
+            const ui = q.type === 'colonyShip' ? { label: 'Colony Ship', color: '#00ffaa' } : q.type === 'scienceShip' ? { label: 'Science Ship', color: '#00e5ff' } : (DISTRICT_UI[q.type] || {});
+            const totalTicks = q.type === 'colonyShip' ? 600 : q.type === 'scienceShip' ? 300 : _getBuildTime(q.type);
             const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
             const secLeft = (q.ticksRemaining / 10).toFixed(0);
 
@@ -858,9 +910,12 @@
     const myShips = (gameState.colonyShips || []).filter(s => s.ownerId === gameState.yourId);
     const idle = myShips.filter(s => !s.path || s.path.length === 0).length;
     const transit = myShips.length - idle;
+    const mySciShipsAll = (gameState.scienceShips || []).filter(s => s.ownerId === gameState.yourId);
+    const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
+    const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
     for (const col of myColonies) key += col.id + ':' + col.pops + ',';
-    key += '|' + idle + ':' + transit;
+    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
 
@@ -1010,8 +1065,27 @@
           html += `<div class="system-owner">Claimed by: <span style="color:${ownerPlayer.color}">${ownerPlayer.name}</span></div>`;
         }
       }
-      html += '<div class="system-unexplored">Unexplored &mdash; send a colony ship to learn more</div>';
+      // "Send Science Ship" button on unknown systems
+      const idleSciShipsUnknown = (gameState.scienceShips || []).filter(
+        s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0) && !s.surveying
+      );
+      const alreadySurveyed = gameState.surveyedSystems && gameState.surveyedSystems[gameState.yourId] && gameState.surveyedSystems[gameState.yourId].includes(system.id);
+      if (idleSciShipsUnknown.length > 0 && !alreadySurveyed) {
+        html += `<button class="system-send-sci-btn">Send Science Ship to survey</button>`;
+      }
+      html += '<div class="system-unexplored">Unexplored &mdash; send a science ship to survey</div>';
       systemPanelBody.innerHTML = html;
+
+      // Wire science ship button on unknown system
+      const sciBtn2 = systemPanelBody.querySelector('.system-send-sci-btn');
+      if (sciBtn2) {
+        sciBtn2.addEventListener('click', () => {
+          const ship = idleSciShipsUnknown[0];
+          send({ type: 'sendScienceShip', shipId: ship.id, targetSystemId: system.id });
+          systemPanel.classList.add('hidden');
+        });
+      }
+
       systemPanel.classList.remove('hidden');
       return;
     }
@@ -1053,6 +1127,18 @@
       html += `<button class="system-send-ship-btn">Send Colony Ship here</button>`;
     }
 
+    // "Send Science Ship" button — if idle science ships and system not yet surveyed
+    const idleSciShips = (gameState.scienceShips || []).filter(
+      s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0) && !s.surveying
+    );
+    const isSurveyed = gameState.surveyedSystems && gameState.surveyedSystems[gameState.yourId] && gameState.surveyedSystems[gameState.yourId].includes(system.id);
+    if (idleSciShips.length > 0 && !isSurveyed) {
+      html += `<button class="system-send-sci-btn">Send Science Ship to survey</button>`;
+    }
+    if (isSurveyed) {
+      html += '<div class="system-surveyed-badge">Surveyed</div>';
+    }
+
     systemPanelBody.innerHTML = html;
 
     // Wire colony button
@@ -1074,6 +1160,16 @@
       sendShipBtn.addEventListener('click', () => {
         const ship = idleShips[0]; // send first idle ship
         send({ type: 'sendColonyShip', shipId: ship.id, targetSystemId: system.id });
+        systemPanel.classList.add('hidden');
+      });
+    }
+
+    // Wire send science ship button
+    const sendSciBtn = systemPanelBody.querySelector('.system-send-sci-btn');
+    if (sendSciBtn) {
+      sendSciBtn.addEventListener('click', () => {
+        const ship = idleSciShips[0];
+        send({ type: 'sendScienceShip', shipId: ship.id, targetSystemId: system.id });
         systemPanel.classList.add('hidden');
       });
     }

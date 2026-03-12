@@ -1061,3 +1061,53 @@ Each entry records an iteration of automated development.
 - Game-over breakdown shows both tech count and tech VP separately for clarity
 
 **Next:** Science ships (game-designer R29 priority #1) or colony crisis events (R29 priority #2)
+
+---
+
+## Entry 31 — 2026-03-12 — Science Ships + System Surveying + Anomaly Discovery
+
+**Phase:** 3 (Galaxy & Exploration) + Phase 2 (anomalies)
+**Status:** Complete
+
+**What was built:**
+- Science ship unit type: cheaper (100 minerals + 50 alloys), faster (30 ticks/hop = 3 sec vs colony ship 50 ticks/hop = 5 sec) exploration unit buildable from colony build queue
+- Max 3 science ships per player (counted across built + building)
+- Build time: 300 ticks (30 sec). Construction completion spawns idle ship at colony's system
+- `sendScienceShip` command: select idle ship, click system in galaxy panel to send. BFS shortest path along hyperlanes
+- Auto-survey on arrival: 100 ticks (10 sec). Survey completes automatically
+- 5 anomaly types discovered at 20% chance per planet: Ancient Ruins (+50 research per track), Mineral Deposit (+100 minerals), Habitable Moon (+2 planet size), Precursor Artifact (+25 influence), Derelict Ship (+50 alloys)
+- Anomaly rewards applied immediately on discovery. Seeded random for deterministic outcomes
+- Surveyed systems tracked per player (`_surveyedSystems` Map) — persistent fog penetration: surveyed systems stay revealed even when outside 2-hop visibility range
+- After surveying, science ship auto-returns to nearest colony via BFS pathfinding
+- Galaxy map rendering: cyan OctahedronGeometry diamond (smaller than colony ship green diamond). Orbiting animation during survey, interpolated movement during transit
+- Client: "Science Ship" build option in build menu (cyan accent), "Send Science Ship to survey" button in system panel (both known and unknown systems), "Surveyed" badge on surveyed systems
+- Build queue display handles scienceShip type with cyan color and 300-tick total
+- Toast notifications: scienceShip constructionComplete, surveyComplete (with anomaly count), anomalyDiscovered
+- Event ticker: surveyComplete broadcasts formatted with anomaly count
+- Fog of war integration: surveyed systems added to known set in galaxy-view.js _recomputeFog
+- 50% resource refund on build queue cancellation (same as colony ships)
+
+**Files changed:**
+- `server/game-engine.js` — SCIENCE_SHIP constants, ANOMALY_TYPES, _scienceShips array, _surveyedSystems Map, scienceShip construction completion, _processScienceShipMovement, _completeSurvey, _seededRandom, _returnScienceShipToColony, _removeScienceShip, buildScienceShip/sendScienceShip commands, scienceShip cancellation refund, serialization in getState/getPlayerState, tick integration, module.exports
+- `server/server.js` — buildScienceShip and sendScienceShip command routing
+- `src/public/js/app.js` — scienceShips/surveyedSystems in gameState, science ship build option, "Send Science Ship" button in system panel, scienceShip build queue display, event ticker surveyComplete format, galaxy view updateScienceShips call
+- `src/public/js/galaxy-view.js` — scienceShip geometry/material, scienceShipMeshes/Pool, updateScienceShips with transit/survey/idle animations, cleanup in _clearGalaxy, surveyed systems in fog recompute, module export
+- `src/public/js/toast-format.js` — surveyComplete, anomalyDiscovered, scienceShip constructionComplete formatting and TOAST_TYPE_MAP entries
+- `src/public/js/fog-of-war.js` — (unchanged, integration via galaxy-view.js)
+- `src/public/css/style.css` — .system-send-sci-btn, .system-surveyed-badge styles
+- `src/tests/science-ships.test.js` — **new** 37 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 552 total (37 new: 7 constants, 6 buildScienceShip validation, 2 construction completion, 6 sendScienceShip validation, 4 movement + survey, 4 serialization, 1 cancellation refund, 5 toast formatting, 2 toast type map). All passing.
+
+**Key decisions:**
+- Science ships follow colony ship pattern exactly (build queue, BFS pathfinding, hop-based movement) for consistency and maintainability
+- Seeded random for anomaly rolls (`_seededRandom`) uses system+planet orbit as seed — deterministic per system, no stored state needed
+- Anomaly rewards are immediate one-time bonuses (not ongoing) — keeps things simple, rewards exploration without requiring ongoing tracking
+- Max 3 ships (vs colony ship's max 5) balances exploration investment against expansion
+- Auto-return to nearest colony after survey — ships don't sit idle at remote systems, always ready for next command
+- Persistent fog penetration means surveyed systems stay visible even after ship leaves — rewards systematic exploration
+- Surveyed check prevents sending ships to already-surveyed systems — no wasted turns
+
+**Next:** Colony crisis events (game-designer R30 priority #1) or T3 tech expansion (R17-5)
