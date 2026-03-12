@@ -2164,3 +2164,157 @@ describe('GameEngine — Performance', () => {
     }
   });
 });
+
+// ── VP & Timer Edge Cases ──
+
+describe('GameEngine — VP Edge Cases', () => {
+  it('VP sums pops and districts across multiple colonies', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Create a second colony for player 1
+    const colony2 = engine._createColony(1, 'Second World', { size: 16, type: 'desert', habitability: 60 });
+    colony2.pops = 5;
+    engine._addBuiltDistrict(colony2, 'mining');
+    engine._addBuiltDistrict(colony2, 'generator');
+
+    // Player 1 now has: colony1 (8 pops, 4 districts) + colony2 (5 pops, 2 districts)
+    // Total pops = 13, total districts = 6
+    // VP = 13*2 + 6 + floor(50/50) + 0 = 26 + 6 + 1 = 33
+    const vp = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp, 33);
+  });
+
+  it('VP floors fractional alloy and research values', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.alloys = 99;  // 99/50 = 1.98 → floor = 1
+    state.resources.research = { physics: 33, society: 33, engineering: 33 }; // 99/100 = 0.99 → floor = 0
+
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 1 alloyVP, 0 researchVP
+    assert.strictEqual(vp, 16 + 4 + 1 + 0);
+  });
+
+  it('VP handles zero alloys correctly', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.playerStates.get(1).resources.alloys = 0;
+    const vp = engine._calcVictoryPoints(1);
+    // 8*2=16, 4 districts, 0 alloys, 0 research
+    assert.strictEqual(vp, 16 + 4 + 0 + 0);
+  });
+
+  it('VP cache is invalidated between ticks', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const vp1 = engine._calcVictoryPoints(1);
+
+    // Advance a tick — cache should be stale
+    engine.tick();
+    engine.playerStates.get(1).resources.alloys += 500; // +10 VP from alloys
+    const vp2 = engine._calcVictoryPoints(1);
+    assert.strictEqual(vp2, vp1 + 10, 'VP should reflect updated alloys after tick advances');
+  });
+});
+
+describe('GameEngine — Match Timer Edge Cases', () => {
+  it('commands are rejected after game over', () => {
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => {},
+    });
+    // Run game to completion
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.strictEqual(engine._gameOver, true);
+
+    const colony = Array.from(engine.colonies.values())[0];
+    const result = engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.ok(result.error, 'should reject command after game over');
+  });
+
+  it('_triggerGameOver is idempotent — does not fire onGameOver twice', () => {
+    let callCount = 0;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: () => { callCount++; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.strictEqual(callCount, 1);
+
+    // Call again directly — should be no-op
+    engine._triggerGameOver();
+    assert.strictEqual(callCount, 1, 'onGameOver should not fire again');
+  });
+
+  it('game over with tied VP — both players get scored', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    // Equalize resources so VP is the same
+    const p1 = engine.playerStates.get(1);
+    const p2 = engine.playerStates.get(2);
+    p1.resources.alloys = 50;
+    p2.resources.alloys = 50;
+
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.scores.length, 2);
+    // Both should have same VP (same pops, districts, alloys, research)
+    assert.strictEqual(gameOverData.scores[0].vp, gameOverData.scores[1].vp,
+      'Tied players should have equal VP');
+    assert.ok(gameOverData.winner, 'Should still pick a winner even in tie');
+  });
+
+  it('warning events fire for all players in multiplayer', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(2, { matchTimer: 10 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Advance to 2-minute warning
+    const targetTicks = engine._matchTicksRemaining - (2 * 60 * 10);
+    for (let i = 0; i < targetTicks; i++) engine.tick();
+    engine.tick();
+
+    const warnings = events.filter(e => e.eventType === 'matchWarning');
+    assert.strictEqual(warnings.length, 2, 'Both players should receive matchWarning');
+  });
+
+  it('warnings do not fire twice on repeated ticks', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onEvent: (evts) => events.push(...evts),
+    });
+    // Run entire game
+    for (let i = 0; i < 600; i++) engine.tick();
+
+    const matchWarnings = events.filter(e => e.eventType === 'matchWarning');
+    const countdowns = events.filter(e => e.eventType === 'finalCountdown');
+    assert.strictEqual(matchWarnings.length, 1, 'matchWarning should fire exactly once');
+    assert.strictEqual(countdowns.length, 1, 'finalCountdown should fire exactly once');
+  });
+
+  it('gameOver includes finalTick matching tick count at end', () => {
+    let gameOverData = null;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 1 }), {
+      tickRate: 10,
+      onGameOver: (data) => { gameOverData = data; },
+    });
+    for (let i = 0; i < 600; i++) engine.tick();
+    assert.ok(gameOverData);
+    assert.strictEqual(gameOverData.finalTick, engine.tickCount);
+  });
+
+  it('unlimited game never triggers game over even after many ticks', () => {
+    let gameOverFired = false;
+    const engine = new GameEngine(makeRoom(1, { matchTimer: 0 }), {
+      tickRate: 10,
+      onGameOver: () => { gameOverFired = true; },
+    });
+    // Run 10000 ticks — well beyond any timer
+    for (let i = 0; i < 10000; i++) engine.tick();
+    assert.strictEqual(gameOverFired, false, 'unlimited game should never end on timer');
+    assert.strictEqual(engine._gameOver, false);
+  });
+});

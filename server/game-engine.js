@@ -809,6 +809,7 @@ class GameEngine {
   }
 
   handleCommand(playerId, cmd) {
+    if (this._gameOver) return { error: 'Game is over' };
     switch (cmd.type) {
       case 'buildDistrict': {
         const { colonyId, districtType } = cmd;
