@@ -2,17 +2,17 @@
 # ══════════════════════════════════════════════════════════════
 # autopilot-rts.sh — Iterative RTS game development automation
 #
-# Each iteration:
-#   1. Reads the design roadmap and development ledger
-#   2. Picks the next unfinished task
-#   3. Implements it with tests
-#   4. Commits and updates the ledger
+# Each iteration runs a 3-phase pipeline:
+#   1. /rts-status      → assess current project state
+#   2. /game-designer   → analyze gameplay, recommend improvements,
+#                         add work items to design.md
+#   3. /rts-develop     → pick next task, implement, test, commit
 #
 # Usage:
 #   ./autopilot-rts.sh                    # run 1 iteration
 #   ./autopilot-rts.sh -n 3              # run 3 iterations
-#   ./autopilot-rts.sh --dry-run          # analyze only, don't implement
-#   ./autopilot-rts.sh --focus rendering  # focus on rendering tasks
+#   ./autopilot-rts.sh --dry-run          # phases 1+2 only, skip implementation
+#   ./autopilot-rts.sh --focus rendering  # focus game-designer + rts-develop
 # ══════════════════════════════════════════════════════════════
 
 set -euo pipefail
@@ -41,40 +41,40 @@ log() {
   echo ""
 }
 
-PREV_RESULT=""
-
 for ((i=1; i<=ITERATIONS; i++)); do
 
   if [[ "$ITERATIONS" -gt 1 ]]; then
     log "Iteration $i of $ITERATIONS"
   fi
 
+  # ── Phase 1: /rts-status ──────────────────────────────────
+  log "Phase 1: Project status..."
+  STATUS=$(claude --dangerously-skip-permissions -p "/rts-status" 2>&1) || true
+  echo "$STATUS"
+
+  # ── Phase 2: /game-designer ───────────────────────────────
+  log "Phase 2: Game design analysis..."
+  DESIGN=$(claude --dangerously-skip-permissions -p "/game-designer $FOCUS
+
+Current project status for context:
+$STATUS" 2>&1) || true
+  echo "$DESIGN"
+
   if [[ "$DRY_RUN" == true ]]; then
-    log "DRY RUN: Analyzing project state..."
-    claude --dangerously-skip-permissions -p "/rts-status"
-    log "Dry run complete."
+    log "Dry run complete — skipping implementation."
     continue
   fi
 
-  # ── Build context from previous iteration ──
-  if [[ -z "$PREV_RESULT" ]]; then
-    FULL_PROMPT="/rts-develop $FOCUS"
-  else
-    FULL_PROMPT="/rts-develop $FOCUS
+  # ── Phase 3: /rts-develop ─────────────────────────────────
+  log "Phase 3: Implementing next task..."
+  RESULT=$(claude --dangerously-skip-permissions -p "/rts-develop $FOCUS
 
-Previous iteration output (use for context):
-$PREV_RESULT"
-  fi
-
-  log "Running /rts-develop..."
-
-  PREV_RESULT=$(claude --dangerously-skip-permissions -p "$FULL_PROMPT" 2>&1) || true
-  echo "$PREV_RESULT"
+Game designer output (use for context on priorities):
+$DESIGN" 2>&1) || true
+  echo "$RESULT"
 
   log "Iteration $i complete."
 
 done
 
 log "All $ITERATIONS iteration(s) done."
-echo ""
-echo "Run ./autopilot-rts.sh --dry-run to see current status."
