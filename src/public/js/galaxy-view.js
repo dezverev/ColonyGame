@@ -17,6 +17,7 @@
   let highlightMesh = null;
   let hoverLabelEl = null;     // DOM element for system name on hover
   let onSystemSelect = null;   // callback: (system) => void
+  let colonyShipMeshes = [];   // colony ship marker meshes
 
   // Camera orbit state
   let orbitTheta = 0;          // horizontal angle (radians)
@@ -121,6 +122,12 @@
     _matCache.hyperlane = new THREE.LineBasicMaterial({
       color: 0x4466aa, transparent: true, opacity: 0.25,
     });
+
+    // Colony ship: diamond shape (octahedron)
+    _geoCache.colonyShip = new THREE.OctahedronGeometry(2.5, 0);
+    _matCache.colonyShip = new THREE.MeshBasicMaterial({
+      color: 0x00ffaa, transparent: true, opacity: 0.9,
+    });
   }
 
   // ── Build galaxy scene ──
@@ -196,6 +203,8 @@
     for (const ring of ownerRings) scene.remove(ring);
     ownerRings = [];
     ownerRingPool = [];
+    for (const mesh of colonyShipMeshes) scene.remove(mesh);
+    colonyShipMeshes = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -435,6 +444,56 @@
     if (onSystemSelect) onSystemSelect(null);
   }
 
+  // ── Colony ship rendering ──
+
+  function updateColonyShips(ships) {
+    if (!scene || !galaxyData) return;
+
+    // Remove old ship meshes
+    for (const mesh of colonyShipMeshes) scene.remove(mesh);
+    colonyShipMeshes = [];
+
+    if (!ships || ships.length === 0) return;
+
+    for (const ship of ships) {
+      const playerColor = _getPlayerColor(ship.ownerId);
+      const matKey = 'colonyShip_' + playerColor;
+      if (!_matCache[matKey]) {
+        _matCache[matKey] = new THREE.MeshBasicMaterial({
+          color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
+        });
+      }
+
+      const mesh = new THREE.Mesh(_geoCache.colonyShip, _matCache[matKey]);
+
+      // Position: interpolate between current system and next hop
+      const currentSys = galaxyData.systems[ship.systemId];
+      if (!currentSys) continue;
+
+      if (ship.path && ship.path.length > 0) {
+        const nextSys = galaxyData.systems[ship.path[0]];
+        if (nextSys) {
+          const t = ship.hopProgress / 50; // COLONY_SHIP_HOP_TICKS = 50
+          mesh.position.set(
+            currentSys.x + (nextSys.x - currentSys.x) * t,
+            (currentSys.y || 0) + ((nextSys.y || 0) - (currentSys.y || 0)) * t + 3,
+            currentSys.z + (nextSys.z - currentSys.z) * t
+          );
+        } else {
+          mesh.position.set(currentSys.x, (currentSys.y || 0) + 3, currentSys.z);
+        }
+      } else {
+        // Idle at system — offset slightly above and bob
+        mesh.position.set(currentSys.x + 5, (currentSys.y || 0) + 5, currentSys.z + 5);
+      }
+
+      // Slow rotation for visual flair
+      mesh.rotation.y = Date.now() * 0.002;
+      scene.add(mesh);
+      colonyShipMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -495,6 +554,7 @@
     init,
     buildGalaxy,
     updateOwnership,
+    updateColonyShips,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,

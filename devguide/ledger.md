@@ -909,3 +909,49 @@ Each entry records an iteration of automated development.
 - Non-habitable types (barren, molten, gasGiant) have no bonuses — consistent with them being uncolonizable
 
 **Next:** Colony ships — minimal expansion (R23 priority #2)
+
+---
+
+## Entry 27 — 2026-03-12 — Colony Ships + Multi-Colony Management
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- Colony ships: buildable from any colony build queue for 200 minerals + 100 food + 100 alloys, 600 ticks (60 sec) build time
+- Colony ship appears as movable unit at colony's system on galaxy map after construction
+- `sendColonyShip` command: select idle ship, click habitable planet in system panel to send. BFS shortest path along hyperlanes, 50 ticks (5 sec) per hop
+- On arrival: ship consumed, new colony founded with 2 pops on best habitable planet. Colony gets `isStartingColony = false` so first-3-districts build discount applies
+- Max 5 colonies per player enforced (counts both existing colonies and in-flight ships)
+- Colony list sidebar (left side): appears when player has 2+ colonies, shows colony name + pop count, click to switch view, keyboard shortcuts 1-5
+- Colony ship rendering on galaxy map: colored diamond markers (OctahedronGeometry) interpolated along hyperlane path during transit, idle ships offset near their system
+- System panel "Send Colony Ship here" button: appears when player has idle ships and target system has uncolonized habitable planet
+- Build menu "Colony Ship" option: appears below district types with green accent, grayed when at colony cap or insufficient resources
+- `colonyFounded` event broadcast to all players with toast notifications
+- Colony ship build queue cancellation with 50% resource refund
+- Shared resource pool across all colonies (Stellaris model)
+
+**Files changed:**
+- `server/game-engine.js` — COLONY_SHIP_COST/BUILD_TIME/HOP_TICKS/MAX_COLONIES/STARTING_POPS constants, _colonyShips array, _findPath BFS, _processColonyShipMovement, _foundColonyFromShip, buildColonyShip/sendColonyShip commands, colonyShip in construction completion, colonyShip cancellation refund, colony ships in getState/getPlayerState serialization
+- `server/server.js` — added buildColonyShip and sendColonyShip to command routing
+- `src/public/js/galaxy-view.js` — colonyShipMeshes, OctahedronGeometry diamond markers, updateColonyShips method with path interpolation, cleanup in _clearGalaxy
+- `src/public/js/app.js` — colonyShips in gameState, _viewingColonyIndex for multi-colony, _updateColonyList sidebar, colony ship build option in build menu, "Send Colony Ship" in system panel, number key shortcuts 1-5, colonyShip queue display, galaxy view colony ship updates
+- `src/public/js/toast-format.js` — colonyFounded, colonyShipFailed, colonyShip constructionComplete toast formatting
+- `src/public/index.html` — colony-list-sidebar div
+- `src/public/css/style.css` — colony list sidebar, colony ship build option, send colony ship button styles
+- `src/tests/colony-ships.test.js` — new file (37 tests)
+- `devguide/design.md` — marked 4 tasks complete (colony ships, colony switcher UI, colony list sidebar, max colonies cap, colony founding broadcast)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 384 total (37 new: constants, buildColonyShip validation × 8, construction completion × 2, cancellation refund, BFS pathfinding × 3, sendColonyShip validation × 5, movement + colonization × 2, colony cap × 2, serialization × 2, toast formatting × 4). All passing.
+
+**Key decisions:**
+- Colony ships use existing build queue system (type: 'colonyShip') rather than a separate shipyard — keeps expansion simple and accessible from day 1
+- BFS pathfinding computed on send command, not on ship tick — path is static once calculated, no per-tick pathfinding cost
+- Ship movement processed every tick (hopProgress++) but dirty marking throttled to every 5 ticks — smooth animation without broadcast spam
+- Colony cap counts both existing colonies and in-flight ships to prevent queuing 5 ships simultaneously
+- New colonies start with 2 pops (not 8) — makes expansion a real investment that takes time to pay off
+- Colony list sidebar only appears with 2+ colonies — no UI clutter for single-colony games
+- Shared resource pool (not per-colony) matches Stellaris model — simpler accounting, colony ships use global resources
+
+**Next:** Fog of war on galaxy map (R25 priority #3)

@@ -36,6 +36,13 @@ const PLANET_BONUSES = {
   arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
 };
 
+// Colony ship constants
+const COLONY_SHIP_COST = { minerals: 200, food: 100, alloys: 100 };
+const COLONY_SHIP_BUILD_TIME = 600; // 60 seconds at 10Hz
+const COLONY_SHIP_HOP_TICKS = 50;   // 5 seconds per hyperlane hop
+const MAX_COLONIES = 5;
+const COLONY_SHIP_STARTING_POPS = 2;
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -118,6 +125,7 @@ class GameEngine {
     this.playerStates = new Map();
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
+    this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
     this.onGameOver = options.onGameOver || null;
@@ -429,12 +437,33 @@ class GameEngine {
       item.ticksRemaining--;
       if (item.ticksRemaining <= 0) {
         colony.buildQueue.shift();
-        this._addBuiltDistrict(colony, item.type);
-        this._emitEvent('constructionComplete', colony.ownerId, {
-          colonyId: colony.id,
-          colonyName: colony.name,
-          districtType: item.type,
-        });
+
+        if (item.type === 'colonyShip') {
+          // Spawn colony ship at colony's system
+          const shipId = this._nextId();
+          this._colonyShips.push({
+            id: shipId,
+            ownerId: colony.ownerId,
+            systemId: colony.systemId,
+            targetSystemId: null,
+            path: [],
+            hopProgress: 0,
+          });
+          this._emitEvent('constructionComplete', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            districtType: 'colonyShip',
+            shipId,
+          });
+        } else {
+          this._addBuiltDistrict(colony, item.type);
+          this._emitEvent('constructionComplete', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            districtType: item.type,
+          });
+        }
+
         if (colony.buildQueue.length === 0) {
           this._emitEvent('queueEmpty', colony.ownerId, {
             colonyId: colony.id,
@@ -615,6 +644,156 @@ class GameEngine {
       net += (production.energy || 0) - (consumption.energy || 0);
     }
     return net;
+  }
+
+  // BFS shortest path between two systems along hyperlanes
+  // Returns array of system IDs from (excluding) start to target, or null if unreachable
+  _findPath(fromSystemId, toSystemId) {
+    if (fromSystemId === toSystemId) return [];
+    if (!this.galaxy) return null;
+
+    // Build adjacency list from hyperlanes
+    const adj = new Map();
+    for (const [a, b] of this.galaxy.hyperlanes) {
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a).push(b);
+      adj.get(b).push(a);
+    }
+
+    const visited = new Set([fromSystemId]);
+    const parent = new Map();
+    const queue = [fromSystemId];
+    let found = false;
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      const neighbors = adj.get(current) || [];
+      for (const neighbor of neighbors) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        parent.set(neighbor, current);
+        if (neighbor === toSystemId) { found = true; break; }
+        queue.push(neighbor);
+      }
+      if (found) break;
+    }
+
+    if (!found) return null;
+
+    // Reconstruct path from target back to start
+    const path = [];
+    let node = toSystemId;
+    while (node !== fromSystemId) {
+      path.push(node);
+      node = parent.get(node);
+    }
+    path.reverse();
+    return path;
+  }
+
+  // Process colony ship movement each tick
+  _processColonyShipMovement() {
+    const arrivals = [];
+    for (const ship of this._colonyShips) {
+      if (!ship.path || ship.path.length === 0) continue;
+
+      ship.hopProgress++;
+      // Throttle dirty marking to every 5 ticks for ship movement animation
+      if (this.tickCount % 5 === 0) {
+        this._dirtyPlayers.add(ship.ownerId);
+      }
+
+      if (ship.hopProgress >= COLONY_SHIP_HOP_TICKS) {
+        // Arrived at next system in path
+        ship.systemId = ship.path.shift();
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(ship.ownerId);
+
+        if (ship.path.length === 0) {
+          // Arrived at final destination
+          arrivals.push(ship);
+        }
+      }
+    }
+
+    // Process arrivals — found colonies
+    for (const ship of arrivals) {
+      this._foundColonyFromShip(ship);
+    }
+  }
+
+  // Found a new colony when colony ship arrives
+  _foundColonyFromShip(ship) {
+    const system = this.galaxy.systems[ship.targetSystemId];
+    if (!system) return;
+
+    // Find the target planet (best habitable planet in the system)
+    const planet = bestHabitablePlanet(system);
+    if (!planet) return;
+
+    // Check colony cap again (could have changed during transit)
+    const colonyIds = this._playerColonies.get(ship.ownerId) || [];
+    if (colonyIds.length >= MAX_COLONIES) {
+      this._emitEvent('colonyShipFailed', ship.ownerId, {
+        systemName: system.name,
+        reason: 'Colony cap reached',
+      });
+      this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+      this._dirtyPlayers.add(ship.ownerId);
+      return;
+    }
+
+    // Check planet not already colonized
+    if (planet.colonized) {
+      this._emitEvent('colonyShipFailed', ship.ownerId, {
+        systemName: system.name,
+        reason: 'Planet already colonized',
+      });
+      this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+      this._dirtyPlayers.add(ship.ownerId);
+      return;
+    }
+
+    // Mark planet as colonized
+    planet.colonized = true;
+    planet.colonyOwner = ship.ownerId;
+    system.owner = ship.ownerId;
+
+    // Create colony with reduced starting pops (2 instead of 8)
+    const colony = this._createColony(ship.ownerId, system.name + ' Colony', {
+      size: planet.size,
+      type: planet.type,
+      habitability: planet.habitability,
+    }, ship.targetSystemId);
+    colony.pops = COLONY_SHIP_STARTING_POPS;
+    colony.isStartingColony = false;
+
+    // Remove ship
+    this._colonyShips = this._colonyShips.filter(s => s.id !== ship.id);
+
+    // Emit colony founded event
+    const playerState = this.playerStates.get(ship.ownerId);
+    this._emitEvent('colonyFounded', ship.ownerId, {
+      colonyId: colony.id,
+      colonyName: colony.name,
+      systemName: system.name,
+      planetType: planet.type,
+    });
+
+    // Broadcast to all other players
+    for (const [pid] of this.playerStates) {
+      if (pid === ship.ownerId) continue;
+      this._emitEvent('colonyFounded', pid, {
+        playerName: playerState ? playerState.name : 'Unknown',
+        systemName: system.name,
+        planetType: planet.type,
+      });
+    }
+
+    this._cachedState = null;
+    this._cachedStateJSON = null;
+    this._vpCacheTick = -1;
   }
 
   // Get district output multipliers from completed techs (cached per player)
@@ -883,6 +1062,9 @@ class GameEngine {
     // Process construction every tick
     this._processConstruction();
 
+    // Process colony ship movement every tick
+    this._processColonyShipMovement();
+
     // Pop growth every tick
     this._processPopGrowth();
 
@@ -1000,10 +1182,10 @@ class GameEngine {
         const qIdx = colony.buildQueue.findIndex(q => q.id === districtId);
         if (qIdx !== -1) {
           const qItem = colony.buildQueue[qIdx];
-          const def = DISTRICT_DEFS[qItem.type];
-          if (def) {
+          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
+          if (costTable) {
             const player = this.playerStates.get(playerId);
-            for (const [resource, amount] of Object.entries(def.cost)) {
+            for (const [resource, amount] of Object.entries(costTable)) {
               player.resources[resource] += Math.floor(amount / 2);
             }
           }
@@ -1015,6 +1197,88 @@ class GameEngine {
         }
 
         return { error: 'District not found' };
+      }
+
+      case 'buildColonyShip': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Check colony cap
+        const playerColonyCount = (this._playerColonies.get(playerId) || []).length;
+        const inFlightShips = this._colonyShips.filter(s => s.ownerId === playerId).length;
+        if (playerColonyCount + inFlightShips >= MAX_COLONIES) {
+          return { error: `Colony cap reached (max ${MAX_COLONIES})` };
+        }
+
+        // Check build queue
+        if (colony.buildQueue.length >= 3) {
+          return { error: 'Build queue full (max 3)' };
+        }
+
+        // Check resources
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
+          state.resources[resource] -= amount;
+        }
+
+        const id = this._nextId();
+        colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: COLONY_SHIP_BUILD_TIME });
+        this._dirtyPlayers.add(playerId);
+        this._cachedState = null;
+        this._cachedStateJSON = null;
+        return { ok: true, id };
+      }
+
+      case 'sendColonyShip': {
+        const { shipId, targetSystemId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
+
+        const targetSysId = Number(targetSystemId);
+        const ship = this._colonyShips.find(s => s.id === shipId && s.ownerId === playerId);
+        if (!ship) return { error: 'Colony ship not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+
+        // Validate target system exists
+        if (!this.galaxy || !this.galaxy.systems[targetSysId]) {
+          return { error: 'Invalid target system' };
+        }
+
+        // Check target has a habitable planet
+        const targetSystem = this.galaxy.systems[targetSysId];
+        const targetPlanet = bestHabitablePlanet(targetSystem);
+        if (!targetPlanet) return { error: 'No habitable planet in target system' };
+        if (targetPlanet.habitability < 20) return { error: 'Planet habitability too low' };
+        if (targetPlanet.colonized) return { error: 'Planet already colonized' };
+
+        // Check colony cap (including in-flight ships)
+        const colCount = (this._playerColonies.get(playerId) || []).length;
+        const flyingShips = this._colonyShips.filter(s => s.ownerId === playerId && s.id !== shipId && s.path && s.path.length > 0).length;
+        if (colCount + flyingShips + 1 > MAX_COLONIES) {
+          return { error: `Colony cap reached (max ${MAX_COLONIES})` };
+        }
+
+        // Find path via BFS
+        const path = this._findPath(ship.systemId, targetSysId);
+        if (!path) return { error: 'No path to target system' };
+
+        ship.targetSystemId = targetSysId;
+        ship.path = path;
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._cachedState = null;
+        this._cachedStateJSON = null;
+        return { ok: true };
       }
 
       case 'setResearch': {
@@ -1072,6 +1336,13 @@ class GameEngine {
       coloniesArr.push(this._serializeColony(c));
     }
     const state = { tick: this.tickCount, players: playersArr, colonies: coloniesArr };
+    // Include all colony ships
+    state.colonyShips = this._colonyShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path ? [...s.path] : [],
+      hopProgress: s.hopProgress,
+    }));
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
@@ -1121,6 +1392,14 @@ class GameEngine {
     }
 
     const state = { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
+
+    // Include colony ships (own + visible others)
+    state.colonyShips = this._colonyShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path ? [...s.path] : [],
+      hopProgress: s.hopProgress,
+    }));
 
     // Include match timer info
     if (this._matchTimerEnabled) {
@@ -1202,4 +1481,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, generateGalaxy, assignStartingSystems };

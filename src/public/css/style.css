@@ -428,3 +428,47 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   0%, 100% { transform: translateX(-50%) scale(1); }
   50% { transform: translateX(-50%) scale(1.05); }
 }
+
+/* ── Colony List Sidebar ── */
+#colony-list-sidebar {
+  position: absolute; left: 10px; top: 90px;
+  width: 160px; z-index: 20;
+  background: rgba(26,26,46,0.88); backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e; border-radius: 6px;
+  padding: 0.3rem; pointer-events: auto;
+}
+#colony-list-sidebar.hidden { display: none; }
+.colony-list-title {
+  font-size: 0.75rem; color: #888; text-transform: uppercase;
+  padding: 0.2rem 0.3rem; border-bottom: 1px solid #2a2a4e;
+}
+.colony-list-entry {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.3rem 0.4rem; cursor: pointer; border-radius: 4px;
+  font-size: 0.8rem; color: #ccc;
+}
+.colony-list-entry:hover { background: rgba(52,152,219,0.2); }
+.colony-list-entry.active {
+  background: rgba(52,152,219,0.3); color: #fff;
+  border-left: 2px solid #3498db;
+}
+.colony-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+.colony-list-pops { font-family: monospace; color: #888; font-size: 0.7rem; }
+.colony-list-ships {
+  font-size: 0.7rem; color: #00ffaa; padding: 0.3rem 0.4rem;
+  border-top: 1px solid #2a2a4e;
+}
+
+/* ── Colony Ship Build Option ── */
+.build-option-ship {
+  border-left: 3px solid #00ffaa;
+}
+
+/* ── Send Colony Ship Button ── */
+.system-send-ship-btn {
+  display: block; width: 100%; margin-top: 0.4rem;
+  padding: 0.4rem; background: #0a3030; color: #00ffaa;
+  border: 1px solid #00ffaa; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.system-send-ship-btn:hover { background: #00ffaa; color: #000; }

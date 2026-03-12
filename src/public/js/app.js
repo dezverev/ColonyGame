@@ -116,6 +116,7 @@
           tick: msg.tick,
           players: msg.players,
           colonies: msg.colonies,
+          colonyShips: msg.colonyShips || [],
           yourId: msg.yourId,
           matchTimerEnabled: msg.matchTimerEnabled || false,
           matchTicksRemaining: msg.matchTicksRemaining || 0,
@@ -149,6 +150,7 @@
           gameState.tick = msg.tick;
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
+          if (msg.colonyShips) gameState.colonyShips = msg.colonyShips;
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
@@ -158,10 +160,13 @@
           if (currentView === 'colony' && window.ColonyRenderer) {
             if (_cachedMyColony) window.ColonyRenderer.updateFromState(_cachedMyColony);
           }
-          // Update galaxy ownership rings
+          // Update galaxy view: ownership rings + colony ships
           if (currentView === 'galaxy' && window.GalaxyView) {
             window.GalaxyView.updateOwnership(msg.colonies, msg.players);
+            window.GalaxyView.updateColonyShips(gameState.colonyShips);
           }
+          // Update colony list sidebar
+          _updateColonyList();
         }
         break;
 
@@ -333,6 +338,7 @@
   let currentView = 'colony'; // 'colony' | 'galaxy'
   let galaxyViewInitialized = false;
   let galaxyAnimFrame = null;
+  let _viewingColonyIndex = 0; // which colony the player is currently viewing
 
   // ── Galaxy view refs ──
   const viewIndicator = document.getElementById('view-indicator-label');
@@ -452,6 +458,40 @@
       });
 
       buildMenuOptions.appendChild(btn);
+    }
+
+    // Colony Ship build option
+    {
+      const shipBtn = document.createElement('div');
+      shipBtn.className = 'build-option build-option-ship';
+      const shipCost = { minerals: 200, food: 100, alloys: 100 };
+      let canAffordShip = true;
+      const costParts = [];
+      for (const [res, amt] of Object.entries(shipCost)) {
+        costParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordShip = false;
+      }
+      // Check colony cap
+      const myColonies = gameState ? gameState.colonies.filter(c => c.ownerId === gameState.yourId) : [];
+      const myShips = gameState && gameState.colonyShips ? gameState.colonyShips.filter(s => s.ownerId === gameState.yourId) : [];
+      const atColonyCap = myColonies.length + myShips.length >= 5;
+      if (!canAffordShip || queueFull || atColonyCap) shipBtn.classList.add('disabled');
+
+      shipBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#00ffaa"></div>' +
+        '<div class="build-option-name">Colony Ship</div>' +
+        '<div class="build-option-prod">Expand to new worlds</div>' +
+        `<div class="build-option-cost">${costParts.join(', ')}</div>`;
+
+      shipBtn.addEventListener('click', () => {
+        if (shipBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildColonyShip', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(shipBtn);
     }
 
     buildMenu.classList.remove('hidden');
@@ -577,7 +617,9 @@
   function _refreshPlayerCache() {
     if (!gameState) { _cachedMyPlayer = null; _cachedMyColony = null; return; }
     _cachedMyPlayer = gameState.players.find(p => p.id === gameState.yourId) || null;
-    _cachedMyColony = gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+    const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+    if (_viewingColonyIndex >= myColonies.length) _viewingColonyIndex = 0;
+    _cachedMyColony = myColonies[_viewingColonyIndex] || null;
   }
 
   const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
@@ -722,9 +764,9 @@
           colonyQueueHeader.classList.remove('hidden');
           colonyQueueList.innerHTML = '';
           for (const q of colony.buildQueue) {
-            const ui = DISTRICT_UI[q.type] || {};
-            const def = DISTRICT_UI[q.type];
-            const totalTicks = def ? _getBuildTime(q.type) : 300;
+            const isShip = q.type === 'colonyShip';
+            const ui = isShip ? { label: 'Colony Ship', color: '#00ffaa' } : (DISTRICT_UI[q.type] || {});
+            const totalTicks = isShip ? 600 : _getBuildTime(q.type);
             const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
             const secLeft = (q.ticksRemaining / 10).toFixed(0);
 
@@ -749,6 +791,46 @@
           colonyQueueList.innerHTML = '';
         }
       }
+    }
+  }
+
+  // ── Colony list sidebar ──
+  function _updateColonyList() {
+    const sidebar = document.getElementById('colony-list-sidebar');
+    if (!sidebar || !gameState) return;
+    const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+    if (myColonies.length <= 1) {
+      sidebar.classList.add('hidden');
+      return;
+    }
+    sidebar.classList.remove('hidden');
+    sidebar.innerHTML = '<div class="colony-list-title">Colonies</div>';
+    myColonies.forEach((col, idx) => {
+      const entry = document.createElement('div');
+      entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
+      entry.innerHTML =
+        `<span class="colony-list-name">${col.name}</span>` +
+        `<span class="colony-list-pops">${col.pops} pop</span>`;
+      entry.addEventListener('click', () => {
+        _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        if (currentView === 'colony' && window.ColonyRenderer && _cachedMyColony) {
+          window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
+        }
+        _lastQueueKey = ''; // force queue rebuild
+        _updateColonyList();
+      });
+      sidebar.appendChild(entry);
+    });
+    // Colony ship count
+    const myShips = (gameState.colonyShips || []).filter(s => s.ownerId === gameState.yourId);
+    if (myShips.length > 0) {
+      const shipInfo = document.createElement('div');
+      shipInfo.className = 'colony-list-ships';
+      const idle = myShips.filter(s => !s.path || s.path.length === 0).length;
+      const transit = myShips.length - idle;
+      shipInfo.textContent = `Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
+      sidebar.appendChild(shipInfo);
     }
   }
 
@@ -880,13 +962,38 @@
       html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
     }
 
+    // "Send Colony Ship" button — if player has idle ships and target has habitable planet
+    const idleShips = (gameState.colonyShips || []).filter(
+      s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0)
+    );
+    const hasHabitable = system.planets && system.planets.some(p => p.habitability >= 20 && !p.colonized);
+    const alreadyColonized = gameState.colonies.some(c => c.systemId === system.id);
+    if (idleShips.length > 0 && hasHabitable && !alreadyColonized) {
+      html += `<button class="system-send-ship-btn">Send Colony Ship here</button>`;
+    }
+
     systemPanelBody.innerHTML = html;
 
     // Wire colony button
     const colBtn = systemPanelBody.querySelector('.system-colony-btn');
     if (colBtn) {
       colBtn.addEventListener('click', () => {
+        // Switch to the colony at this system
+        const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        const idx = myColonies.findIndex(c => c.id === colBtn.dataset.colonyId);
+        if (idx >= 0) _viewingColonyIndex = idx;
+        _refreshPlayerCache();
         _switchToColony();
+      });
+    }
+
+    // Wire send colony ship button
+    const sendShipBtn = systemPanelBody.querySelector('.system-send-ship-btn');
+    if (sendShipBtn) {
+      sendShipBtn.addEventListener('click', () => {
+        const ship = idleShips[0]; // send first idle ship
+        send({ type: 'sendColonyShip', shipId: ship.id, targetSystemId: system.id });
+        systemPanel.classList.add('hidden');
       });
     }
 
@@ -1020,6 +1127,20 @@
       }
       if (systemPanel && !systemPanel.classList.contains('hidden')) {
         systemPanel.classList.add('hidden');
+      }
+    }
+    // Colony switching: number keys 1-5
+    if (e.key >= '1' && e.key <= '5') {
+      const idx = parseInt(e.key, 10) - 1;
+      const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+      if (idx < myColonies.length && idx !== _viewingColonyIndex) {
+        _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        if (currentView === 'colony' && window.ColonyRenderer && _cachedMyColony) {
+          window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
+        }
+        _lastQueueKey = '';
+        _updateColonyList();
       }
     }
     // Speed controls: +/= to speed up, - to slow down, Space to pause

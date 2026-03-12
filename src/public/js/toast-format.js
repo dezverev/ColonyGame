@@ -5,6 +5,8 @@
 (function () {
   const TOAST_TYPE_MAP = {
     constructionComplete: 'positive',
+    colonyFounded: 'positive',
+    colonyShipFailed: 'crisis',
     popMilestone: 'positive',
     researchComplete: 'positive',
     districtEnabled: 'positive',
@@ -18,7 +20,13 @@
     const d = msg;
     switch (msg.eventType) {
       case 'constructionComplete':
+        if (d.districtType === 'colonyShip') return 'Colony Ship built at ' + (d.colonyName || 'colony') + ' — ready to launch!';
         return 'Construction complete: ' + (d.districtType || 'district') + ' on ' + (d.colonyName || 'colony');
+      case 'colonyFounded':
+        if (d.colonyId) return 'Colony founded in ' + (d.systemName || 'system') + '!';
+        return (d.playerName || 'A player') + ' founded a colony in ' + (d.systemName || 'system') + '!';
+      case 'colonyShipFailed':
+        return 'Colony ship failed at ' + (d.systemName || 'system') + ': ' + (d.reason || 'unknown');
       case 'popMilestone':
         return 'Population milestone: ' + (d.pops || '?') + ' pops on ' + (d.colonyName || 'colony');
       case 'researchComplete':
