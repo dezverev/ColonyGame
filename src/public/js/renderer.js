@@ -20,6 +20,9 @@
   const _geoCache = {};   // key -> BufferGeometry
   const _matCache = {};   // key -> MeshStandardMaterial
 
+  // Animation frame tracking
+  let _animFrame = null;
+
   // FPS counter (enabled with ?debug=1)
   let _fpsEnabled = false;
   let _fpsEl = null;
@@ -497,7 +500,7 @@
   // ── Render loop ──
 
   function _animate() {
-    requestAnimationFrame(_animate);
+    _animFrame = requestAnimationFrame(_animate);
     _processKeys();
     if (renderer && scene && camera) {
       renderer.render(scene, camera);
@@ -516,11 +519,38 @@
     }
   }
 
+  // ── Cleanup ──
+
+  function destroy() {
+    if (_animFrame) {
+      cancelAnimationFrame(_animFrame);
+      _animFrame = null;
+    }
+    if (renderer && renderer.domElement) {
+      renderer.domElement.removeEventListener('wheel', _onWheel);
+      renderer.domElement.removeEventListener('mousedown', _onMouseDown);
+      renderer.domElement.removeEventListener('click', _onClick);
+    }
+    window.removeEventListener('mousemove', _onMouseMove);
+    window.removeEventListener('mouseup', _onMouseUp);
+    window.removeEventListener('keydown', _onKeyDown);
+    window.removeEventListener('keyup', _onKeyUp);
+    window.removeEventListener('resize', _onResize);
+    if (renderer) renderer.dispose();
+    scene = null;
+    camera = null;
+    renderer = null;
+    container = null;
+    gridGroup = null;
+    currentColony = null;
+  }
+
   // ── Public API ──
   const ColonyRenderer = {
     init,
     buildColonyGrid,
     updateFromState,
+    destroy,
     deselectTile: _deselectTile,
     getSelectedTile: () => selectedTileIndex,
     getCurrentColony: () => currentColony,

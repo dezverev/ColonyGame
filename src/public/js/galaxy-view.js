@@ -9,8 +9,10 @@
   let scene, camera, renderer, container;
   let galaxyData = null;       // { systems, hyperlanes, seed, size }
   let starMeshes = [];         // one mesh per system, indexed by system.id
+  let starMeshArray = [];      // pre-filtered array (no nulls) for raycasting
   let hyperlaneLines = null;   // single LineSegments object
   let ownerRings = [];         // ownership indicator meshes
+  let ownerRingPool = [];      // reusable ring mesh pool
   let selectedSystemId = -1;
   let highlightMesh = null;
   let hoverLabelEl = null;     // DOM element for system name on hover
@@ -134,13 +136,6 @@
       const color = new THREE.Color(sys.starColor || '#ffffff');
       const matKey = 'star_' + sys.starType;
       if (!_matCache[matKey]) {
-        _matCache[matKey] = new THREE.MeshBasicMaterial({
-          color: color,
-          emissive: color,
-          emissiveIntensity: 1.0,
-          toneMapped: false,
-        });
-        // MeshBasicMaterial doesn't have emissive — use it for pure color glow
         _matCache[matKey] = new THREE.MeshBasicMaterial({ color: color });
       }
 
@@ -172,6 +167,9 @@
       scene.add(hyperlaneLines);
     }
 
+    // Pre-filter star meshes for raycasting (avoids allocation on every mouse event)
+    starMeshArray = starMeshes.filter(m => m !== null);
+
     // Ownership rings
     _updateOwnership(systems);
 
@@ -184,15 +182,15 @@
       if (mesh) scene.remove(mesh);
     }
     starMeshes = [];
+    starMeshArray = [];
     if (hyperlaneLines) {
       if (hyperlaneLines.geometry) hyperlaneLines.geometry.dispose();
       scene.remove(hyperlaneLines);
       hyperlaneLines = null;
     }
-    for (const ring of ownerRings) {
-      scene.remove(ring);
-    }
+    for (const ring of ownerRings) scene.remove(ring);
     ownerRings = [];
+    ownerRingPool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -201,16 +199,15 @@
   }
 
   function _updateOwnership(systems) {
-    // Remove old rings
+    // Hide all active rings (return to pool)
     for (const ring of ownerRings) {
-      scene.remove(ring);
+      ring.visible = false;
     }
-    ownerRings = [];
+    let ringIdx = 0;
 
     if (!systems) return;
     for (const sys of systems) {
       if (!sys.owner) continue;
-      // Find player color
       const playerColor = _getPlayerColor(sys.owner);
       if (!playerColor) continue;
 
@@ -223,11 +220,21 @@
           opacity: 0.5,
         });
       }
-      const ring = new THREE.Mesh(_geoCache.ring, _matCache[matKey]);
+
+      // Reuse pooled ring or create new one
+      let ring;
+      if (ringIdx < ownerRings.length) {
+        ring = ownerRings[ringIdx];
+      } else {
+        ring = new THREE.Mesh(_geoCache.ring, _matCache[matKey]);
+        ring.rotation.x = -Math.PI / 2;
+        scene.add(ring);
+        ownerRings.push(ring);
+      }
+      ring.material = _matCache[matKey];
       ring.position.set(sys.x, (sys.y || 0) - 0.3, sys.z);
-      ring.rotation.x = -Math.PI / 2; // lay flat
-      scene.add(ring);
-      ownerRings.push(ring);
+      ring.visible = true;
+      ringIdx++;
     }
   }
 
@@ -341,7 +348,7 @@
     _raycaster.setFromCamera(_mouse, camera);
     // Use threshold for easier star picking
     _raycaster.params.Points = { threshold: 5 };
-    const intersects = _raycaster.intersectObjects(starMeshes.filter(Boolean), false);
+    const intersects = _raycaster.intersectObjects(starMeshArray, false);
 
     if (intersects.length > 0) {
       const sysId = intersects[0].object.userData.systemId;
@@ -362,7 +369,7 @@
     _mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
     _raycaster.setFromCamera(_mouse, camera);
-    const intersects = _raycaster.intersectObjects(starMeshes.filter(Boolean), false);
+    const intersects = _raycaster.intersectObjects(starMeshArray, false);
 
     if (intersects.length > 0) {
       const sysId = intersects[0].object.userData.systemId;

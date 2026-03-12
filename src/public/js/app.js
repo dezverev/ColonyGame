@@ -300,6 +300,7 @@
   let _selectedTileData = null;
   let _uiInterval = null;
   let _warningTimeout = null;
+  let _lastResearchKey = '';  // tracks research state to avoid redundant DOM rebuilds
 
   function _onTileSelect(tileData) {
     _hideAllPanels();
@@ -399,6 +400,7 @@
   // ── Research panel ──
   function _toggleResearchPanel() {
     if (researchPanel.classList.contains('hidden')) {
+      _lastResearchKey = ''; // force re-render on open
       _renderResearchPanel();
       researchPanel.classList.remove('hidden');
     } else {
@@ -504,9 +506,14 @@
       resBar.research.textContent = totalResearch;
       resBar.influence.textContent = Math.floor(r.influence);
 
-      // Update research panel if open
+      // Update research panel if open — only re-render when research progress changes
       if (researchPanel && !researchPanel.classList.contains('hidden')) {
-        _renderResearchPanel();
+        const rr = r.research || {};
+        const resKey = (rr.physics || 0) + '|' + (rr.society || 0) + '|' + (rr.engineering || 0);
+        if (resKey !== _lastResearchKey) {
+          _lastResearchKey = resKey;
+          _renderResearchPanel();
+        }
       }
     }
 
@@ -646,7 +653,8 @@
     const colonyPanel = document.getElementById('colony-panel');
     if (colonyPanel) colonyPanel.classList.add('hidden');
 
-    // Destroy colony renderer canvas (we'll re-init on switch back)
+    // Stop colony renderer (stops rAF loop, releases WebGL resources)
+    if (window.ColonyRenderer) window.ColonyRenderer.destroy();
     const renderContainer = document.getElementById('render-container');
     if (renderContainer) renderContainer.innerHTML = '';
 
