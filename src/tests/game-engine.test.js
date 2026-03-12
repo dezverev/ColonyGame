@@ -169,6 +169,65 @@ describe('GameEngine — District Building', () => {
     // Should be full build time (200) since colony already has 3+ districts (housing buildTime=200)
     assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200);
   });
+
+  it('starting colony never gets build discount even with 0 playerBuiltDistricts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonyId = engine.getState().colonies[0].id;
+    const colony = engine.colonies.get(colonyId);
+    // Starting colony has isStartingColony=true and playerBuiltDistricts=0
+    assert.strictEqual(colony.isStartingColony, true, 'starting colony should have isStartingColony=true');
+    assert.strictEqual(colony.playerBuiltDistricts, 0, 'starting colony should have 0 playerBuiltDistricts');
+
+    engine.playerStates.get(1).resources.minerals = 10000;
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId, districtType: 'housing' });
+    // Full price (200) despite playerBuiltDistricts being 0, because isStartingColony is true
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200, 'starting colony should not get discount');
+  });
+
+  it('playerBuiltDistricts increments on each build and discount expires after 3', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'desert', habitability: 60 });
+    engine.playerStates.get(1).resources.minerals = 50000;
+    assert.strictEqual(colony.playerBuiltDistricts, 0);
+
+    // Build 1 — discounted
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.strictEqual(colony.playerBuiltDistricts, 1);
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 100, '1st district should be 50% time');
+
+    // Build 2 — discounted (mining: 300 * 0.5 = 150)
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'mining' });
+    assert.strictEqual(colony.playerBuiltDistricts, 2);
+    assert.strictEqual(colony.buildQueue[1].ticksRemaining, 150, '2nd district should be 50% time');
+
+    // Build 3 — discounted (generator: 300 * 0.5 = 150)
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'generator' });
+    assert.strictEqual(colony.playerBuiltDistricts, 3);
+    assert.strictEqual(colony.buildQueue[2].ticksRemaining, 150, '3rd district should be 50% time');
+
+    // Clear queue to allow more builds (max queue is 3)
+    colony.buildQueue.length = 0;
+
+    // Build 4 — full price
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: colony.id, districtType: 'housing' });
+    assert.strictEqual(colony.playerBuiltDistricts, 4);
+    assert.strictEqual(colony.buildQueue[0].ticksRemaining, 200, '4th district should be full price');
+  });
+
+  it('_createColony defaults to isStartingColony=false', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'New', { size: 10, type: 'continental', habitability: 80 });
+    assert.strictEqual(colony.isStartingColony, false);
+    assert.strictEqual(colony.playerBuiltDistricts, 0);
+  });
+
+  it('serializes isStartingColony and playerBuiltDistricts in getState', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.getState();
+    const colony = state.colonies[0];
+    assert.strictEqual(colony.isStartingColony, true, 'starting colony serialized as isStartingColony=true');
+    assert.strictEqual(colony.playerBuiltDistricts, 0, 'playerBuiltDistricts serialized');
+  });
 });
 
 describe('GameEngine — Demolish', () => {
