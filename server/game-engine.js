@@ -132,6 +132,7 @@ class GameEngine {
     this._dirtyPlayers = new Set(); // per-player dirty tracking
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
+    this._cachedPlayerJSON = new Map(); // playerId -> cached per-player JSON string
     this._pendingEvents = []; // events to flush with next broadcast
     this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
     this._vpCacheTick = -1;   // tick when VP cache was last computed
@@ -260,8 +261,7 @@ class GameEngine {
     }
     this._playerColonies.get(ownerId).push(id);
     this._dirtyPlayers.add(ownerId);
-    this._cachedState = null;
-    this._cachedStateJSON = null;
+    this._invalidateStateCache();
     return colony;
   }
 
@@ -283,13 +283,18 @@ class GameEngine {
     return events;
   }
 
+  _invalidateStateCache() {
+    this._cachedState = null;
+    this._cachedStateJSON = null;
+    this._cachedPlayerJSON.clear();
+  }
+
   _invalidateColonyCache(colony) {
     colony._cachedHousing = null;
     colony._cachedJobs = null;
     colony._cachedProduction = null;
     this._dirtyPlayers.add(colony.ownerId);
-    this._cachedState = null;
-    this._cachedStateJSON = null;
+    this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
   }
 
@@ -425,8 +430,7 @@ class GameEngine {
       }
       this._dirtyPlayers.add(playerId);
     }
-    this._cachedState = null;
-    this._cachedStateJSON = null;
+    this._invalidateStateCache();
     this._vpCacheTick = -1; // resources changed — VP depends on alloys/research
   }
 
@@ -805,8 +809,7 @@ class GameEngine {
       });
     }
 
-    this._cachedState = null;
-    this._cachedStateJSON = null;
+    this._invalidateStateCache();
     this._vpCacheTick = -1;
   }
 
@@ -1046,8 +1049,7 @@ class GameEngine {
   }
 
   _broadcastSpeedState() {
-    this._cachedState = null;
-    this._cachedStateJSON = null;
+    this._invalidateStateCache();
     if (this.onSpeedChange) {
       this.onSpeedChange({
         speed: this._gameSpeed,
@@ -1169,8 +1171,7 @@ class GameEngine {
         const id = this._nextId();
         colony.buildQueue.push({ id, type: districtType, ticksRemaining: buildTime });
         this._dirtyPlayers.add(playerId);
-        this._cachedState = null;
-        this._cachedStateJSON = null;
+        this._invalidateStateCache();
         return { ok: true, id };
       }
 
@@ -1245,8 +1246,7 @@ class GameEngine {
         const id = this._nextId();
         colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: COLONY_SHIP_BUILD_TIME });
         this._dirtyPlayers.add(playerId);
-        this._cachedState = null;
-        this._cachedStateJSON = null;
+        this._invalidateStateCache();
         return { ok: true, id };
       }
 
@@ -1287,8 +1287,7 @@ class GameEngine {
         ship.path = path;
         ship.hopProgress = 0;
         this._dirtyPlayers.add(playerId);
-        this._cachedState = null;
-        this._cachedStateJSON = null;
+        this._invalidateStateCache();
         return { ok: true };
       }
 
@@ -1321,8 +1320,7 @@ class GameEngine {
         // Set research — replaces any current research in this track (progress preserved)
         state.currentResearch[tech.track] = techId;
         this._dirtyPlayers.add(playerId);
-        this._cachedState = null;
-        this._cachedStateJSON = null;
+        this._invalidateStateCache();
         return { ok: true };
       }
 
@@ -1351,7 +1349,7 @@ class GameEngine {
     state.colonyShips = this._colonyShips.map(s => ({
       id: s.id, ownerId: s.ownerId, systemId: s.systemId,
       targetSystemId: s.targetSystemId,
-      path: s.path ? [...s.path] : [],
+      path: s.path || [],
       hopProgress: s.hopProgress,
     }));
     if (this._matchTimerEnabled) {
@@ -1408,7 +1406,7 @@ class GameEngine {
     state.colonyShips = this._colonyShips.map(s => ({
       id: s.id, ownerId: s.ownerId, systemId: s.systemId,
       targetSystemId: s.targetSystemId,
-      path: s.path ? [...s.path] : [],
+      path: s.path || [],
       hopProgress: s.hopProgress,
     }));
 
@@ -1425,9 +1423,13 @@ class GameEngine {
 
   // Pre-stringified per-player gameState payload
   getPlayerStateJSON(playerId) {
+    const cached = this._cachedPlayerJSON.get(playerId);
+    if (cached) return cached;
     const state = this.getPlayerState(playerId);
     state.type = 'gameState';
-    return JSON.stringify(state);
+    const json = JSON.stringify(state);
+    this._cachedPlayerJSON.set(playerId, json);
+    return json;
   }
 
   // Serialize a single colony (shared by getState and getPlayerState)

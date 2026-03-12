@@ -51,6 +51,29 @@ describe('Performance — payload sizes', () => {
   });
 });
 
+describe('Performance — per-player JSON caching', () => {
+  it('getPlayerStateJSON returns cached result on second call', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10 });
+    for (let i = 0; i < 10; i++) engine.tick();
+    const json1 = engine.getPlayerStateJSON(1);
+    const json2 = engine.getPlayerStateJSON(1);
+    // Should be reference-equal (cached string)
+    assert.strictEqual(json1, json2, 'Per-player JSON should be cached');
+    engine.stop();
+  });
+
+  it('per-player cache invalidates on state change', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    for (let i = 0; i < 10; i++) engine.tick();
+    const json1 = engine.getPlayerStateJSON(1);
+    // Trigger state change
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: 'e1', districtType: 'generator' });
+    const json2 = engine.getPlayerStateJSON(1);
+    assert.notStrictEqual(json1, json2, 'Cache should invalidate on state change');
+    engine.stop();
+  });
+});
+
 describe('Performance — broadcast efficiency', () => {
   it('growth-only ticks do not broadcast every tick', () => {
     let broadcastCount = 0;

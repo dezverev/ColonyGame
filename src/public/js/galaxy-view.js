@@ -25,6 +25,7 @@
   // Fog of war state
   let _adjacency = null;       // adjacency list built from hyperlanes
   let _knownSystemIds = new Set(); // systems visible to the local player
+  let _lastOwnedKey = '';      // fingerprint of owned system IDs — skip fog rebuild when unchanged
 
   // Camera orbit state
   let orbitTheta = 0;          // horizontal angle (radians)
@@ -216,6 +217,7 @@
     selectedSystemId = -1;
     _adjacency = null;
     _knownSystemIds = new Set();
+    _lastOwnedKey = '';
   }
 
   function _removeHyperlanes() {
@@ -556,9 +558,21 @@
     }
     _updateOwnership(galaxyData.systems);
 
-    // Recompute fog of war visibility
-    _recomputeFog(colonies);
-    _applyFog();
+    // Build fingerprint of owned system IDs — skip expensive fog rebuild when unchanged
+    const myId = (typeof window !== 'undefined' && window.GameClient)
+      ? window.GameClient.getState() && window.GameClient.getState().yourId
+      : null;
+    let ownedKey = '';
+    if (colonies && myId) {
+      for (const col of colonies) {
+        if (col.ownerId === myId && col.systemId != null) ownedKey += col.systemId + ',';
+      }
+    }
+    if (ownedKey !== _lastOwnedKey) {
+      _lastOwnedKey = ownedKey;
+      _recomputeFog(colonies);
+      _applyFog();
+    }
   }
 
   function _recomputeFog(colonies) {
