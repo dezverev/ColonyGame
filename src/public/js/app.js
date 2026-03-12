@@ -148,6 +148,7 @@
           gameState.units = msg.units;
           gameState.buildings = msg.buildings;
           gameState.players = msg.players;
+          renderDirty = true;
           updateHUD();
         }
         break;
@@ -178,16 +179,27 @@
 
   // ── Game rendering ──
   let animFrame = null;
+  let renderDirty = true; // tracks whether a redraw is needed
+  const _playerMap = Object.create(null);
+  let _selectedSet = new Set();
+  const _opts = { originX: 0, originY: 0 }; // reusable projection options
+
+  function markRenderDirty() { renderDirty = true; }
 
   function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    renderDirty = true;
   }
 
   function startGameLoop() {
     if (animFrame) cancelAnimationFrame(animFrame);
+    renderDirty = true;
     function loop() {
-      render();
+      if (renderDirty) {
+        renderDirty = false;
+        render();
+      }
       animFrame = requestAnimationFrame(loop);
     }
     loop();
@@ -202,9 +214,8 @@
 
     ctx.clearRect(0, 0, W, H);
 
-    const originX = W / 2 - (camera.x - camera.y) * (P.TileWidth / 2) * camera.zoom;
-    const originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
-    const opts = { originX, originY };
+    _opts.originX = W / 2 - (camera.x - camera.y) * (P.TileWidth / 2) * camera.zoom;
+    _opts.originY = H / 2 - (camera.x + camera.y) * (P.TileHeight / 2) * camera.zoom + 200 * camera.zoom;
 
     // Draw grid — batched into a single path for fewer draw calls
     ctx.strokeStyle = 'rgba(255,255,255,0.05)';
@@ -213,22 +224,25 @@
     const zoomOffY = H / 2 * (1 - camera.zoom);
     ctx.beginPath();
     for (let x = 0; x <= mapWidth; x++) {
-      const a = P.worldToScreen(x, 0, 0, opts);
-      const b = P.worldToScreen(x, mapHeight, 0, opts);
-      ctx.moveTo(a.x * camera.zoom + zoomOffX, a.y * camera.zoom + zoomOffY);
-      ctx.lineTo(b.x * camera.zoom + zoomOffX, b.y * camera.zoom + zoomOffY);
+      let s = P.worldToScreen(x, 0, 0, _opts);
+      const ax = s.x, ay = s.y;
+      s = P.worldToScreen(x, mapHeight, 0, _opts);
+      ctx.moveTo(ax * camera.zoom + zoomOffX, ay * camera.zoom + zoomOffY);
+      ctx.lineTo(s.x * camera.zoom + zoomOffX, s.y * camera.zoom + zoomOffY);
     }
     for (let y = 0; y <= mapHeight; y++) {
-      const a = P.worldToScreen(0, y, 0, opts);
-      const b = P.worldToScreen(mapWidth, y, 0, opts);
-      ctx.moveTo(a.x * camera.zoom + zoomOffX, a.y * camera.zoom + zoomOffY);
-      ctx.lineTo(b.x * camera.zoom + zoomOffX, b.y * camera.zoom + zoomOffY);
+      let s = P.worldToScreen(0, y, 0, _opts);
+      const ax = s.x, ay = s.y;
+      s = P.worldToScreen(mapWidth, y, 0, _opts);
+      ctx.moveTo(ax * camera.zoom + zoomOffX, ay * camera.zoom + zoomOffY);
+      ctx.lineTo(s.x * camera.zoom + zoomOffX, s.y * camera.zoom + zoomOffY);
     }
     ctx.stroke();
 
-    const playerMap = Object.create(null);
-    for (const p of players) playerMap[p.id] = p;
-    const selectedSet = new Set(selectedUnits);
+    // Rebuild player lookup (reuse object, clear old keys)
+    for (const k in _playerMap) delete _playerMap[k];
+    for (const p of players) _playerMap[p.id] = p;
+    _selectedSet = new Set(selectedUnits);
 
     // Apply zoom transform
     ctx.save();
@@ -238,49 +252,51 @@
 
     // Draw buildings
     for (const b of buildings) {
-      const s = P.worldToScreen(b.x, b.y, 0, opts);
-      const owner = playerMap[b.ownerId];
+      const s = P.worldToScreen(b.x, b.y, 0, _opts);
+      const bx = s.x, by = s.y;
+      const owner = _playerMap[b.ownerId];
       const color = owner ? owner.color : '#888';
       const size = (b.size || 2) * P.TileWidth / 2;
 
       ctx.fillStyle = color;
       ctx.globalAlpha = 0.6;
-      ctx.fillRect(s.x - size / 2, s.y - size, size, size);
+      ctx.fillRect(bx - size / 2, by - size, size, size);
       ctx.globalAlpha = 1;
       ctx.strokeStyle = color;
       ctx.lineWidth = 2;
-      ctx.strokeRect(s.x - size / 2, s.y - size, size, size);
+      ctx.strokeRect(bx - size / 2, by - size, size, size);
 
       // Label
       ctx.fillStyle = '#fff';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(b.type, s.x, s.y - size - 4);
+      ctx.fillText(b.type, bx, by - size - 4);
     }
 
     // Draw units
     for (const u of units) {
-      const s = P.worldToScreen(u.x, u.y, 0, opts);
-      const owner = playerMap[u.ownerId];
+      const s = P.worldToScreen(u.x, u.y, 0, _opts);
+      const ux = s.x, uy = s.y;
+      const owner = _playerMap[u.ownerId];
       const color = owner ? owner.color : '#888';
-      const isSelected = selectedSet.has(u.id);
+      const isSelected = _selectedSet.has(u.id);
 
       // Selection ring
       if (isSelected) {
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(s.x, s.y, 12, 6, 0, 0, Math.PI * 2);
+        ctx.ellipse(ux, uy, 12, 6, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
 
       // Unit diamond
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y - 10);
-      ctx.lineTo(s.x + 6, s.y);
-      ctx.lineTo(s.x, s.y + 4);
-      ctx.lineTo(s.x - 6, s.y);
+      ctx.moveTo(ux, uy - 10);
+      ctx.lineTo(ux + 6, uy);
+      ctx.lineTo(ux, uy + 4);
+      ctx.lineTo(ux - 6, uy);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = isSelected ? '#fff' : '#000';
@@ -292,9 +308,9 @@
         const barW = 16;
         const ratio = u.hp / u.maxHp;
         ctx.fillStyle = '#333';
-        ctx.fillRect(s.x - barW / 2, s.y - 16, barW, 3);
+        ctx.fillRect(ux - barW / 2, uy - 16, barW, 3);
         ctx.fillStyle = ratio > 0.5 ? '#2ecc71' : ratio > 0.25 ? '#f39c12' : '#e74c3c';
-        ctx.fillRect(s.x - barW / 2, s.y - 16, barW * ratio, 3);
+        ctx.fillRect(ux - barW / 2, uy - 16, barW * ratio, 3);
       }
     }
 
@@ -314,7 +330,7 @@
     ctx.restore();
 
     // Minimap
-    renderMinimap(playerMap);
+    renderMinimap(_playerMap);
   }
 
   function renderMinimap(playerMap) {
@@ -381,12 +397,14 @@
     canvas.addEventListener('mousemove', (e) => {
       if (selecting) {
         selectEnd = { x: e.offsetX, y: e.offsetY };
+        renderDirty = true;
       }
       if (dragging) {
         const dx = (e.clientX - dragStart.x) / camera.zoom;
         const dy = (e.clientY - dragStart.y) / camera.zoom;
         camera.x = camStart.x - dx / 32;
         camera.y = camStart.y - dy / 16;
+        renderDirty = true;
       }
     });
 
@@ -394,6 +412,7 @@
       if (e.button === 0 && selecting) {
         selecting = false;
         handleSelection(selectStart, selectEnd);
+        renderDirty = true;
       }
       if (dragging) {
         dragging = false;
@@ -422,6 +441,7 @@
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       camera.zoom = Math.max(0.5, Math.min(3, camera.zoom - e.deltaY * 0.001));
+      renderDirty = true;
     });
 
     window.addEventListener('resize', () => {
