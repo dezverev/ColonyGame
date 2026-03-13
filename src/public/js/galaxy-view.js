@@ -25,7 +25,7 @@
   let scienceShipPool = [];    // reusable science ship mesh pool
   let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
   let _lastScienceShipData = null;
-  const _LERP_DURATION = 500;      // ms to smooth between server updates
+  let _lastShipUpdateTime = 0;     // timestamp of last state update (for extrapolation)
 
   // Fog of war state
   let _adjacency = null;       // adjacency list built from hyperlanes
@@ -475,49 +475,45 @@
 
   // ── Colony ship rendering ──
 
-  // Compute where a colony ship should be based on server state
-  function _colonyShipTargetPos(ship) {
-    const currentSys = galaxyData.systems[ship.systemId];
-    if (!currentSys) return null;
-    if (ship.path && ship.path.length > 0) {
-      const nextSys = galaxyData.systems[ship.path[0]];
-      if (nextSys) {
-        const t = ship.hopProgress / 50;
-        return {
-          x: currentSys.x + (nextSys.x - currentSys.x) * t,
-          y: (currentSys.y || 0) + ((nextSys.y || 0) - (currentSys.y || 0)) * t + 3,
-          z: currentSys.z + (nextSys.z - currentSys.z) * t,
-        };
-      }
-      return { x: currentSys.x, y: (currentSys.y || 0) + 3, z: currentSys.z };
+  // Get current game speed from client state (for tick extrapolation)
+  function _getGameSpeed() {
+    if (typeof window !== 'undefined' && window.GameClient) {
+      const gs = window.GameClient.getState();
+      if (gs && gs.gameSpeed) return gs.gameSpeed;
     }
-    return { x: currentSys.x + 5, y: (currentSys.y || 0) + 5, z: currentSys.z + 5 };
+    return 2; // default
   }
 
-  // Compute where a science ship should be based on server state (non-animated position)
-  function _scienceShipTargetPos(ship) {
-    const currentSys = galaxyData.systems[ship.systemId];
-    if (!currentSys) return null;
-    if (ship.path && ship.path.length > 0 && !ship.surveying) {
-      const nextSys = galaxyData.systems[ship.path[0]];
-      if (nextSys) {
-        const t = ship.hopProgress / 30;
-        return {
-          x: currentSys.x + (nextSys.x - currentSys.x) * t,
-          y: (currentSys.y || 0) + 4 + ((nextSys.y || 0) - (currentSys.y || 0)) * t,
-          z: currentSys.z + (nextSys.z - currentSys.z) * t,
-        };
-      }
-      return { x: currentSys.x, y: (currentSys.y || 0) + 4, z: currentSys.z };
-    }
-    // Surveying and idle positions are handled per-frame (orbit / static)
-    return null;
+  // Extrapolate ship position along its path using elapsed time since last server update.
+  // hopTicks = ticks per hop (30 for science, 50 for colony). yOffset = height above system plane.
+  function _extrapolateShipPos(ship, hopTicks, yOffset, now) {
+    if (!ship.path || ship.path.length === 0) return null;
+
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    const gameSpeed = (gs && gs.gameSpeed) || 2;
+    const paused = gs && gs.paused;
+
+    const msPerTick = 100 / gameSpeed;
+    const elapsedTicks = paused ? 0 : (now - _lastShipUpdateTime) / msPerTick;
+    // Extrapolated progress along current hop (clamped so we don't overshoot)
+    const progress = Math.min(ship.hopProgress + elapsedTicks, hopTicks);
+    const t = progress / hopTicks;
+
+    const fromSys = galaxyData.systems[ship.systemId];
+    const toSys = galaxyData.systems[ship.path[0]];
+    if (!fromSys || !toSys) return null;
+
+    return {
+      x: fromSys.x + (toSys.x - fromSys.x) * t,
+      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
+      z: fromSys.z + (toSys.z - fromSys.z) * t,
+    };
   }
 
   function updateColonyShips(ships) {
     if (!scene || !galaxyData) return;
     _lastColonyShipData = ships;
-    const now = performance.now();
+    _lastShipUpdateTime = performance.now();
 
     // Return active meshes to pool (hide, don't destroy)
     for (const mesh of colonyShipMeshes) {
@@ -550,18 +546,6 @@
       const currentSys = galaxyData.systems[ship.systemId];
       if (!currentSys) { mesh.visible = false; colonyShipPool.push(mesh); continue; }
 
-      // Snapshot current mesh position as lerp start, compute target
-      const target = _colonyShipTargetPos(ship);
-      if (target) {
-        mesh.userData.lerpFrom = { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z };
-        mesh.userData.lerpTo = target;
-        mesh.userData.lerpStart = now;
-        // If mesh was just created (position 0,0,0), snap immediately
-        if (mesh.userData.lerpFrom.x === 0 && mesh.userData.lerpFrom.y === 0 && mesh.userData.lerpFrom.z === 0) {
-          mesh.position.set(target.x, target.y, target.z);
-          mesh.userData.lerpFrom = target;
-        }
-      }
       mesh.userData.shipData = ship;
       colonyShipMeshes.push(mesh);
     }
@@ -570,7 +554,7 @@
   function updateScienceShips(ships) {
     if (!scene || !galaxyData) return;
     _lastScienceShipData = ships;
-    const now = performance.now();
+    _lastShipUpdateTime = performance.now();
 
     // Return active meshes to pool
     for (const mesh of scienceShipMeshes) {
@@ -603,17 +587,6 @@
       const currentSys = galaxyData.systems[ship.systemId];
       if (!currentSys) { mesh.visible = false; scienceShipPool.push(mesh); continue; }
 
-      // Snapshot lerp for transit ships (survey/idle handled per-frame)
-      const target = _scienceShipTargetPos(ship);
-      if (target) {
-        mesh.userData.lerpFrom = { x: mesh.position.x, y: mesh.position.y, z: mesh.position.z };
-        mesh.userData.lerpTo = target;
-        mesh.userData.lerpStart = now;
-        if (mesh.userData.lerpFrom.x === 0 && mesh.userData.lerpFrom.y === 0 && mesh.userData.lerpFrom.z === 0) {
-          mesh.position.set(target.x, target.y, target.z);
-          mesh.userData.lerpFrom = target;
-        }
-      }
       mesh.userData.shipData = ship;
       scienceShipMeshes.push(mesh);
     }
@@ -763,55 +736,54 @@
     }
   }
 
-  // ── Per-frame ship animation ──
-
-  function _lerpShipPos(mesh, now) {
-    const from = mesh.userData.lerpFrom;
-    const to = mesh.userData.lerpTo;
-    const start = mesh.userData.lerpStart;
-    if (!from || !to || !start) return;
-    const t = Math.min((now - start) / _LERP_DURATION, 1);
-    mesh.position.set(
-      from.x + (to.x - from.x) * t,
-      from.y + (to.y - from.y) * t,
-      from.z + (to.z - from.z) * t
-    );
-  }
+  // ── Per-frame ship animation (extrapolation from server state) ──
 
   function _animateShips() {
     if (!galaxyData) return;
     const now = performance.now();
 
-    // Colony ships — lerp toward target
+    // Colony ships — extrapolate position along path
     for (const mesh of colonyShipMeshes) {
-      _lerpShipPos(mesh, now);
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const pos = _extrapolateShipPos(ship, 50, 3, now); // COLONY_SHIP_HOP_TICKS = 50
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        // Idle — hover near system
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
       mesh.rotation.y = now * 0.002;
     }
 
-    // Science ships — lerp for transit, per-frame orbit for surveying, static for idle
+    // Science ships — extrapolate for transit, orbit for surveying, bob for idle
     for (const mesh of scienceShipMeshes) {
       const ship = mesh.userData.shipData;
       if (!ship) continue;
 
       if (ship.path && ship.path.length > 0 && !ship.surveying) {
-        // Transit — smooth lerp between server updates
-        _lerpShipPos(mesh, now);
+        // Transit — extrapolate along path
+        const pos = _extrapolateShipPos(ship, 30, 4, now); // SCIENCE_SHIP_HOP_TICKS = 30
+        if (pos) {
+          mesh.position.set(pos.x, pos.y, pos.z);
+        }
       } else if (ship.surveying) {
         // Smooth orbiting during survey
-        const currentSys = galaxyData.systems[ship.systemId];
-        if (currentSys) {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) {
           const angle = now * 0.003;
           mesh.position.set(
-            currentSys.x + Math.cos(angle) * 6,
-            (currentSys.y || 0) + 4,
-            currentSys.z + Math.sin(angle) * 6
+            sys.x + Math.cos(angle) * 6,
+            (sys.y || 0) + 4,
+            sys.z + Math.sin(angle) * 6
           );
         }
       } else {
-        // Idle — gentle bob
-        const currentSys = galaxyData.systems[ship.systemId];
-        if (currentSys) {
-          mesh.position.set(currentSys.x - 5, (currentSys.y || 0) + 5 + Math.sin(now * 0.002) * 0.5, currentSys.z - 5);
+        // Idle — gentle bob near system
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) {
+          mesh.position.set(sys.x - 5, (sys.y || 0) + 5 + Math.sin(now * 0.002) * 0.5, sys.z - 5);
         }
       }
       mesh.rotation.y = now * 0.003;

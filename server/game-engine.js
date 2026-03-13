@@ -878,9 +878,16 @@ class GameEngine {
         this._dirtyPlayers.add(ship.ownerId);
 
         if (ship.path.length === 0) {
-          // Arrived at target — begin surveying
-          ship.surveying = true;
-          ship.surveyProgress = 0;
+          // Arrived at destination — only survey if this is the survey target (not a return trip)
+          const surveyed = this._surveyedSystems.get(ship.ownerId);
+          const alreadySurveyed = surveyed && surveyed.has(ship.systemId);
+          if (ship.targetSystemId === ship.systemId && !alreadySurveyed) {
+            ship.surveying = true;
+            ship.surveyProgress = 0;
+          } else {
+            // Return trip complete — ship is idle
+            ship.targetSystemId = null;
+          }
         }
       }
     }
@@ -996,7 +1003,7 @@ class GameEngine {
     }
 
     if (nearestPath && nearestPath.length > 0) {
-      ship.targetSystemId = nearestSystemId;
+      ship.targetSystemId = null; // null signals return trip (not a survey mission)
       ship.path = nearestPath;
       ship.hopProgress = 0;
     }
