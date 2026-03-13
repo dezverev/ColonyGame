@@ -49,7 +49,8 @@
   // ── WebSocket ──
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const port = 4001;
+    const params = new URLSearchParams(location.search);
+    const port = params.get('gamePort') || 4001;
     ws = new WebSocket(`${proto}//${location.hostname}:${port}`);
 
     ws.onopen = () => {
