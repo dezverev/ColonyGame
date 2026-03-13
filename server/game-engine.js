@@ -879,7 +879,7 @@ class GameEngine {
     const crisisDef = CRISIS_TYPES[crisisKey];
 
     // For labor unrest, pick 3 random enabled districts to disable
-    let disabledIds = [];
+    let disabledIds = new Set();
     if (crisisKey === 'laborUnrest') {
       const enabled = colony.districts.filter(d => !d.disabled);
       // Shuffle and pick up to 3
@@ -887,9 +887,9 @@ class GameEngine {
         const j = Math.floor(Math.random() * (i + 1));
         [enabled[i], enabled[j]] = [enabled[j], enabled[i]];
       }
-      disabledIds = enabled.slice(0, 3).map(d => d.id);
+      disabledIds = new Set(enabled.slice(0, 3).map(d => d.id));
       for (const d of colony.districts) {
-        if (disabledIds.includes(d.id)) {
+        if (disabledIds.has(d.id)) {
           d.disabled = true;
         }
       }
@@ -950,7 +950,7 @@ class GameEngine {
       if (crisis.strikeTicks <= 0) {
         // Re-enable struck districts
         for (const d of colony.districts) {
-          if (crisis.disabledIds.includes(d.id)) {
+          if (crisis.disabledIds.has(d.id)) {
             delete d.disabled;
           }
         }
@@ -1207,7 +1207,7 @@ class GameEngine {
     if (choice === 'negotiate') {
       // Re-enable struck districts immediately
       for (const d of colony.districts) {
-        if (colony.crisisState.disabledIds.includes(d.id)) {
+        if (colony.crisisState.disabledIds.has(d.id)) {
           delete d.disabled;
         }
       }

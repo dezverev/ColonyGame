@@ -878,7 +878,7 @@
       } else if (cpTraitRow) {
         cpTraitRow.classList.add('hidden');
       }
-      // Crisis alert panel
+      // Crisis alert panel — only rebuild buttons when crisis type/state changes
       if (colony.crisis && crisisAlert) {
         crisisAlert.classList.remove('hidden');
         crisisAlertHeader.textContent = '\u26A0 ' + colony.crisis.label;
@@ -894,19 +894,27 @@
 
         // Show choices or status
         if (!colony.crisis.resolved && colony.crisis.choices && colony.crisis.choices.length > 0) {
-          crisisAlertChoices.innerHTML = '';
-          crisisAlertStatus.textContent = '';
-          for (const ch of colony.crisis.choices) {
-            const btn = document.createElement('button');
-            btn.className = 'crisis-choice-btn';
-            btn.innerHTML = '<span class="choice-label">' + ch.label + '</span><span class="choice-desc">' + ch.description + '</span>';
-            btn.addEventListener('click', () => {
-              send({ type: 'resolveCrisis', colonyId: colony.id, choiceId: ch.id });
-            });
-            crisisAlertChoices.appendChild(btn);
+          // Only rebuild buttons if crisis type changed (avoid DOM churn at 3.3Hz)
+          const crisisKey = colony.crisis.type + ':' + colony.id;
+          if (crisisAlertChoices.dataset.crisisKey !== crisisKey) {
+            crisisAlertChoices.dataset.crisisKey = crisisKey;
+            crisisAlertChoices.innerHTML = '';
+            for (const ch of colony.crisis.choices) {
+              const btn = document.createElement('button');
+              btn.className = 'crisis-choice-btn';
+              btn.innerHTML = '<span class="choice-label">' + ch.label + '</span><span class="choice-desc">' + ch.description + '</span>';
+              btn.addEventListener('click', () => {
+                send({ type: 'resolveCrisis', colonyId: colony.id, choiceId: ch.id });
+              });
+              crisisAlertChoices.appendChild(btn);
+            }
           }
+          crisisAlertStatus.textContent = '';
         } else if (colony.crisis.resolved) {
-          crisisAlertChoices.innerHTML = '';
+          if (crisisAlertChoices.dataset.crisisKey !== '') {
+            crisisAlertChoices.dataset.crisisKey = '';
+            crisisAlertChoices.innerHTML = '';
+          }
           // Show ongoing effect status
           const st = [];
           if (colony.crisis.quarantineTicks > 0) st.push('Quarantine: ' + (colony.crisis.quarantineTicks / 10).toFixed(0) + 's remaining');
@@ -917,6 +925,10 @@
         }
       } else if (crisisAlert) {
         crisisAlert.classList.add('hidden');
+        if (crisisAlertChoices.dataset.crisisKey !== '') {
+          crisisAlertChoices.dataset.crisisKey = '';
+          crisisAlertChoices.innerHTML = '';
+        }
       }
 
       const totalDistricts = colony.districts.length + colony.buildQueue.length;

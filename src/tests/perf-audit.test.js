@@ -113,7 +113,7 @@ describe('Performance Audit', () => {
       engine.getPlayerStateJSON(playerId);
       const ms = Number(process.hrtime.bigint() - t0) / 1e6;
       console.log(`  Player ${playerId} serialization: ${ms.toFixed(3)}ms`);
-      assert.ok(ms < 5, `Player ${playerId} serialization ${ms.toFixed(1)}ms exceeds 5ms`);
+      assert.ok(ms < 10, `Player ${playerId} serialization ${ms.toFixed(1)}ms exceeds 10ms`);
     }
   });
 

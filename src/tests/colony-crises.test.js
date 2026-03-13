@@ -363,7 +363,7 @@ describe('Labor Unrest Crisis Resolution', () => {
     const disabledCount = colony.districts.filter(d => d.disabled).length;
     assert.ok(disabledCount <= 3, 'should disable at most 3 districts');
     assert.ok(disabledCount > 0, 'should disable at least 1 district');
-    assert.deepStrictEqual(colony.crisisState.disabledIds.length, disabledCount);
+    assert.deepStrictEqual(colony.crisisState.disabledIds.size, disabledCount);
   });
 
   it('negotiate: should re-enable districts immediately', () => {
