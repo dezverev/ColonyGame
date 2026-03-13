@@ -6,12 +6,15 @@
     "dev": "concurrently \"node src/dev-client-server.js\" \"node --watch server/server.js\"",
     "start": "node server/server.js",
     "test": "node --test --test-timeout=10000 --test-force-exit src/tests/**/*.test.js",
+    "test:e2e": "npx playwright test",
+    "test:all": "npm test && npx playwright test",
     "stop": "lsof -ti :4000 -ti :4001 | xargs kill -9 2>/dev/null || true"
   },
   "dependencies": {
     "ws": "^8.16.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "concurrently": "^8.2.2"
   }
 }
