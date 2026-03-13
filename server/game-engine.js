@@ -965,13 +965,10 @@ class GameEngine {
       });
     }
 
-    // Reset ship to idle at surveyed system
+    // Ship stays idle at surveyed system, ready for next command
     ship.surveying = false;
     ship.surveyProgress = 0;
     ship.targetSystemId = null;
-
-    // Return to nearest colony
-    this._returnScienceShipToColony(ship);
 
     this._dirtyPlayers.add(ship.ownerId);
     this._invalidateStateCache();

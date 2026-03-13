@@ -333,7 +333,7 @@ describe('Science ship movement and survey', () => {
     assert.ok(Array.isArray(events[0].discoveries));
   });
 
-  it('should return to nearest colony after surveying', () => {
+  it('should stay idle at surveyed system after surveying', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
     const colony = getFirstColony(engine, 1);
@@ -347,14 +347,11 @@ describe('Science ship movement and survey', () => {
       engine.tick();
     }
 
-    // Ship should have a return path back to colony
+    // Ship should be idle at the surveyed system
     assert.strictEqual(ship.surveying, false);
-    // Ship is returning: either already at colony system or has a path
-    if (ship.systemId !== colony.systemId) {
-      assert.ok(ship.path.length > 0);
-      // targetSystemId is null for return trips (prevents re-surveying on arrival)
-      assert.strictEqual(ship.targetSystemId, null);
-    }
+    assert.strictEqual(ship.systemId, targetId);
+    assert.strictEqual(ship.path.length, 0);
+    assert.strictEqual(ship.targetSystemId, null);
   });
 });
 
@@ -721,41 +718,26 @@ describe('Science ships — multi-hop travel', () => {
 // ── Return Behavior Edge Cases ──
 
 describe('Science ships — return edge cases', () => {
-  it('should stay put after survey if player has no colonies', () => {
-    const engine = makeEngine();
-    const ship = { id: 888, ownerId: 1, systemId: 5, surveying: false, surveyProgress: 0, path: [], hopProgress: 0, targetSystemId: null };
-    engine._scienceShips.push(ship);
-
-    // Remove all colonies for player 1
-    const colonyIds = engine._playerColonies.get(1) || [];
-    for (const cid of [...colonyIds]) {
-      engine.colonies.delete(cid);
-    }
-    engine._playerColonies.set(1, []);
-
-    engine._returnScienceShipToColony(ship);
-    assert.strictEqual(ship.path.length, 0, 'ship should have no path');
-    assert.strictEqual(ship.systemId, 5, 'ship should stay at current system');
-  });
-
-  it('should find return path to nearest colony when multiple exist', () => {
+  it('ship stays at surveyed system and can be sent to another target', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
     const colony = getFirstColony(engine, 1);
-
-    // Move ship to a neighbor system manually
     const adj = engine._adjacency.get(colony.systemId) || [];
-    if (adj.length > 0) {
-      ship.systemId = adj[0];
-      ship.path = [];
-      ship.targetSystemId = null;
+    if (adj.length < 2) return; // need 2 neighbors
+    const target1 = adj[0];
+    const target2 = adj[1];
 
-      engine._returnScienceShipToColony(ship);
-      // Ship should have a path back
-      assert.ok(ship.path.length > 0, 'ship should have return path');
-      // targetSystemId is null for return trips (prevents accidental survey on arrival)
-      assert.strictEqual(ship.targetSystemId, null, 'return trip has null targetSystemId');
-    }
+    // Survey first target
+    engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: target1 });
+    for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS + SURVEY_TICKS; i++) engine.tick();
+
+    // Ship idle at target1
+    assert.strictEqual(ship.systemId, target1);
+    assert.strictEqual(ship.path.length, 0);
+
+    // Send to second target
+    const result = engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: target2 });
+    assert.ok(result.ok || result.error === 'No path to target system', 'should accept or fail on path only');
   });
 });
 
@@ -871,7 +853,7 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     }
   });
 
-  it('after survey, ship has return path with correct systemId and hopProgress=0', () => {
+  it('after survey, ship is idle at surveyed system with no path', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
     const colony = getFirstColony(engine, 1);
@@ -883,34 +865,10 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     // Travel + survey
     for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS + SURVEY_TICKS; i++) engine.tick();
 
-    // Ship should now have return path
     assert.strictEqual(ship.surveying, false, 'no longer surveying');
-    assert.strictEqual(ship.systemId, targetId, 'still at surveyed system');
-    assert.ok(ship.path.length > 0, 'should have return path');
-    assert.strictEqual(ship.hopProgress, 0, 'hopProgress starts at 0 for return');
-    assert.strictEqual(ship.targetSystemId, null, 'return trip has null targetSystemId');
-  });
-
-  it('return journey completes and ship arrives idle at colony system', () => {
-    const engine = makeEngine();
-    const ship = buildAndCompleteScienceShip(engine, 1);
-    const colony = getFirstColony(engine, 1);
-    const adj = engine._adjacency.get(colony.systemId) || [];
-    const targetId = adj[0];
-
-    engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: targetId });
-
-    // Travel + survey
-    for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS + SURVEY_TICKS; i++) engine.tick();
-    const returnPathLen = ship.path.length;
-
-    // Travel home
-    for (let i = 0; i < returnPathLen * SCIENCE_SHIP_HOP_TICKS; i++) engine.tick();
-
-    assert.strictEqual(ship.systemId, colony.systemId, 'ship back at colony');
-    assert.strictEqual(ship.path.length, 0, 'no remaining path');
-    assert.strictEqual(ship.surveying, false, 'not surveying');
-    assert.strictEqual(ship.hopProgress, 0, 'hopProgress is 0');
+    assert.strictEqual(ship.systemId, targetId, 'at surveyed system');
+    assert.strictEqual(ship.path.length, 0, 'no path — stays put');
+    assert.strictEqual(ship.targetSystemId, null, 'no target');
   });
 
   it('hopProgress never exceeds HOP_TICKS in serialized state', () => {
@@ -989,11 +947,12 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     assert.ok(after.includes(targetId), 'system surveyed after');
   });
 
-  it('ship cannot be sent to a new target while returning home', () => {
+  it('ship can be redirected immediately after survey completes', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
     const colony = getFirstColony(engine, 1);
     const adj = engine._adjacency.get(colony.systemId) || [];
+    if (adj.length < 2) return;
     const targetId = adj[0];
 
     engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: targetId });
@@ -1001,29 +960,34 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     // Travel + survey
     for (let i = 0; i < SCIENCE_SHIP_HOP_TICKS + SURVEY_TICKS; i++) engine.tick();
 
-    // Ship is now returning home (has path)
-    assert.ok(ship.path.length > 0);
+    // Ship is idle at surveyed system — should accept new command
+    assert.strictEqual(ship.path.length, 0, 'ship is idle');
+    assert.strictEqual(ship.surveying, false);
 
-    // Try to send it somewhere else — should fail because it's in transit
+    // Find an unsurveyed neighbor of the surveyed system
     const adj2 = engine._adjacency.get(targetId) || [];
-    const secondTarget = adj2.find(id => id !== colony.systemId);
+    const secondTarget = adj2.find(id => {
+      const surveyed = engine._surveyedSystems.get(1);
+      return id !== colony.systemId && !(surveyed && surveyed.has(id));
+    });
     if (secondTarget != null) {
       const result = engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: secondTarget });
-      assert.ok(result.error, 'should reject — ship in transit');
-      assert.ok(result.error.includes('transit'), 'error should mention transit');
+      assert.ok(result.ok, 'should accept new survey mission');
+      assert.ok(ship.path.length > 0, 'ship has new path');
     }
   });
 
-  it('full round trip: idle → transit → survey → return → idle, all state transitions', () => {
+  it('full lifecycle: idle → transit → survey → idle at surveyed system', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
     const colony = getFirstColony(engine, 1);
     const adj = engine._adjacency.get(colony.systemId) || [];
     const targetId = adj[0];
 
-    // Phase 1: Idle
+    // Phase 1: Idle at colony
     assert.strictEqual(ship.path.length, 0);
     assert.strictEqual(ship.surveying, false);
+    assert.strictEqual(ship.systemId, colony.systemId);
 
     // Phase 2: Send — transit begins
     engine.handleCommand(1, { type: 'sendScienceShip', shipId: ship.id, targetSystemId: targetId });
@@ -1042,15 +1006,9 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     engine.tick(); // final survey tick
     assert.strictEqual(ship.surveying, false, 'surveying done');
 
-    // Phase 5: Return transit begins immediately
-    assert.ok(ship.path.length > 0, 'return path set');
-    assert.strictEqual(ship.hopProgress, 0, 'hopProgress 0 at start of return');
-
-    // Phase 6: Travel home
-    const returnHops = ship.path.length;
-    for (let i = 0; i < returnHops * SCIENCE_SHIP_HOP_TICKS; i++) engine.tick();
-    assert.strictEqual(ship.systemId, colony.systemId, 'back at colony');
-    assert.strictEqual(ship.path.length, 0, 'no more path');
-    assert.strictEqual(ship.surveying, false, 'not surveying');
+    // Phase 5: Ship stays idle at surveyed system (no auto-return)
+    assert.strictEqual(ship.systemId, targetId, 'stays at surveyed system');
+    assert.strictEqual(ship.path.length, 0, 'no path');
+    assert.strictEqual(ship.targetSystemId, null, 'no target');
   });
 });
