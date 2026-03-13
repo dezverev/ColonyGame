@@ -36,6 +36,16 @@ const PLANET_BONUSES = {
   arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
 };
 
+// Colony personality traits: 4+ districts of same type earns a trait
+// Only one trait per colony (highest count wins, ties broken by order below)
+const COLONY_TRAITS = {
+  research:    { name: 'Academy World',  threshold: 4, bonus: { physics: 0.10, society: 0.10, engineering: 0.10 } },
+  industrial:  { name: 'Forge World',    threshold: 4, bonus: { alloys: 0.10 } },
+  mining:      { name: 'Mining Colony',  threshold: 4, bonus: { minerals: 0.10 } },
+  agriculture: { name: 'Breadbasket',    threshold: 4, bonus: { food: 0.10 } },
+  generator:   { name: 'Power Hub',      threshold: 4, bonus: { energy: 0.10 } },
+};
+
 // Colony ship constants
 const COLONY_SHIP_COST = { minerals: 200, food: 100, alloys: 100 };
 const COLONY_SHIP_BUILD_TIME = 600; // 60 seconds at 10Hz
@@ -350,6 +360,45 @@ class GameEngine {
     return jobs;
   }
 
+  // Calculate colony personality trait based on district composition
+  // Returns { type, name, bonus } or null if no trait earned
+  _calcColonyTrait(colony) {
+    const counts = {};
+    for (const d of colony.districts) {
+      if (d.disabled) continue;
+      if (!COLONY_TRAITS[d.type]) continue;
+      counts[d.type] = (counts[d.type] || 0) + 1;
+    }
+    let bestType = null;
+    let bestCount = 0;
+    for (const [type, count] of Object.entries(counts)) {
+      if (count >= COLONY_TRAITS[type].threshold && count > bestCount) {
+        bestCount = count;
+        bestType = type;
+      }
+    }
+    if (!bestType) return null;
+    const traitDef = COLONY_TRAITS[bestType];
+    return { type: bestType, name: traitDef.name, bonus: traitDef.bonus };
+  }
+
+  // Calculate empire-wide trait bonuses for a player (sum across all colonies)
+  // Returns { resource: multiplier } e.g. { alloys: 0.20 } for 2 Forge Worlds
+  _calcTraitBonuses(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    const bonuses = {};
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      const trait = this._calcColonyTrait(colony);
+      if (!trait) continue;
+      for (const [resource, amount] of Object.entries(trait.bonus)) {
+        bonuses[resource] = (bonuses[resource] || 0) + amount;
+      }
+    }
+    return bonuses;
+  }
+
   // Calculate per-month production for a colony (cached — invalidated on district/pop changes)
   _calcProduction(colony) {
     if (colony._cachedProduction !== null) return colony._cachedProduction;
@@ -410,6 +459,14 @@ class GameEngine {
 
     // Pops consume 1 food each per month
     consumption.food = colony.pops;
+
+    // Apply empire-wide colony trait bonuses (multiplicative on production)
+    const traitBonuses = this._calcTraitBonuses(colony.ownerId);
+    for (const [resource, bonus] of Object.entries(traitBonuses)) {
+      if (production[resource]) {
+        production[resource] = Math.round(production[resource] * (1 + bonus) * 100) / 100;
+      }
+    }
 
     const result = { production, consumption };
     colony._cachedProduction = result;
@@ -507,6 +564,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else {
+          const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
@@ -515,6 +573,17 @@ class GameEngine {
             districtType: item.type,
             playerName: ownerName,
           }, true);
+          // Check if a new colony trait was earned or changed
+          const traitAfter = this._calcColonyTrait(colony);
+          if (traitAfter && (!traitBefore || traitBefore.type !== traitAfter.type)) {
+            this._emitEvent('colonyTraitEarned', colony.ownerId, {
+              colonyId: colony.id,
+              colonyName: colony.name,
+              traitType: traitAfter.type,
+              traitName: traitAfter.name,
+              playerName: ownerName,
+            }, true);
+          }
         }
 
         if (colony.buildQueue.length === 0) {
@@ -1052,28 +1121,33 @@ class GameEngine {
   }
 
   // Full VP breakdown for a player — single source of truth for the VP formula.
-  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP }
+  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP }
   _calcVPBreakdown(playerId) {
     const cached = this._vpBreakdownCache.get(playerId);
     if (cached && this._vpCacheTick === this.tickCount) return cached;
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0 };
       return empty;
     }
 
-    // Pops × 2 + Districts × 1 (single pass)
+    // Pops × 2 + Districts × 1 (single pass) + count traits
     let totalPops = 0;
     let totalDistricts = 0;
+    let traitCount = 0;
     const colonyIds = this._playerColonies.get(playerId) || [];
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (colony) {
         totalPops += colony.pops;
         totalDistricts += colony.districts.length;
+        if (this._calcColonyTrait(colony)) traitCount++;
       }
     }
+
+    // Colony personality traits: +5 VP per active trait
+    const traitsVP = traitCount * 5;
 
     // Alloys stockpiled / 25
     const alloysVP = Math.floor(state.resources.alloys / 25);
@@ -1095,13 +1169,14 @@ class GameEngine {
       }
     }
 
-    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP;
+    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP + traitsVP;
     const breakdown = {
       vp, pops: totalPops, popsVP: totalPops * 2,
       districts: totalDistricts, districtsVP: totalDistricts,
       alloys: state.resources.alloys, alloysVP,
       totalResearch, researchVP,
       techs: (state.completedTechs || []).length, techVP,
+      traits: traitCount, traitsVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -1820,12 +1895,14 @@ class GameEngine {
       else if (foodSurplus > 5) growthStatus = 'fast';
       else growthStatus = 'slow';
     }
+    const trait = this._calcColonyTrait(c);
     return {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
       isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
+      trait: trait ? { type: trait.type, name: trait.name } : null,
       netProduction: {
         energy: production.energy - (consumption.energy || 0),
         minerals: production.minerals - (consumption.minerals || 0),
@@ -1859,4 +1936,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, generateGalaxy, assignStartingSystems };

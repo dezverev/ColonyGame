@@ -16,6 +16,7 @@
     districtDisabled: 'crisis',
     surveyComplete: 'positive',
     anomalyDiscovered: 'positive',
+    colonyTraitEarned: 'positive',
   };
 
   function formatGameEvent(msg) {
@@ -48,6 +49,8 @@
         return 'Survey complete: ' + (d.systemName || 'system') + (d.discoveries && d.discoveries.length > 0 ? ' — ' + d.discoveries.length + ' anomal' + (d.discoveries.length === 1 ? 'y' : 'ies') + ' found!' : '');
       case 'anomalyDiscovered':
         return 'Anomaly: ' + (d.anomalyLabel || 'Unknown') + ' discovered at ' + (d.systemName || 'system') + '!';
+      case 'colonyTraitEarned':
+        return (d.colonyName || 'Colony') + ' earned trait: ' + (d.traitName || 'Unknown') + '!';
       default:
         return null;
     }

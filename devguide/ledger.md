@@ -1139,3 +1139,46 @@ Each entry records an iteration of automated development.
 - Practice mode rooms use server defaults (10-min timer, small galaxy) — player can still configure via multiplayer path if desired
 
 **Next:** Colony crisis events or T3 tech expansion
+
+---
+
+## Entry 33 — 2026-03-12 — Colony Personality Traits + VP Bonus
+
+**Phase:** 2 (Colony Management) + Phase 1 (VP balance)
+**Status:** Complete
+
+**What was built:**
+- Colony personality trait system: when a colony has 4+ districts of the same type, it earns a named trait with empire-wide production bonuses
+- 5 trait types: Academy World (4+ Research: +10% research empire-wide), Forge World (4+ Industrial: +10% alloys), Mining Colony (4+ Mining: +10% minerals), Breadbasket (4+ Agriculture: +10% food), Power Hub (4+ Generator: +10% energy)
+- Only one trait per colony — highest district count wins. Disabled districts don't count
+- Empire-wide bonuses stack across colonies (2 Forge Worlds = +20% alloys)
+- Trait bonuses applied as multiplicative modifier in `_calcProduction` after base + tech + planet bonuses
+- +5 VP per active colony trait added to `_calcVPBreakdown` — rebalances tall vs wide play
+- `colonyTraitEarned` broadcast event emitted when district construction creates or changes a trait
+- Colony serialization includes `trait: { type, name }` (or null)
+- Client: trait badge shown in colony info panel (gold text) and colony list sidebar (gold pill badge)
+- Client: game-over scoreboard includes Traits column with count and VP contribution
+- Toast notification: "Colony earned trait: Mining Colony!" (positive type)
+- Colony list sidebar fingerprint includes trait type for rebuild on trait changes
+
+**Files changed:**
+- `server/game-engine.js` — COLONY_TRAITS constant, `_calcColonyTrait`, `_calcTraitBonuses`, trait bonus application in `_calcProduction`, traitsVP in `_calcVPBreakdown`, trait in `_serializeColony`, `colonyTraitEarned` event in construction completion, COLONY_TRAITS in module.exports
+- `src/public/js/app.js` — cpTraitRow/cpTrait DOM refs, trait display in `_updateHUD`, trait badge in colony list sidebar, traits column in game-over scoreboard, trait in colony list fingerprint
+- `src/public/index.html` — cp-trait-row in colony panel
+- `src/public/css/style.css` — .colony-list-trait, .colony-trait-badge styles
+- `src/public/js/toast-format.js` — colonyTraitEarned formatting and TOAST_TYPE_MAP entry
+- `src/tests/colony-traits.test.js` — **new** 24 tests
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 643 total (24 new: COLONY_TRAITS constant ×4, _calcColonyTrait ×8, empire-wide bonuses ×7, VP bonus ×4, serialization ×3, trait event ×2, toast formatting ×3). All passing.
+
+**Key decisions:**
+- Trait bonuses are multiplicative on total production (base + tech + planet), applied after all other modifiers — gives the most impactful reward for specialization
+- Disabled districts excluded from trait count — losing power can cost you a trait, creating cascading consequences
+- Only one trait per colony (highest count wins) — prevents gaming with exactly 4 of everything
+- Housing districts can't earn traits — consistent with housing having no production output
+- Trait calculation is not cached separately — computed on-demand in `_calcProduction`, `_calcVPBreakdown`, and `_serializeColony`. Could be cached if profiling shows a bottleneck
+- +5 VP per trait means a 3-colony empire with 3 traits gets +15 VP, competitive with a 5-colony empire's raw pop/district VP
+
+**Next:** T3 tech expansion (game-designer R31 priority #2) or colony crisis events (R31 priority #3)

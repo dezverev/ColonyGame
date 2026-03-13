@@ -322,6 +322,8 @@
   const growthBarFill = document.getElementById('growth-bar-fill');
   const colonyPanelTitle = document.getElementById('colony-panel-title');
   const cpPlanet = document.getElementById('cp-planet');
+  const cpTraitRow = document.getElementById('cp-trait-row');
+  const cpTrait = document.getElementById('cp-trait');
   const cpDistricts = document.getElementById('cp-districts');
   const cpWorking = document.getElementById('cp-working');
   const cpIdle = document.getElementById('cp-idle');
@@ -859,6 +861,13 @@
       // Colony info panel
       colonyPanelTitle.textContent = colony.name;
       cpPlanet.textContent = (colony.planet.type || 'Unknown') + ' (Size ' + colony.planet.size + ')';
+      // Colony personality trait badge
+      if (colony.trait && cpTraitRow && cpTrait) {
+        cpTraitRow.classList.remove('hidden');
+        cpTrait.textContent = colony.trait.name;
+      } else if (cpTraitRow) {
+        cpTraitRow.classList.add('hidden');
+      }
       const totalDistricts = colony.districts.length + colony.buildQueue.length;
       cpDistricts.textContent = totalDistricts + '/' + colony.planet.size;
       const working = Math.min(colony.pops, colony.jobs);
@@ -928,7 +937,7 @@
     const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
-    for (const col of myColonies) key += col.id + ':' + col.pops + ',';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ',';
     key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
@@ -938,8 +947,10 @@
     myColonies.forEach((col, idx) => {
       const entry = document.createElement('div');
       entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
+      const traitBadge = col.trait ? `<span class="colony-list-trait">${col.trait.name}</span>` : '';
       entry.innerHTML =
         `<span class="colony-list-name">${col.name}</span>` +
+        traitBadge +
         `<span class="colony-list-pops">${col.pops} pop</span>`;
       entry.addEventListener('click', () => {
         _viewingColonyIndex = idx;
@@ -1262,7 +1273,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1270,7 +1281,8 @@
         `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
         `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
         `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
-        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td></tr>`;
+        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
+        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
