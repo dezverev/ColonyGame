@@ -32,16 +32,11 @@
   let _knownSystemIds = new Set(); // systems visible to the local player
   let _lastOwnedKey = '';      // fingerprint of owned system IDs — skip fog rebuild when unchanged
 
-  // Camera orbit state
-  let orbitTheta = 0;          // horizontal angle (radians)
-  let orbitPhi = Math.PI / 4;  // vertical angle (radians, 0 = top-down, PI/2 = horizon)
+  // Camera state — fixed angle, pan + zoom only
   let orbitRadius = 400;
   let orbitTarget = { x: 0, y: 0, z: 0 };
   let isDragging = false;
   let dragStartX = 0, dragStartY = 0;
-  let dragStartTheta = 0, dragStartPhi = 0;
-  let isPanning = false;
-  let panStartX = 0, panStartY = 0;
   let panStartTarget = { x: 0, y: 0, z: 0 };
 
   // Raycaster for hover/click
@@ -111,6 +106,7 @@
     renderer.domElement.addEventListener('wheel', _onWheel, { passive: false });
     renderer.domElement.addEventListener('click', _onClick);
     renderer.domElement.addEventListener('mousemove', _onMouseMoveHover);
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', _onMouseMoveDrag);
     window.addEventListener('mouseup', _onMouseUp);
     window.addEventListener('resize', _onResize);
@@ -324,18 +320,18 @@
 
     orbitTarget = { x: 0, y: 0, z: 0 };
     orbitRadius = Math.max(maxR * 1.5, 200);
-    orbitTheta = 0;
-    orbitPhi = Math.PI / 5; // ~36 degrees from top
     _updateCamera();
   }
 
-  // ── Camera orbit ──
+  // ── Camera ──
+  // Fixed slightly-angled top-down view — no rotation, just pan + zoom
+  const _CAM_PHI = Math.PI / 5; // ~36° from vertical — gives depth without losing overview
 
   function _updateCamera() {
     if (!camera) return;
-    const x = orbitTarget.x + orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
-    const y = orbitTarget.y + orbitRadius * Math.cos(orbitPhi);
-    const z = orbitTarget.z + orbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+    const x = orbitTarget.x;
+    const y = orbitTarget.y + orbitRadius * Math.cos(_CAM_PHI);
+    const z = orbitTarget.z + orbitRadius * Math.sin(_CAM_PHI);
     camera.position.set(x, y, z);
     camera.lookAt(orbitTarget.x, orbitTarget.y, orbitTarget.z);
   }
@@ -343,50 +339,34 @@
   // ── Event handlers ──
 
   function _onMouseDown(e) {
-    if (e.button === 0) { // left: orbit rotate
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      dragStartTheta = orbitTheta;
-      dragStartPhi = orbitPhi;
-    } else if (e.button === 1 || e.button === 2) { // middle/right: pan
-      isPanning = true;
-      panStartX = e.clientX;
-      panStartY = e.clientY;
-      panStartTarget = { ...orbitTarget };
-      e.preventDefault();
-    }
+    // All mouse buttons pan
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panStartTarget = { ...orbitTarget };
+    if (e.button === 1 || e.button === 2) e.preventDefault();
   }
 
   function _onMouseMoveDrag(e) {
     if (isDragging) {
-      const dx = (e.clientX - dragStartX) * 0.005;
-      const dy = (e.clientY - dragStartY) * 0.005;
-      orbitTheta = dragStartTheta - dx;
-      orbitPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.01, dragStartPhi + dy));
-      _updateCamera();
-    }
-    if (isPanning) {
       const factor = orbitRadius * 0.002;
-      const dx = (e.clientX - panStartX) * factor;
-      const dy = (e.clientY - panStartY) * factor;
-      // Pan in camera-right and camera-up directions (projected to XZ plane)
-      orbitTarget.x = panStartTarget.x - dx * Math.cos(orbitTheta);
-      orbitTarget.z = panStartTarget.z + dx * Math.sin(orbitTheta);
-      orbitTarget.x += dy * Math.sin(orbitTheta) * Math.sin(orbitPhi);
-      orbitTarget.z += dy * Math.cos(orbitTheta) * Math.sin(orbitPhi);
+      const dx = (e.clientX - dragStartX) * factor;
+      const dy = (e.clientY - dragStartY) * factor;
+      // Pan along XZ plane (camera looks down at fixed angle)
+      orbitTarget.x = panStartTarget.x - dx;
+      orbitTarget.z = panStartTarget.z - dy;
       _updateCamera();
     }
   }
 
-  function _onMouseUp(e) {
-    if (e.button === 0) isDragging = false;
-    if (e.button === 1 || e.button === 2) isPanning = false;
+  function _onMouseUp() {
+    isDragging = false;
   }
 
   function _onWheel(e) {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 1.1 : 0.9;
+    // Support trackpad pinch (ctrlKey) and regular scroll
+    const delta = e.deltaY > 0 ? 1.08 : 1 / 1.08;
     orbitRadius = Math.max(50, Math.min(2000, orbitRadius * delta));
     _updateCamera();
   }
