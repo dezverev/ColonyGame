@@ -23,6 +23,8 @@
   let colonyShipPool = [];     // reusable colony ship mesh pool
   let scienceShipMeshes = [];  // active science ship marker meshes
   let scienceShipPool = [];    // reusable science ship mesh pool
+  let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
+  let _lastScienceShipData = null;
 
   // Fog of war state
   let _adjacency = null;       // adjacency list built from hyperlanes
@@ -494,6 +496,7 @@
 
   function updateColonyShips(ships) {
     if (!scene || !galaxyData) return;
+    _lastColonyShipData = ships;
 
     // Return active meshes to pool (hide, don't destroy)
     for (const mesh of colonyShipMeshes) {
@@ -504,7 +507,6 @@
 
     if (!ships || ships.length === 0) return;
 
-    const now = performance.now();
     for (const ship of ships) {
       const playerColor = _getPlayerColor(ship.ownerId);
       const matKey = 'colonyShip_' + playerColor;
@@ -514,7 +516,6 @@
         });
       }
 
-      // Reuse pooled mesh or create new one
       let mesh;
       if (colonyShipPool.length > 0) {
         mesh = colonyShipPool.pop();
@@ -525,35 +526,18 @@
         scene.add(mesh);
       }
 
-      // Position: interpolate between current system and next hop
       const currentSys = galaxyData.systems[ship.systemId];
       if (!currentSys) { mesh.visible = false; colonyShipPool.push(mesh); continue; }
 
-      if (ship.path && ship.path.length > 0) {
-        const nextSys = galaxyData.systems[ship.path[0]];
-        if (nextSys) {
-          const t = ship.hopProgress / 50; // COLONY_SHIP_HOP_TICKS = 50
-          mesh.position.set(
-            currentSys.x + (nextSys.x - currentSys.x) * t,
-            (currentSys.y || 0) + ((nextSys.y || 0) - (currentSys.y || 0)) * t + 3,
-            currentSys.z + (nextSys.z - currentSys.z) * t
-          );
-        } else {
-          mesh.position.set(currentSys.x, (currentSys.y || 0) + 3, currentSys.z);
-        }
-      } else {
-        // Idle at system — offset slightly above and bob
-        mesh.position.set(currentSys.x + 5, (currentSys.y || 0) + 5, currentSys.z + 5);
-      }
-
-      // Slow rotation for visual flair
-      mesh.rotation.y = now * 0.002;
+      // Store ship data on mesh for per-frame animation
+      mesh.userData.shipData = ship;
       colonyShipMeshes.push(mesh);
     }
   }
 
   function updateScienceShips(ships) {
     if (!scene || !galaxyData) return;
+    _lastScienceShipData = ships;
 
     // Return active meshes to pool
     for (const mesh of scienceShipMeshes) {
@@ -564,9 +548,8 @@
 
     if (!ships || ships.length === 0) return;
 
-    const now = performance.now();
     for (const ship of ships) {
-      const playerColor = _playerColorMap[ship.ownerId] || '#00e5ff';
+      const playerColor = _getPlayerColor(ship.ownerId);
       const matKey = 'scienceShip_' + playerColor;
       if (!_matCache[matKey]) {
         _matCache[matKey] = new THREE.MeshBasicMaterial({
@@ -587,32 +570,8 @@
       const currentSys = galaxyData.systems[ship.systemId];
       if (!currentSys) { mesh.visible = false; scienceShipPool.push(mesh); continue; }
 
-      if (ship.path && ship.path.length > 0 && !ship.surveying) {
-        const nextSys = galaxyData.systems[ship.path[0]];
-        if (nextSys) {
-          const t = ship.hopProgress / 30; // SCIENCE_SHIP_HOP_TICKS = 30
-          mesh.position.set(
-            currentSys.x + (nextSys.x - currentSys.x) * t,
-            (currentSys.y || 0) + 4 + ((nextSys.y || 0) - (currentSys.y || 0)) * t,
-            currentSys.z + (nextSys.z - currentSys.z) * t,
-          );
-        } else {
-          mesh.position.set(currentSys.x, (currentSys.y || 0) + 4, currentSys.z);
-        }
-      } else if (ship.surveying) {
-        // Orbiting during survey — circle around system
-        const angle = now * 0.003;
-        mesh.position.set(
-          currentSys.x + Math.cos(angle) * 6,
-          (currentSys.y || 0) + 4,
-          currentSys.z + Math.sin(angle) * 6,
-        );
-      } else {
-        // Idle at system — offset slightly
-        mesh.position.set(currentSys.x - 5, (currentSys.y || 0) + 5, currentSys.z - 5);
-      }
-
-      mesh.rotation.y = now * 0.003;
+      // Store ship data on mesh for per-frame animation
+      mesh.userData.shipData = ship;
       scienceShipMeshes.push(mesh);
     }
   }
@@ -635,18 +594,23 @@
     }
     _updateOwnership(galaxyData.systems);
 
-    // Build fingerprint of owned system IDs — skip expensive fog rebuild when unchanged
+    // Build fingerprint of owned + surveyed system IDs — skip expensive fog rebuild when unchanged
     const myId = (typeof window !== 'undefined' && window.GameClient)
       ? window.GameClient.getState() && window.GameClient.getState().yourId
       : null;
-    let ownedKey = '';
+    let fogKey = '';
     if (colonies && myId) {
       for (const col of colonies) {
-        if (col.ownerId === myId && col.systemId != null) ownedKey += col.systemId + ',';
+        if (col.ownerId === myId && col.systemId != null) fogKey += col.systemId + ',';
       }
     }
-    if (ownedKey !== _lastOwnedKey) {
-      _lastOwnedKey = ownedKey;
+    // Include surveyed systems in cache key so fog updates after surveys complete
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    if (gs && gs.surveyedSystems && gs.surveyedSystems[myId]) {
+      fogKey += 's:' + gs.surveyedSystems[myId].length;
+    }
+    if (fogKey !== _lastOwnedKey) {
+      _lastOwnedKey = fogKey;
       _recomputeFog(colonies);
       _applyFog();
     }
@@ -756,10 +720,76 @@
     }
   }
 
+  // ── Per-frame ship animation ──
+
+  function _animateShips() {
+    if (!galaxyData) return;
+    const now = performance.now();
+
+    // Colony ships
+    for (const mesh of colonyShipMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const currentSys = galaxyData.systems[ship.systemId];
+      if (!currentSys) continue;
+
+      if (ship.path && ship.path.length > 0) {
+        const nextSys = galaxyData.systems[ship.path[0]];
+        if (nextSys) {
+          const t = ship.hopProgress / 50; // COLONY_SHIP_HOP_TICKS = 50
+          mesh.position.set(
+            currentSys.x + (nextSys.x - currentSys.x) * t,
+            (currentSys.y || 0) + ((nextSys.y || 0) - (currentSys.y || 0)) * t + 3,
+            currentSys.z + (nextSys.z - currentSys.z) * t
+          );
+        } else {
+          mesh.position.set(currentSys.x, (currentSys.y || 0) + 3, currentSys.z);
+        }
+      } else {
+        mesh.position.set(currentSys.x + 5, (currentSys.y || 0) + 5, currentSys.z + 5);
+      }
+      mesh.rotation.y = now * 0.002;
+    }
+
+    // Science ships
+    for (const mesh of scienceShipMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const currentSys = galaxyData.systems[ship.systemId];
+      if (!currentSys) continue;
+
+      if (ship.path && ship.path.length > 0 && !ship.surveying) {
+        const nextSys = galaxyData.systems[ship.path[0]];
+        if (nextSys) {
+          const t = ship.hopProgress / 30; // SCIENCE_SHIP_HOP_TICKS = 30
+          mesh.position.set(
+            currentSys.x + (nextSys.x - currentSys.x) * t,
+            (currentSys.y || 0) + 4 + ((nextSys.y || 0) - (currentSys.y || 0)) * t,
+            currentSys.z + (nextSys.z - currentSys.z) * t
+          );
+        } else {
+          mesh.position.set(currentSys.x, (currentSys.y || 0) + 4, currentSys.z);
+        }
+      } else if (ship.surveying) {
+        // Smooth orbiting during survey — updates every frame
+        const angle = now * 0.003;
+        mesh.position.set(
+          currentSys.x + Math.cos(angle) * 6,
+          (currentSys.y || 0) + 4,
+          currentSys.z + Math.sin(angle) * 6
+        );
+      } else {
+        mesh.position.set(currentSys.x - 5, (currentSys.y || 0) + 5, currentSys.z - 5);
+      }
+      mesh.rotation.y = now * 0.003;
+    }
+  }
+
   // ── Render ──
 
   function render() {
     if (renderer && scene && camera) {
+      _animateShips();
       renderer.render(scene, camera);
     }
   }

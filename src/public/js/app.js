@@ -178,6 +178,11 @@
             if (window.GalaxyView.updateScienceShips) {
               window.GalaxyView.updateScienceShips(gameState.scienceShips);
             }
+            // Refresh open system panel so survey results appear
+            if (systemPanel && !systemPanel.classList.contains('hidden')) {
+              const sel = window.GalaxyView.getSelectedSystem();
+              if (sel) _onSystemSelect(sel);
+            }
           }
           // Update colony list sidebar
           _updateColonyList();
