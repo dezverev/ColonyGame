@@ -909,3 +909,233 @@ Each entry records an iteration of automated development.
 - Non-habitable types (barren, molten, gasGiant) have no bonuses — consistent with them being uncolonizable
 
 **Next:** Colony ships — minimal expansion (R23 priority #2)
+
+---
+
+## Entry 27 — 2026-03-12 — Colony Ships + Multi-Colony Management
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- Colony ships: buildable from any colony build queue for 200 minerals + 100 food + 100 alloys, 600 ticks (60 sec) build time
+- Colony ship appears as movable unit at colony's system on galaxy map after construction
+- `sendColonyShip` command: select idle ship, click habitable planet in system panel to send. BFS shortest path along hyperlanes, 50 ticks (5 sec) per hop
+- On arrival: ship consumed, new colony founded with 2 pops on best habitable planet. Colony gets `isStartingColony = false` so first-3-districts build discount applies
+- Max 5 colonies per player enforced (counts both existing colonies and in-flight ships)
+- Colony list sidebar (left side): appears when player has 2+ colonies, shows colony name + pop count, click to switch view, keyboard shortcuts 1-5
+- Colony ship rendering on galaxy map: colored diamond markers (OctahedronGeometry) interpolated along hyperlane path during transit, idle ships offset near their system
+- System panel "Send Colony Ship here" button: appears when player has idle ships and target system has uncolonized habitable planet
+- Build menu "Colony Ship" option: appears below district types with green accent, grayed when at colony cap or insufficient resources
+- `colonyFounded` event broadcast to all players with toast notifications
+- Colony ship build queue cancellation with 50% resource refund
+- Shared resource pool across all colonies (Stellaris model)
+
+**Files changed:**
+- `server/game-engine.js` — COLONY_SHIP_COST/BUILD_TIME/HOP_TICKS/MAX_COLONIES/STARTING_POPS constants, _colonyShips array, _findPath BFS, _processColonyShipMovement, _foundColonyFromShip, buildColonyShip/sendColonyShip commands, colonyShip in construction completion, colonyShip cancellation refund, colony ships in getState/getPlayerState serialization
+- `server/server.js` — added buildColonyShip and sendColonyShip to command routing
+- `src/public/js/galaxy-view.js` — colonyShipMeshes, OctahedronGeometry diamond markers, updateColonyShips method with path interpolation, cleanup in _clearGalaxy
+- `src/public/js/app.js` — colonyShips in gameState, _viewingColonyIndex for multi-colony, _updateColonyList sidebar, colony ship build option in build menu, "Send Colony Ship" in system panel, number key shortcuts 1-5, colonyShip queue display, galaxy view colony ship updates
+- `src/public/js/toast-format.js` — colonyFounded, colonyShipFailed, colonyShip constructionComplete toast formatting
+- `src/public/index.html` — colony-list-sidebar div
+- `src/public/css/style.css` — colony list sidebar, colony ship build option, send colony ship button styles
+- `src/tests/colony-ships.test.js` — new file (37 tests)
+- `devguide/design.md` — marked 4 tasks complete (colony ships, colony switcher UI, colony list sidebar, max colonies cap, colony founding broadcast)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 384 total (37 new: constants, buildColonyShip validation × 8, construction completion × 2, cancellation refund, BFS pathfinding × 3, sendColonyShip validation × 5, movement + colonization × 2, colony cap × 2, serialization × 2, toast formatting × 4). All passing.
+
+**Key decisions:**
+- Colony ships use existing build queue system (type: 'colonyShip') rather than a separate shipyard — keeps expansion simple and accessible from day 1
+- BFS pathfinding computed on send command, not on ship tick — path is static once calculated, no per-tick pathfinding cost
+- Ship movement processed every tick (hopProgress++) but dirty marking throttled to every 5 ticks — smooth animation without broadcast spam
+- Colony cap counts both existing colonies and in-flight ships to prevent queuing 5 ships simultaneously
+- New colonies start with 2 pops (not 8) — makes expansion a real investment that takes time to pay off
+- Colony list sidebar only appears with 2+ colonies — no UI clutter for single-colony games
+- Shared resource pool (not per-colony) matches Stellaris model — simpler accounting, colony ships use global resources
+
+**Next:** Fog of war on galaxy map (R25 priority #3)
+
+---
+
+## Entry 28 — 2026-03-12 — Fog of War on Galaxy Map
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- Client-side fog of war visibility system with BFS from owned systems to depth 2 along hyperlanes
+- Shared `fog-of-war.js` module (IIFE pattern) with `buildAdjacency`, `computeVisibility`, `getOwnedSystemIds` — testable in both browser and Node.js
+- Three visibility tiers for star systems: **Known** (within 2 hops of owned system) renders full-color at normal size, **Unknown** renders as dim gray dot at 60% size with opacity 0.2
+- Hyperlane visibility: **known** (both endpoints known) renders solid at 0.4 opacity, **faded** (one endpoint known) renders at 0.12 opacity, **hidden** (neither known) not rendered at all
+- Hover labels show "Unknown System" for systems outside fog range, full name for known systems
+- System panel shows "Unexplored — send a colony ship to learn more" for unknown systems instead of planet details
+- Unknown systems still show ownership dots if another player has colonized them (colored ring visible, but no planet data)
+- Fog recomputes on every `updateOwnership` call (each gameState update), so visibility expands in real-time as colonies are founded
+- Hyperlanes rebuilt on each fog recompute (partitioned into known/faded/hidden LineSegments)
+
+**Files changed:**
+- `src/public/js/fog-of-war.js` — **new** shared fog of war computation module
+- `src/public/js/galaxy-view.js` — adjacency list, fog state, star material swapping, hyperlane partitioning, hover label gating, `isSystemKnown` API
+- `src/public/js/app.js` — system panel fog of war check, "Unexplored" UI for unknown systems
+- `src/public/index.html` — fog-of-war.js script tag
+- `src/public/css/style.css` — `.system-unexplored` style
+- `src/tests/fog-of-war.test.js` — **new** 19 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 419 total (19 new: adjacency building ×3, BFS visibility ×9, owned system extraction ×3, constant validation ×1, integration scenarios ×3). All passing.
+
+**Key decisions:**
+- Extracted BFS/adjacency into shared `fog-of-war.js` module rather than inlining in galaxy-view.js — enables Node.js testing without DOM/Three.js dependencies
+- Client-side only — no server changes needed. Server sends full galaxy data; client filters what to render based on owned systems
+- Fog recomputes on every gameState update rather than being cached across sessions — simple, correct, and fast enough (BFS on 50-200 nodes is trivial)
+- Unknown systems still rendered (dim dot) rather than completely hidden — preserves galaxy shape awareness and lets players see the extent of unexplored space
+- Ownership rings still visible on unknown systems — creates "who owns that?" tension without revealing planet details
+- Hyperlane rebuild on each fog update creates 2-3 LineSegments objects max — negligible memory cost vs maintaining a single object with per-line opacity
+
+**Next:** Base capital housing reduction 10→8 (R25 priority #4), or in-game chat panel (R25 priority #5)
+
+---
+
+## Entry 29 — 2026-03-12 — Multiplayer Awareness Bundle (Chat + Scoreboard + Event Ticker)
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- **In-game chat panel:** Collapsible chat overlay at bottom-left of game screen. Reuses existing WebSocket `chat` message routing. Player names colored by their player color from gameState. Enter key focuses chat input, Escape unfocuses. Auto-expands when new messages arrive, collapses after 4 seconds. Max 30 messages displayed. `e.stopPropagation()` prevents game shortcuts while typing.
+- **Enhanced scoreboard overlay (Tab key):** Expanded from VP-only to show: rank, player name (colored), VP, colony count, total pops, and net income rates for energy/minerals/food/alloys. Month counter shown at top. Server-side `_getPlayerSummary(playerId)` computes per-player stats from colony production data. Income data included in `getPlayerState` for both own player and other players.
+- **Event ticker:** Scrolling ticker at top-center of game screen showing significant player actions across all players. Events auto-dismiss after 6 seconds with fade animation. Max 5 visible. Broadcasts: `constructionComplete`, `popMilestone`, `colonyFounded`, `researchComplete`. Each broadcast event includes `playerName` field and `broadcast: true` flag. Server routes broadcast events to all players in room instead of just the originating player.
+- **Broadcast event system:** Added `broadcast` parameter to `_emitEvent()`. Server `onEvent` handler now checks `event.broadcast` to route to all room players vs single player. Non-broadcast events (foodDeficit, housingFull, etc.) remain private. Simplified colonyFounded from N per-player events to 1 broadcast event.
+
+**Files changed:**
+- `server/game-engine.js` — `_emitEvent` broadcast flag, `_getPlayerSummary` method, playerName in broadcast events, colonyFounded simplified to single broadcast, summary in getPlayerState
+- `server/server.js` — broadcast routing in onEvent handler
+- `src/public/js/app.js` — game chat DOM refs, `_addGameChatMessage`, `_getPlayerColor`, game chat input wiring (Enter/Escape/focus/blur), event ticker (`_addTickerEvent`, `_formatTickerEvent`), enhanced `_renderScoreboard` with colonies/pops/income, toast now only shows for own events
+- `src/public/index.html` — `#game-chat` panel, `#event-ticker` div
+- `src/public/css/style.css` — game chat styles (collapsible, expanded state), event ticker styles (fade in/out animations), enhanced scoreboard styles (wider, income colors), `.inc-pos`/`.inc-neg` classes
+- `src/tests/multiplayer-awareness.test.js` — **new** 17 tests
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 455 total (17 new: player summary × 5, getPlayerState summary × 4, broadcast events × 6, chat protocol × 2). All passing.
+
+**Key decisions:**
+- Chat auto-collapses after 4 seconds to avoid obscuring the game view, but stays expanded while input is focused
+- Broadcast events are a lightweight extension to the existing `_emitEvent` system — just a boolean flag, no architectural changes
+- Toasts remain private (only show for own events) while the ticker shows all-player broadcasts — avoids duplicating notifications for your own actions
+- colonyFounded simplified from N manual per-player events to 1 broadcast event — cleaner and consistent with the new system
+- Scoreboard income data computed server-side via `_getPlayerSummary` to keep all game state authoritative on the server
+- Event ticker positioned below status bar at top-center, separate from toasts (right side) — two distinct notification channels
+
+**Next:** Base capital housing reduction 10→8 (R25 priority #4), or starting planet variety, or colony personality system (R28 priority #2)
+
+---
+
+## Entry 30 — 2026-03-12 — Balance Fix: Research VP Rebalance + Per-Tech VP Bonuses
+
+**Phase:** 4 (Technology & Research)
+**Status:** Complete
+
+**What was built:**
+- Doubled research VP contribution: changed VP formula from `totalResearch/100` to `totalResearch/50` in `_calcVictoryPoints` and `_triggerGameOver` breakdown
+- Added per-tech VP bonuses: +5 VP per completed T1 tech, +10 VP per T2 tech, +20 VP per T3 tech (when T3 exists)
+- Updated game-over breakdown to include `techs` (count) and `techVP` (bonus VP from completed techs) fields
+- Updated client post-game scoreboard table to show Techs column with count and VP contribution
+- A player who researches all 6 current techs gets +45 VP bonus (3×5 + 3×10) plus doubled research stockpile VP — makes "tech rush" a viable strategy
+
+**Files changed:**
+- `server/game-engine.js` — `_calcVictoryPoints` research divisor 100→50, techVP loop over completedTechs; `_triggerGameOver` breakdown with techs/techVP fields
+- `src/public/js/app.js` — game-over scoreboard Techs column
+- `src/tests/game-engine.test.js` — updated 2 existing VP tests (research divisor, fractional values), added 7 new tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 502 total (7 new: research divisor=50, T1 tech +5 VP, T2 tech +10 VP, multi-tech sum, zero techs, gameOver breakdown techs/techVP, all 6 techs = +45 VP). All passing.
+
+**Key decisions:**
+- Per-tech VP bonuses are flat (+5/+10/+20 by tier) rather than percentage-based — predictable, easy to reason about during play
+- techVP computed in a loop over completedTechs using TECH_TREE tier lookup — future T3 techs at +20 VP each will automatically work
+- Research divisor change from 100→50 means 1 Research district (producing 12 research/month across 3 tracks) generates ~0.24 VP/month from stockpile alone, plus tech completion bonuses
+- Game-over breakdown shows both tech count and tech VP separately for clarity
+
+**Next:** Science ships (game-designer R29 priority #1) or colony crisis events (R29 priority #2)
+
+---
+
+## Entry 31 — 2026-03-12 — Science Ships + System Surveying + Anomaly Discovery
+
+**Phase:** 3 (Galaxy & Exploration) + Phase 2 (anomalies)
+**Status:** Complete
+
+**What was built:**
+- Science ship unit type: cheaper (100 minerals + 50 alloys), faster (30 ticks/hop = 3 sec vs colony ship 50 ticks/hop = 5 sec) exploration unit buildable from colony build queue
+- Max 3 science ships per player (counted across built + building)
+- Build time: 300 ticks (30 sec). Construction completion spawns idle ship at colony's system
+- `sendScienceShip` command: select idle ship, click system in galaxy panel to send. BFS shortest path along hyperlanes
+- Auto-survey on arrival: 100 ticks (10 sec). Survey completes automatically
+- 5 anomaly types discovered at 20% chance per planet: Ancient Ruins (+50 research per track), Mineral Deposit (+100 minerals), Habitable Moon (+2 planet size), Precursor Artifact (+25 influence), Derelict Ship (+50 alloys)
+- Anomaly rewards applied immediately on discovery. Seeded random for deterministic outcomes
+- Surveyed systems tracked per player (`_surveyedSystems` Map) — persistent fog penetration: surveyed systems stay revealed even when outside 2-hop visibility range
+- After surveying, science ship auto-returns to nearest colony via BFS pathfinding
+- Galaxy map rendering: cyan OctahedronGeometry diamond (smaller than colony ship green diamond). Orbiting animation during survey, interpolated movement during transit
+- Client: "Science Ship" build option in build menu (cyan accent), "Send Science Ship to survey" button in system panel (both known and unknown systems), "Surveyed" badge on surveyed systems
+- Build queue display handles scienceShip type with cyan color and 300-tick total
+- Toast notifications: scienceShip constructionComplete, surveyComplete (with anomaly count), anomalyDiscovered
+- Event ticker: surveyComplete broadcasts formatted with anomaly count
+- Fog of war integration: surveyed systems added to known set in galaxy-view.js _recomputeFog
+- 50% resource refund on build queue cancellation (same as colony ships)
+
+**Files changed:**
+- `server/game-engine.js` — SCIENCE_SHIP constants, ANOMALY_TYPES, _scienceShips array, _surveyedSystems Map, scienceShip construction completion, _processScienceShipMovement, _completeSurvey, _seededRandom, _returnScienceShipToColony, _removeScienceShip, buildScienceShip/sendScienceShip commands, scienceShip cancellation refund, serialization in getState/getPlayerState, tick integration, module.exports
+- `server/server.js` — buildScienceShip and sendScienceShip command routing
+- `src/public/js/app.js` — scienceShips/surveyedSystems in gameState, science ship build option, "Send Science Ship" button in system panel, scienceShip build queue display, event ticker surveyComplete format, galaxy view updateScienceShips call
+- `src/public/js/galaxy-view.js` — scienceShip geometry/material, scienceShipMeshes/Pool, updateScienceShips with transit/survey/idle animations, cleanup in _clearGalaxy, surveyed systems in fog recompute, module export
+- `src/public/js/toast-format.js` — surveyComplete, anomalyDiscovered, scienceShip constructionComplete formatting and TOAST_TYPE_MAP entries
+- `src/public/js/fog-of-war.js` — (unchanged, integration via galaxy-view.js)
+- `src/public/css/style.css` — .system-send-sci-btn, .system-surveyed-badge styles
+- `src/tests/science-ships.test.js` — **new** 37 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 552 total (37 new: 7 constants, 6 buildScienceShip validation, 2 construction completion, 6 sendScienceShip validation, 4 movement + survey, 4 serialization, 1 cancellation refund, 5 toast formatting, 2 toast type map). All passing.
+
+**Key decisions:**
+- Science ships follow colony ship pattern exactly (build queue, BFS pathfinding, hop-based movement) for consistency and maintainability
+- Seeded random for anomaly rolls (`_seededRandom`) uses system+planet orbit as seed — deterministic per system, no stored state needed
+- Anomaly rewards are immediate one-time bonuses (not ongoing) — keeps things simple, rewards exploration without requiring ongoing tracking
+- Max 3 ships (vs colony ship's max 5) balances exploration investment against expansion
+- Auto-return to nearest colony after survey — ships don't sit idle at remote systems, always ready for next command
+- Persistent fog penetration means surveyed systems stay visible even after ship leaves — rewards systematic exploration
+- Surveyed check prevents sending ships to already-surveyed systems — no wasted turns
+
+**Next:** Colony crisis events (game-designer R30 priority #1) or T3 tech expansion (R17-5)
+
+---
+
+## Entry 32 — 2026-03-12 — Single-Player Mode Client UI
+
+**Phase:** 1 (Foundation — Client UX)
+**Status:** Complete
+
+**What was built:**
+- "Single Player" button in lobby header — one click creates a practice-mode room and enters it
+- Room screen hides Ready button and shows Launch immediately in practice mode
+- Green-accented button styling to visually distinguish from multiplayer "Create Room"
+- Server already had full practiceMode support (maxPlayers=1, canLaunch bypasses ready check, 10-min default timer) — this was purely a client UI gap
+
+**Files changed:**
+- `src/public/index.html` — added `#single-player-btn` in lobby header
+- `src/public/js/app.js` — added DOM ref, click handler sending `practiceMode: true`, updated `renderRoom()` to hide ready/show launch in practice mode
+- `src/public/css/style.css` — `#single-player-btn` styling (green accent)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 566 total, all passing. No new tests needed — server-side practiceMode already had 7+ dedicated tests in room-manager.test.js and server-integration.test.js.
+
+**Key decisions:**
+- Single click creates + enters room (no dialog) — minimizes friction for solo play
+- Room name auto-set to "{playerName}'s Game" — no input needed
+- Practice mode rooms use server defaults (10-min timer, small galaxy) — player can still configure via multiplayer path if desired
+
+**Next:** Colony crisis events or T3 tech expansion

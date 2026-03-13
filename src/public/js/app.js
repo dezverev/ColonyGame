@@ -20,6 +20,7 @@
   const nameInput = document.getElementById('name-input');
   const nameSubmit = document.getElementById('name-submit');
   const playerNameDisplay = document.getElementById('player-name-display');
+  const singlePlayerBtn = document.getElementById('single-player-btn');
   const createRoomBtn = document.getElementById('create-room-btn');
   const createRoomDialog = document.getElementById('create-room-dialog');
   const roomNameInput = document.getElementById('room-name-input');
@@ -34,6 +35,9 @@
   const launchBtn = document.getElementById('launch-btn');
   const chatMessages = document.getElementById('chat-messages');
   const chatInput = document.getElementById('chat-input');
+  const gameChatPanel = document.getElementById('game-chat');
+  const gameChatMessages = document.getElementById('game-chat-messages');
+  const gameChatInput = document.getElementById('game-chat-input');
 
   // ── Screen management ──
   function showScreen(name) {
@@ -105,6 +109,9 @@
         if (currentRoom) {
           Lobby.addChatMessage(chatMessages, msg.from, msg.text);
         }
+        if (gameState && gameChatMessages) {
+          _addGameChatMessage(msg.from, msg.text);
+        }
         break;
 
       case 'error':
@@ -116,6 +123,9 @@
           tick: msg.tick,
           players: msg.players,
           colonies: msg.colonies,
+          colonyShips: msg.colonyShips || [],
+          scienceShips: msg.scienceShips || [],
+          surveyedSystems: msg.surveyedSystems || {},
           yourId: msg.yourId,
           matchTimerEnabled: msg.matchTimerEnabled || false,
           matchTicksRemaining: msg.matchTicksRemaining || 0,
@@ -149,6 +159,9 @@
           gameState.tick = msg.tick;
           gameState.players = msg.players;
           gameState.colonies = msg.colonies;
+          if (msg.colonyShips) gameState.colonyShips = msg.colonyShips;
+          if (msg.scienceShips) gameState.scienceShips = msg.scienceShips;
+          if (msg.surveyedSystems) gameState.surveyedSystems = msg.surveyedSystems;
           if (msg.matchTimerEnabled !== undefined) gameState.matchTimerEnabled = msg.matchTimerEnabled;
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
@@ -158,10 +171,21 @@
           if (currentView === 'colony' && window.ColonyRenderer) {
             if (_cachedMyColony) window.ColonyRenderer.updateFromState(_cachedMyColony);
           }
-          // Update galaxy ownership rings
+          // Update galaxy view: ownership rings + colony ships
           if (currentView === 'galaxy' && window.GalaxyView) {
             window.GalaxyView.updateOwnership(msg.colonies, msg.players);
+            window.GalaxyView.updateColonyShips(gameState.colonyShips);
+            if (window.GalaxyView.updateScienceShips) {
+              window.GalaxyView.updateScienceShips(gameState.scienceShips);
+            }
+            // Refresh open system panel so survey results appear
+            if (systemPanel && !systemPanel.classList.contains('hidden')) {
+              const sel = window.GalaxyView.getSelectedSystem();
+              if (sel) _onSystemSelect(sel);
+            }
           }
+          // Update colony list sidebar
+          _updateColonyList();
         }
         break;
 
@@ -176,12 +200,17 @@
         } else if (msg.eventType === 'finalCountdown') {
           _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
         }
-        // Show toast for game events
-        {
+        // Show toast for game events (own events only)
+        if (msg.playerId === (gameState && gameState.yourId)) {
           const toastText = _formatGameEvent(msg);
           if (toastText) {
             _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
           }
+        }
+        // Show event ticker for broadcast events (all players)
+        if (msg.broadcast) {
+          const tickerHtml = _formatTickerEvent(msg);
+          if (tickerHtml) _addTickerEvent(tickerHtml);
         }
         break;
 
@@ -209,15 +238,22 @@
     const myPlayer = currentRoom.players.find(p => p.id === myId);
     const amReady = myPlayer ? myPlayer.ready : false;
 
-    readyBtn.textContent = amReady ? 'Unready' : 'Ready';
-    readyBtn.classList.toggle('is-ready', amReady);
-
-    if (isHost) {
-      const allReady = currentRoom.players.every(p => p.id === currentRoom.hostId || p.ready);
-      const enoughPlayers = currentRoom.players.length >= 2;
-      launchBtn.classList.toggle('hidden', !(allReady && enoughPlayers));
+    if (currentRoom.practiceMode) {
+      // Single player — no ready needed, just show launch
+      readyBtn.classList.add('hidden');
+      launchBtn.classList.remove('hidden');
     } else {
-      launchBtn.classList.add('hidden');
+      readyBtn.classList.remove('hidden');
+      readyBtn.textContent = amReady ? 'Unready' : 'Ready';
+      readyBtn.classList.toggle('is-ready', amReady);
+
+      if (isHost) {
+        const allReady = currentRoom.players.every(p => p.id === currentRoom.hostId || p.ready);
+        const enoughPlayers = currentRoom.players.length >= 2;
+        launchBtn.classList.toggle('hidden', !(allReady && enoughPlayers));
+      } else {
+        launchBtn.classList.add('hidden');
+      }
     }
   }
 
@@ -333,6 +369,7 @@
   let currentView = 'colony'; // 'colony' | 'galaxy'
   let galaxyViewInitialized = false;
   let galaxyAnimFrame = null;
+  let _viewingColonyIndex = 0; // which colony the player is currently viewing
 
   // ── Galaxy view refs ──
   const viewIndicator = document.getElementById('view-indicator-label');
@@ -340,6 +377,45 @@
   const systemPanelTitle = document.getElementById('system-panel-title');
   const systemPanelBody = document.getElementById('system-panel-body');
   const systemPanelClose = document.getElementById('system-panel-close');
+
+  // ── Event Ticker ──
+  const eventTicker = document.getElementById('event-ticker');
+  const TICKER_MAX = 5;
+
+  function _addTickerEvent(html) {
+    if (!eventTicker) return;
+    const el = document.createElement('div');
+    el.className = 'ticker-item';
+    el.innerHTML = html;
+    eventTicker.appendChild(el);
+    // Enforce max visible
+    while (eventTicker.children.length > TICKER_MAX) {
+      eventTicker.removeChild(eventTicker.firstChild);
+    }
+    // Auto-remove after animation
+    setTimeout(() => { if (el.parentNode) el.parentNode.removeChild(el); }, 6000);
+  }
+
+  function _formatTickerEvent(msg) {
+    const pn = msg.playerName || '';
+    const player = pn ? `<span class="ticker-player">${pn}</span>` : '';
+    switch (msg.eventType) {
+      case 'constructionComplete':
+        if (msg.districtType === 'colonyShip') return `${player} built a Colony Ship`;
+        if (msg.districtType === 'scienceShip') return `${player} built a Science Ship`;
+        return `${player} built a ${msg.districtType} district on ${msg.colonyName || 'colony'}`;
+      case 'popMilestone':
+        return `${player}'s ${msg.colonyName || 'colony'} reached ${msg.pops} pops`;
+      case 'colonyFounded':
+        return `${player} founded a colony in ${msg.systemName || 'a system'}`;
+      case 'researchComplete':
+        return `${player} researched ${msg.techName || 'a technology'}`;
+      case 'surveyComplete':
+        return `${player} surveyed ${msg.systemName || 'a system'}` + (msg.discoveries && msg.discoveries.length > 0 ? ` — ${msg.discoveries.length} anomal${msg.discoveries.length === 1 ? 'y' : 'ies'} found!` : '');
+      default:
+        return null;
+    }
+  }
 
   // ── Toast notifications ──
   const toastContainer = document.getElementById('toast-container');
@@ -452,6 +528,82 @@
       });
 
       buildMenuOptions.appendChild(btn);
+    }
+
+    // Colony Ship build option
+    {
+      const shipBtn = document.createElement('div');
+      shipBtn.className = 'build-option build-option-ship';
+      const shipCost = { minerals: 200, food: 100, alloys: 100 };
+      let canAffordShip = true;
+      const costParts = [];
+      for (const [res, amt] of Object.entries(shipCost)) {
+        costParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordShip = false;
+      }
+      // Check colony cap
+      const myColonies = gameState ? gameState.colonies.filter(c => c.ownerId === gameState.yourId) : [];
+      const myShips = gameState && gameState.colonyShips ? gameState.colonyShips.filter(s => s.ownerId === gameState.yourId) : [];
+      const atColonyCap = myColonies.length + myShips.length >= 5;
+      if (!canAffordShip || queueFull || atColonyCap) shipBtn.classList.add('disabled');
+
+      shipBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#00ffaa"></div>' +
+        '<div class="build-option-name">Colony Ship</div>' +
+        '<div class="build-option-prod">Expand to new worlds</div>' +
+        `<div class="build-option-cost">${costParts.join(', ')}</div>`;
+
+      shipBtn.addEventListener('click', () => {
+        if (shipBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildColonyShip', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(shipBtn);
+    }
+
+    // Science Ship build option
+    {
+      const sciBtn = document.createElement('div');
+      sciBtn.className = 'build-option build-option-ship';
+      const sciCost = { minerals: 100, alloys: 50 };
+      let canAffordSci = true;
+      const sciCostParts = [];
+      for (const [res, amt] of Object.entries(sciCost)) {
+        sciCostParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordSci = false;
+      }
+      // Check science ship cap (3 max, including building)
+      const mySciShips = gameState && gameState.scienceShips ? gameState.scienceShips.filter(s => s.ownerId === gameState.yourId) : [];
+      let sciBuildingCount = 0;
+      if (gameState) {
+        const myCols = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        for (const c of myCols) {
+          for (const q of (c.buildQueue || [])) {
+            if (q.type === 'scienceShip') sciBuildingCount++;
+          }
+        }
+      }
+      const atSciCap = mySciShips.length + sciBuildingCount >= 3;
+      if (!canAffordSci || queueFull || atSciCap) sciBtn.classList.add('disabled');
+
+      sciBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#00e5ff"></div>' +
+        '<div class="build-option-name">Science Ship</div>' +
+        '<div class="build-option-prod">Explore &amp; survey systems</div>' +
+        `<div class="build-option-cost">${sciCostParts.join(', ')}</div>`;
+
+      sciBtn.addEventListener('click', () => {
+        if (sciBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildScienceShip', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(sciBtn);
     }
 
     buildMenu.classList.remove('hidden');
@@ -577,7 +729,9 @@
   function _refreshPlayerCache() {
     if (!gameState) { _cachedMyPlayer = null; _cachedMyColony = null; return; }
     _cachedMyPlayer = gameState.players.find(p => p.id === gameState.yourId) || null;
-    _cachedMyColony = gameState.colonies.find(c => c.ownerId === gameState.yourId) || null;
+    const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+    if (_viewingColonyIndex >= myColonies.length) _viewingColonyIndex = 0;
+    _cachedMyColony = myColonies[_viewingColonyIndex] || null;
   }
 
   const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
@@ -722,9 +876,9 @@
           colonyQueueHeader.classList.remove('hidden');
           colonyQueueList.innerHTML = '';
           for (const q of colony.buildQueue) {
-            const ui = DISTRICT_UI[q.type] || {};
-            const def = DISTRICT_UI[q.type];
-            const totalTicks = def ? _getBuildTime(q.type) : 300;
+            const isShip = q.type === 'colonyShip' || q.type === 'scienceShip';
+            const ui = q.type === 'colonyShip' ? { label: 'Colony Ship', color: '#00ffaa' } : q.type === 'scienceShip' ? { label: 'Science Ship', color: '#00e5ff' } : (DISTRICT_UI[q.type] || {});
+            const totalTicks = q.type === 'colonyShip' ? 600 : q.type === 'scienceShip' ? 300 : _getBuildTime(q.type);
             const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
             const secLeft = (q.ticksRemaining / 10).toFixed(0);
 
@@ -749,6 +903,61 @@
           colonyQueueList.innerHTML = '';
         }
       }
+    }
+  }
+
+  // ── Colony list sidebar ──
+  let _lastColonyListKey = '';
+
+  function _updateColonyList() {
+    const sidebar = document.getElementById('colony-list-sidebar');
+    if (!sidebar || !gameState) return;
+    const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+    if (myColonies.length <= 1) {
+      sidebar.classList.add('hidden');
+      _lastColonyListKey = '';
+      return;
+    }
+
+    // Fingerprint: colony count + active index + pop counts + ship states
+    const myShips = (gameState.colonyShips || []).filter(s => s.ownerId === gameState.yourId);
+    const idle = myShips.filter(s => !s.path || s.path.length === 0).length;
+    const transit = myShips.length - idle;
+    const mySciShipsAll = (gameState.scienceShips || []).filter(s => s.ownerId === gameState.yourId);
+    const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
+    const sciTransit = mySciShipsAll.length - sciIdle;
+    let key = _viewingColonyIndex + '|';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ',';
+    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
+    if (key === _lastColonyListKey) return;
+    _lastColonyListKey = key;
+
+    sidebar.classList.remove('hidden');
+    sidebar.innerHTML = '<div class="colony-list-title">Colonies</div>';
+    myColonies.forEach((col, idx) => {
+      const entry = document.createElement('div');
+      entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
+      entry.innerHTML =
+        `<span class="colony-list-name">${col.name}</span>` +
+        `<span class="colony-list-pops">${col.pops} pop</span>`;
+      entry.addEventListener('click', () => {
+        _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        if (currentView === 'colony' && window.ColonyRenderer && _cachedMyColony) {
+          window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
+        }
+        _lastQueueKey = ''; // force queue rebuild
+        _lastColonyListKey = ''; // force sidebar rebuild
+        _updateColonyList();
+      });
+      sidebar.appendChild(entry);
+    });
+    // Colony ship count
+    if (myShips.length > 0) {
+      const shipInfo = document.createElement('div');
+      shipInfo.className = 'colony-list-ships';
+      shipInfo.textContent = `Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
+      sidebar.appendChild(shipInfo);
     }
   }
 
@@ -843,7 +1052,14 @@
       return;
     }
 
-    systemPanelTitle.textContent = system.name;
+    // Check fog of war visibility
+    const isKnown = !window.GalaxyView || window.GalaxyView.isSystemKnown(system.id);
+
+    if (isKnown) {
+      systemPanelTitle.textContent = system.name;
+    } else {
+      systemPanelTitle.textContent = 'Unknown System';
+    }
 
     // Star type
     const starLabel = {
@@ -851,7 +1067,41 @@
       white: 'White Star', orange: 'Orange Star',
     };
 
-    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${system.starColor}"></span>${starLabel[system.starType] || system.starType}</div>`;
+    let html = `<div class="system-star-type"><span class="system-star-dot" style="background:${isKnown ? system.starColor : '#555566'}"></span>${isKnown ? (starLabel[system.starType] || system.starType) : 'Unknown'}</div>`;
+
+    if (!isKnown) {
+      // Unknown system — show exploration prompt
+      // Still show ownership dot if another player owns it
+      if (system.owner) {
+        const ownerPlayer = gameState.players.find(p => p.id === system.owner);
+        if (ownerPlayer) {
+          html += `<div class="system-owner">Claimed by: <span style="color:${ownerPlayer.color}">${ownerPlayer.name}</span></div>`;
+        }
+      }
+      // "Send Science Ship" button on unknown systems
+      const idleSciShipsUnknown = (gameState.scienceShips || []).filter(
+        s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0) && !s.surveying
+      );
+      const alreadySurveyed = gameState.surveyedSystems && gameState.surveyedSystems[gameState.yourId] && gameState.surveyedSystems[gameState.yourId].includes(system.id);
+      if (idleSciShipsUnknown.length > 0 && !alreadySurveyed) {
+        html += `<button class="system-send-sci-btn">Send Science Ship to survey</button>`;
+      }
+      html += '<div class="system-unexplored">Unexplored &mdash; send a science ship to survey</div>';
+      systemPanelBody.innerHTML = html;
+
+      // Wire science ship button on unknown system
+      const sciBtn2 = systemPanelBody.querySelector('.system-send-sci-btn');
+      if (sciBtn2) {
+        sciBtn2.addEventListener('click', () => {
+          const ship = idleSciShipsUnknown[0];
+          send({ type: 'sendScienceShip', shipId: ship.id, targetSystemId: system.id });
+          systemPanel.classList.add('hidden');
+        });
+      }
+
+      systemPanel.classList.remove('hidden');
+      return;
+    }
 
     // Owner
     if (system.owner) {
@@ -880,13 +1130,60 @@
       html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
     }
 
+    // "Send Colony Ship" button — if player has idle ships and target has habitable planet
+    const idleShips = (gameState.colonyShips || []).filter(
+      s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0)
+    );
+    const hasHabitable = system.planets && system.planets.some(p => p.habitability >= 20 && !p.colonized);
+    const alreadyColonized = gameState.colonies.some(c => c.systemId === system.id);
+    if (idleShips.length > 0 && hasHabitable && !alreadyColonized) {
+      html += `<button class="system-send-ship-btn">Send Colony Ship here</button>`;
+    }
+
+    // "Send Science Ship" button — if idle science ships and system not yet surveyed
+    const idleSciShips = (gameState.scienceShips || []).filter(
+      s => s.ownerId === gameState.yourId && (!s.path || s.path.length === 0) && !s.surveying
+    );
+    const isSurveyed = gameState.surveyedSystems && gameState.surveyedSystems[gameState.yourId] && gameState.surveyedSystems[gameState.yourId].includes(system.id);
+    if (idleSciShips.length > 0 && !isSurveyed) {
+      html += `<button class="system-send-sci-btn">Send Science Ship to survey</button>`;
+    }
+    if (isSurveyed) {
+      html += '<div class="system-surveyed-badge">Surveyed</div>';
+    }
+
     systemPanelBody.innerHTML = html;
 
     // Wire colony button
     const colBtn = systemPanelBody.querySelector('.system-colony-btn');
     if (colBtn) {
       colBtn.addEventListener('click', () => {
+        // Switch to the colony at this system
+        const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        const idx = myColonies.findIndex(c => c.id === colBtn.dataset.colonyId);
+        if (idx >= 0) _viewingColonyIndex = idx;
+        _refreshPlayerCache();
         _switchToColony();
+      });
+    }
+
+    // Wire send colony ship button
+    const sendShipBtn = systemPanelBody.querySelector('.system-send-ship-btn');
+    if (sendShipBtn) {
+      sendShipBtn.addEventListener('click', () => {
+        const ship = idleShips[0]; // send first idle ship
+        send({ type: 'sendColonyShip', shipId: ship.id, targetSystemId: system.id });
+        systemPanel.classList.add('hidden');
+      });
+    }
+
+    // Wire send science ship button
+    const sendSciBtn = systemPanelBody.querySelector('.system-send-sci-btn');
+    if (sendSciBtn) {
+      sendSciBtn.addEventListener('click', () => {
+        const ship = idleSciShips[0];
+        send({ type: 'sendScienceShip', shipId: ship.id, targetSystemId: system.id });
+        systemPanel.classList.add('hidden');
       });
     }
 
@@ -929,11 +1226,23 @@
     // Sort by VP descending
     players.sort((a, b) => (b.vp || 0) - (a.vp || 0));
 
-    let html = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th></tr>';
+    const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
+    let html = `<div class="scoreboard-month">Month ${month}</div>`;
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
-      html += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td><td>${p.vp || 0}</td></tr>`;
+      const inc = p.income || {};
+      const fmtInc = (v) => { const n = v || 0; return n >= 0 ? `+${n}` : `${n}`; };
+      html += `<tr${cls}><td>${i + 1}</td>` +
+        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td>` +
+        `<td><strong>${p.vp || 0}</strong></td>` +
+        `<td>${p.colonyCount || 0}</td>` +
+        `<td>${p.totalPops || 0}</td>` +
+        `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
+        `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
+        `<td class="${(inc.food || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.food)}</td>` +
+        `<td class="${(inc.alloys || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.alloys)}</td></tr>`;
     });
     html += '</table>';
     scoreboardBody.innerHTML = html;
@@ -952,20 +1261,62 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
         `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
         `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
         `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
-        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td></tr>`;
+        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
+        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
 
     gameOverOverlay.classList.remove('hidden');
   }
+
+  // ── In-Game Chat ──
+  const _MAX_GAME_CHAT = 30;
+  let _gameChatCount = 0;
+
+  function _getPlayerColor(name) {
+    if (!gameState || !gameState.players) return '#e94560';
+    const p = gameState.players.find(pl => pl.name === name);
+    return p && p.color ? p.color : '#e94560';
+  }
+
+  function _addGameChatMessage(from, text) {
+    if (!gameChatMessages) return;
+    const div = document.createElement('div');
+    div.className = 'msg';
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'msg-name';
+    nameSpan.style.color = _getPlayerColor(from);
+    nameSpan.textContent = from + ':';
+    div.appendChild(nameSpan);
+    div.appendChild(document.createTextNode(' ' + text));
+    gameChatMessages.appendChild(div);
+    _gameChatCount++;
+    // Trim old messages
+    while (_gameChatCount > _MAX_GAME_CHAT && gameChatMessages.firstChild) {
+      gameChatMessages.removeChild(gameChatMessages.firstChild);
+      _gameChatCount--;
+    }
+    gameChatMessages.scrollTop = gameChatMessages.scrollHeight;
+    // Auto-expand briefly if collapsed
+    if (gameChatPanel && !gameChatPanel.classList.contains('expanded')) {
+      gameChatPanel.classList.add('expanded');
+      clearTimeout(_gameChatAutoHide);
+      _gameChatAutoHide = setTimeout(() => {
+        if (document.activeElement !== gameChatInput) {
+          gameChatPanel.classList.remove('expanded');
+        }
+      }, 4000);
+    }
+  }
+  let _gameChatAutoHide = null;
 
   // ── Match Warning Banner ──
   function _showMatchWarning(text) {
@@ -1022,6 +1373,20 @@
         systemPanel.classList.add('hidden');
       }
     }
+    // Colony switching: number keys 1-5
+    if (e.key >= '1' && e.key <= '5') {
+      const idx = parseInt(e.key, 10) - 1;
+      const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+      if (idx < myColonies.length && idx !== _viewingColonyIndex) {
+        _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        if (currentView === 'colony' && window.ColonyRenderer && _cachedMyColony) {
+          window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
+        }
+        _lastQueueKey = '';
+        _updateColonyList();
+      }
+    }
     // Speed controls: +/= to speed up, - to slow down, Space to pause
     if (e.key === '+' || e.key === '=') {
       const cur = (gameState && gameState.gameSpeed) || 2;
@@ -1034,6 +1399,10 @@
     if (e.key === ' ') {
       e.preventDefault();
       send({ type: 'togglePause' });
+    }
+    // Enter key focuses game chat input
+    if (e.key === 'Enter' && gameChatInput) {
+      gameChatInput.focus();
     }
   });
 
@@ -1048,6 +1417,10 @@
   });
   nameInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') nameSubmit.click();
+  });
+
+  singlePlayerBtn.addEventListener('click', () => {
+    send({ type: 'createRoom', name: `${myName}'s Game`, practiceMode: true });
   });
 
   createRoomBtn.addEventListener('click', () => {
@@ -1090,6 +1463,35 @@
       chatInput.value = '';
     }
   });
+
+  // In-game chat input
+  if (gameChatInput) {
+    gameChatInput.addEventListener('keydown', (e) => {
+      e.stopPropagation(); // Prevent game shortcuts while typing
+      if (e.key === 'Enter') {
+        if (gameChatInput.value.trim()) {
+          send({ type: 'chat', text: gameChatInput.value.trim() });
+          gameChatInput.value = '';
+        }
+        gameChatInput.blur();
+      }
+      if (e.key === 'Escape') {
+        gameChatInput.blur();
+      }
+    });
+    gameChatInput.addEventListener('focus', () => {
+      if (gameChatPanel) gameChatPanel.classList.add('expanded');
+      clearTimeout(_gameChatAutoHide);
+    });
+    gameChatInput.addEventListener('blur', () => {
+      // Collapse after a short delay (allow clicking messages)
+      _gameChatAutoHide = setTimeout(() => {
+        if (document.activeElement !== gameChatInput && gameChatPanel) {
+          gameChatPanel.classList.remove('expanded');
+        }
+      }, 300);
+    });
+  }
 
   // Expose send and gameState for future modules (renderer, UI)
   if (typeof window !== 'undefined') {

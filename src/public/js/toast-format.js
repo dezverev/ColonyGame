@@ -5,6 +5,8 @@
 (function () {
   const TOAST_TYPE_MAP = {
     constructionComplete: 'positive',
+    colonyFounded: 'positive',
+    colonyShipFailed: 'crisis',
     popMilestone: 'positive',
     researchComplete: 'positive',
     districtEnabled: 'positive',
@@ -12,13 +14,22 @@
     housingFull: 'warning',
     foodDeficit: 'crisis',
     districtDisabled: 'crisis',
+    surveyComplete: 'positive',
+    anomalyDiscovered: 'positive',
   };
 
   function formatGameEvent(msg) {
     const d = msg;
     switch (msg.eventType) {
       case 'constructionComplete':
+        if (d.districtType === 'colonyShip') return 'Colony Ship built at ' + (d.colonyName || 'colony') + ' — ready to launch!';
+        if (d.districtType === 'scienceShip') return 'Science Ship built at ' + (d.colonyName || 'colony') + ' — ready to explore!';
         return 'Construction complete: ' + (d.districtType || 'district') + ' on ' + (d.colonyName || 'colony');
+      case 'colonyFounded':
+        if (d.colonyId) return 'Colony founded in ' + (d.systemName || 'system') + '!';
+        return (d.playerName || 'A player') + ' founded a colony in ' + (d.systemName || 'system') + '!';
+      case 'colonyShipFailed':
+        return 'Colony ship failed at ' + (d.systemName || 'system') + ': ' + (d.reason || 'unknown');
       case 'popMilestone':
         return 'Population milestone: ' + (d.pops || '?') + ' pops on ' + (d.colonyName || 'colony');
       case 'researchComplete':
@@ -33,6 +44,10 @@
         return 'Food deficit on ' + (d.colonyName || 'colony') + ' — pops are starving!';
       case 'districtDisabled':
         return 'Energy deficit: ' + (d.districtType || 'district') + ' disabled on ' + (d.colonyName || 'colony');
+      case 'surveyComplete':
+        return 'Survey complete: ' + (d.systemName || 'system') + (d.discoveries && d.discoveries.length > 0 ? ' — ' + d.discoveries.length + ' anomal' + (d.discoveries.length === 1 ? 'y' : 'ies') + ' found!' : '');
+      case 'anomalyDiscovered':
+        return 'Anomaly: ' + (d.anomalyLabel || 'Unknown') + ' discovered at ' + (d.systemName || 'system') + '!';
       default:
         return null;
     }

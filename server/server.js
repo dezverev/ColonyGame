@@ -185,8 +185,16 @@ function startServer(options = {}) {
           },
           onEvent: (events) => {
             for (const event of events) {
-              const ws = clients.get(event.playerId);
-              if (ws) send(ws, { type: 'gameEvent', ...event });
+              if (event.broadcast) {
+                // Send to all players in room
+                for (const [pid] of result.room.players) {
+                  const pws = clients.get(pid);
+                  if (pws) send(pws, { type: 'gameEvent', ...event });
+                }
+              } else {
+                const ws = clients.get(event.playerId);
+                if (ws) send(ws, { type: 'gameEvent', ...event });
+              }
             }
           },
           onSpeedChange: (speedState) => {
@@ -231,7 +239,11 @@ function startServer(options = {}) {
 
       case 'buildDistrict':
       case 'demolish':
-      case 'setResearch': {
+      case 'setResearch':
+      case 'buildColonyShip':
+      case 'sendColonyShip':
+      case 'buildScienceShip':
+      case 'sendScienceShip': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);

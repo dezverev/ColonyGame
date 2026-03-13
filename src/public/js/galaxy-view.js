@@ -11,23 +11,34 @@
   let starMeshes = [];         // one mesh per system, indexed by system.id
   let starMeshArray = [];      // pre-filtered array (no nulls) for raycasting
   let hyperlaneLines = null;   // single LineSegments object
+  let hyperlaneKnownLines = null;  // solid hyperlanes between known systems
+  let hyperlaneFadedLines = null;  // faded hyperlanes at fog border
   let ownerRings = [];         // ownership indicator meshes
   let ownerRingPool = [];      // reusable ring mesh pool
   let selectedSystemId = -1;
   let highlightMesh = null;
   let hoverLabelEl = null;     // DOM element for system name on hover
   let onSystemSelect = null;   // callback: (system) => void
+  let colonyShipMeshes = [];   // active colony ship marker meshes
+  let colonyShipPool = [];     // reusable colony ship mesh pool
+  let scienceShipMeshes = [];  // active science ship marker meshes
+  let scienceShipPool = [];    // reusable science ship mesh pool
+  let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
+  let _lastScienceShipData = null;
 
-  // Camera orbit state
-  let orbitTheta = 0;          // horizontal angle (radians)
-  let orbitPhi = Math.PI / 4;  // vertical angle (radians, 0 = top-down, PI/2 = horizon)
+  // Must match server/game-engine.js SPEED_INTERVALS exactly
+  const SPEED_INTERVALS = { 1: 200, 2: 100, 3: 50, 4: 33, 5: 20 };
+
+  // Fog of war state
+  let _adjacency = null;       // adjacency list built from hyperlanes
+  let _knownSystemIds = new Set(); // systems visible to the local player
+  let _lastOwnedKey = '';      // fingerprint of owned system IDs — skip fog rebuild when unchanged
+
+  // Camera state — fixed angle, pan + zoom only
   let orbitRadius = 400;
   let orbitTarget = { x: 0, y: 0, z: 0 };
   let isDragging = false;
   let dragStartX = 0, dragStartY = 0;
-  let dragStartTheta = 0, dragStartPhi = 0;
-  let isPanning = false;
-  let panStartX = 0, panStartY = 0;
   let panStartTarget = { x: 0, y: 0, z: 0 };
 
   // Raycaster for hover/click
@@ -97,6 +108,7 @@
     renderer.domElement.addEventListener('wheel', _onWheel, { passive: false });
     renderer.domElement.addEventListener('click', _onClick);
     renderer.domElement.addEventListener('mousemove', _onMouseMoveHover);
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('mousemove', _onMouseMoveDrag);
     window.addEventListener('mouseup', _onMouseUp);
     window.addEventListener('resize', _onResize);
@@ -117,9 +129,32 @@
       color: 0x00ffaa, side: THREE.DoubleSide, transparent: true, opacity: 0.8,
     });
 
-    // Hyperlane material
+    // Hyperlane materials
     _matCache.hyperlane = new THREE.LineBasicMaterial({
       color: 0x4466aa, transparent: true, opacity: 0.25,
+    });
+    _matCache.hyperlaneKnown = new THREE.LineBasicMaterial({
+      color: 0x4466aa, transparent: true, opacity: 0.4,
+    });
+    _matCache.hyperlaneFaded = new THREE.LineBasicMaterial({
+      color: 0x334466, transparent: true, opacity: 0.12,
+    });
+
+    // Unknown star material (dim gray)
+    _matCache.starUnknown = new THREE.MeshBasicMaterial({
+      color: 0x555566, transparent: true, opacity: 0.2,
+    });
+
+    // Colony ship: diamond shape (octahedron)
+    _geoCache.colonyShip = new THREE.OctahedronGeometry(2.5, 0);
+    _matCache.colonyShip = new THREE.MeshBasicMaterial({
+      color: 0x00ffaa, transparent: true, opacity: 0.9,
+    });
+
+    // Science ship: smaller diamond, cyan
+    _geoCache.scienceShip = new THREE.OctahedronGeometry(2.0, 0);
+    _matCache.scienceShip = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff, transparent: true, opacity: 0.9,
     });
   }
 
@@ -135,7 +170,13 @@
     const systems = data.systems;
     const hyperlanes = data.hyperlanes;
 
-    // Create star meshes
+    // Build adjacency list for fog of war
+    const FoW = (typeof window !== 'undefined' && window.FogOfWar) || {};
+    if (FoW.buildAdjacency) {
+      _adjacency = FoW.buildAdjacency(hyperlanes, systems.length);
+    }
+
+    // Create star meshes (initially all use their real material — fog applied in _applyFog)
     starMeshes = new Array(systems.length).fill(null);
     for (const sys of systems) {
       const color = new THREE.Color(sys.starColor || '#ffffff');
@@ -149,27 +190,9 @@
       mesh.position.set(sys.x, sys.y || 0, sys.z);
       mesh.scale.setScalar(radius);
       mesh.userData.systemId = sys.id;
+      mesh.userData.knownMaterial = _matCache[matKey]; // store original material
       scene.add(mesh);
       starMeshes[sys.id] = mesh;
-    }
-
-    // Create hyperlane lines (single LineSegments for efficiency)
-    if (hyperlanes.length > 0) {
-      const positions = new Float32Array(hyperlanes.length * 6); // 2 vertices per line * 3 coords
-      for (let i = 0; i < hyperlanes.length; i++) {
-        const [a, b] = hyperlanes[i];
-        const sa = systems[a], sb = systems[b];
-        positions[i * 6 + 0] = sa.x;
-        positions[i * 6 + 1] = (sa.y || 0) - 0.5; // slightly below stars
-        positions[i * 6 + 2] = sa.z;
-        positions[i * 6 + 3] = sb.x;
-        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
-        positions[i * 6 + 5] = sb.z;
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      hyperlaneLines = new THREE.LineSegments(geo, _matCache.hyperlane);
-      scene.add(hyperlaneLines);
     }
 
     // Pre-filter star meshes for raycasting (avoids allocation on every mouse event)
@@ -188,19 +211,44 @@
     }
     starMeshes = [];
     starMeshArray = [];
-    if (hyperlaneLines) {
-      if (hyperlaneLines.geometry) hyperlaneLines.geometry.dispose();
-      scene.remove(hyperlaneLines);
-      hyperlaneLines = null;
-    }
+    _removeHyperlanes();
     for (const ring of ownerRings) scene.remove(ring);
     ownerRings = [];
     ownerRingPool = [];
+    for (const mesh of colonyShipMeshes) scene.remove(mesh);
+    colonyShipMeshes = [];
+    for (const mesh of colonyShipPool) scene.remove(mesh);
+    colonyShipPool = [];
+    for (const mesh of scienceShipMeshes) scene.remove(mesh);
+    scienceShipMeshes = [];
+    for (const mesh of scienceShipPool) scene.remove(mesh);
+    scienceShipPool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
     }
     selectedSystemId = -1;
+    _adjacency = null;
+    _knownSystemIds = new Set();
+    _lastOwnedKey = '';
+  }
+
+  function _removeHyperlanes() {
+    if (hyperlaneLines) {
+      if (hyperlaneLines.geometry) hyperlaneLines.geometry.dispose();
+      scene.remove(hyperlaneLines);
+      hyperlaneLines = null;
+    }
+    if (hyperlaneKnownLines) {
+      if (hyperlaneKnownLines.geometry) hyperlaneKnownLines.geometry.dispose();
+      scene.remove(hyperlaneKnownLines);
+      hyperlaneKnownLines = null;
+    }
+    if (hyperlaneFadedLines) {
+      if (hyperlaneFadedLines.geometry) hyperlaneFadedLines.geometry.dispose();
+      scene.remove(hyperlaneFadedLines);
+      hyperlaneFadedLines = null;
+    }
   }
 
   function _updateOwnership(systems) {
@@ -274,18 +322,18 @@
 
     orbitTarget = { x: 0, y: 0, z: 0 };
     orbitRadius = Math.max(maxR * 1.5, 200);
-    orbitTheta = 0;
-    orbitPhi = Math.PI / 5; // ~36 degrees from top
     _updateCamera();
   }
 
-  // ── Camera orbit ──
+  // ── Camera ──
+  // Fixed slightly-angled top-down view — no rotation, just pan + zoom
+  const _CAM_PHI = Math.PI / 5; // ~36° from vertical — gives depth without losing overview
 
   function _updateCamera() {
     if (!camera) return;
-    const x = orbitTarget.x + orbitRadius * Math.sin(orbitPhi) * Math.sin(orbitTheta);
-    const y = orbitTarget.y + orbitRadius * Math.cos(orbitPhi);
-    const z = orbitTarget.z + orbitRadius * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+    const x = orbitTarget.x;
+    const y = orbitTarget.y + orbitRadius * Math.cos(_CAM_PHI);
+    const z = orbitTarget.z + orbitRadius * Math.sin(_CAM_PHI);
     camera.position.set(x, y, z);
     camera.lookAt(orbitTarget.x, orbitTarget.y, orbitTarget.z);
   }
@@ -293,50 +341,34 @@
   // ── Event handlers ──
 
   function _onMouseDown(e) {
-    if (e.button === 0) { // left: orbit rotate
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      dragStartTheta = orbitTheta;
-      dragStartPhi = orbitPhi;
-    } else if (e.button === 1 || e.button === 2) { // middle/right: pan
-      isPanning = true;
-      panStartX = e.clientX;
-      panStartY = e.clientY;
-      panStartTarget = { ...orbitTarget };
-      e.preventDefault();
-    }
+    // All mouse buttons pan
+    isDragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    panStartTarget = { ...orbitTarget };
+    if (e.button === 1 || e.button === 2) e.preventDefault();
   }
 
   function _onMouseMoveDrag(e) {
     if (isDragging) {
-      const dx = (e.clientX - dragStartX) * 0.005;
-      const dy = (e.clientY - dragStartY) * 0.005;
-      orbitTheta = dragStartTheta - dx;
-      orbitPhi = Math.max(0.1, Math.min(Math.PI / 2 - 0.01, dragStartPhi + dy));
-      _updateCamera();
-    }
-    if (isPanning) {
       const factor = orbitRadius * 0.002;
-      const dx = (e.clientX - panStartX) * factor;
-      const dy = (e.clientY - panStartY) * factor;
-      // Pan in camera-right and camera-up directions (projected to XZ plane)
-      orbitTarget.x = panStartTarget.x - dx * Math.cos(orbitTheta);
-      orbitTarget.z = panStartTarget.z + dx * Math.sin(orbitTheta);
-      orbitTarget.x += dy * Math.sin(orbitTheta) * Math.sin(orbitPhi);
-      orbitTarget.z += dy * Math.cos(orbitTheta) * Math.sin(orbitPhi);
+      const dx = (e.clientX - dragStartX) * factor;
+      const dy = (e.clientY - dragStartY) * factor;
+      // Pan along XZ plane (camera looks down at fixed angle)
+      orbitTarget.x = panStartTarget.x - dx;
+      orbitTarget.z = panStartTarget.z - dy;
       _updateCamera();
     }
   }
 
-  function _onMouseUp(e) {
-    if (e.button === 0) isDragging = false;
-    if (e.button === 1 || e.button === 2) isPanning = false;
+  function _onMouseUp() {
+    isDragging = false;
   }
 
   function _onWheel(e) {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? 1.1 : 0.9;
+    // Support trackpad pinch (ctrlKey) and regular scroll
+    const delta = e.deltaY > 0 ? 1.08 : 1 / 1.08;
     orbitRadius = Math.max(50, Math.min(2000, orbitRadius * delta));
     _updateCamera();
   }
@@ -392,10 +424,18 @@
       const sysId = intersects[0].object.userData.systemId;
       const sys = galaxyData.systems[sysId];
       if (sys) {
-        hoverLabelEl.textContent = sys.name;
-        hoverLabelEl.style.display = 'block';
-        hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
-        hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        // Only show name for known systems
+        if (_knownSystemIds.size === 0 || _knownSystemIds.has(sysId)) {
+          hoverLabelEl.textContent = sys.name;
+          hoverLabelEl.style.display = 'block';
+          hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
+          hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        } else {
+          hoverLabelEl.textContent = 'Unknown System';
+          hoverLabelEl.style.display = 'block';
+          hoverLabelEl.style.left = (e.clientX - rect.left + 12) + 'px';
+          hoverLabelEl.style.top = (e.clientY - rect.top - 8) + 'px';
+        }
         renderer.domElement.style.cursor = 'pointer';
       }
     } else {
@@ -435,6 +475,110 @@
     if (onSystemSelect) onSystemSelect(null);
   }
 
+  // ── Ship mesh management — reuse meshes by ship ID across updates ──
+
+  function _getOrCreateShipMesh(shipKey, geoKey, playerColor, activeMeshMap, pool) {
+    // Reuse existing mesh for this ship (preserves position for smooth animation)
+    let mesh = activeMeshMap[shipKey];
+    let isNew = false;
+    const matKey = geoKey + '_' + playerColor;
+    if (!_matCache[matKey]) {
+      _matCache[matKey] = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
+      });
+    }
+    if (mesh) {
+      mesh.material = _matCache[matKey];
+    } else {
+      isNew = true;
+      if (pool.length > 0) {
+        mesh = pool.pop();
+        mesh.material = _matCache[matKey];
+        mesh.visible = true;
+      } else {
+        mesh = new THREE.Mesh(_geoCache[geoKey], _matCache[matKey]);
+        scene.add(mesh);
+      }
+    }
+    return { mesh, isNew };
+  }
+
+  function _recycleStaleMeshes(meshArray, activeIds, pool) {
+    const keep = [];
+    for (const mesh of meshArray) {
+      if (activeIds.has(mesh.userData._shipKey)) {
+        keep.push(mesh);
+      } else {
+        mesh.visible = false;
+        mesh.userData._shipKey = null;
+        pool.push(mesh);
+      }
+    }
+    return keep;
+  }
+
+  function updateColonyShips(ships) {
+    if (!scene || !galaxyData) return;
+    _lastColonyShipData = ships;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('c' + s.id);
+    colonyShipMeshes = _recycleStaleMeshes(colonyShipMeshes, activeIds, colonyShipPool);
+
+    if (!ships || ships.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of colonyShipMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    colonyShipMeshes = [];
+
+    for (const ship of ships) {
+      const shipKey = 'c' + ship.id;
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'colonyShip', _getPlayerColor(ship.ownerId), meshByKey, colonyShipPool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; colonyShipPool.push(mesh); continue; }
+
+      mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      colonyShipMeshes.push(mesh);
+    }
+  }
+
+  function updateScienceShips(ships) {
+    if (!scene || !galaxyData) return;
+    _lastScienceShipData = ships;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('s' + s.id);
+    scienceShipMeshes = _recycleStaleMeshes(scienceShipMeshes, activeIds, scienceShipPool);
+
+    if (!ships || ships.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of scienceShipMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    scienceShipMeshes = [];
+
+    for (const ship of ships) {
+      const shipKey = 's' + ship.id;
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'scienceShip', _getPlayerColor(ship.ownerId), meshByKey, scienceShipPool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; scienceShipPool.push(mesh); continue; }
+
+      mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x - 5, (sys.y || 0) + 5, sys.z - 5);
+      }
+      scienceShipMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -452,12 +596,215 @@
       }
     }
     _updateOwnership(galaxyData.systems);
+
+    // Build fingerprint of owned + surveyed system IDs — skip expensive fog rebuild when unchanged
+    const myId = (typeof window !== 'undefined' && window.GameClient)
+      ? window.GameClient.getState() && window.GameClient.getState().yourId
+      : null;
+    let fogKey = '';
+    if (colonies && myId) {
+      for (const col of colonies) {
+        if (col.ownerId === myId && col.systemId != null) fogKey += col.systemId + ',';
+      }
+    }
+    // Include surveyed systems in cache key so fog updates after surveys complete
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    if (gs && gs.surveyedSystems && gs.surveyedSystems[myId]) {
+      fogKey += 's:' + gs.surveyedSystems[myId].length;
+    }
+    if (fogKey !== _lastOwnedKey) {
+      _lastOwnedKey = fogKey;
+      _recomputeFog(colonies);
+      _applyFog();
+    }
+  }
+
+  function _recomputeFog(colonies) {
+    const FoW = (typeof window !== 'undefined' && window.FogOfWar) || {};
+    if (!FoW.computeVisibility || !FoW.getOwnedSystemIds || !_adjacency) return;
+
+    const myId = (typeof window !== 'undefined' && window.GameClient)
+      ? window.GameClient.getState() && window.GameClient.getState().yourId
+      : null;
+    if (!myId) return;
+
+    const ownedIds = FoW.getOwnedSystemIds(colonies, myId);
+    _knownSystemIds = FoW.computeVisibility(ownedIds, _adjacency);
+
+    // Add surveyed systems (persistent fog penetration from science ships)
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    if (gs && gs.surveyedSystems && gs.surveyedSystems[myId]) {
+      for (const sysId of gs.surveyedSystems[myId]) {
+        _knownSystemIds.add(sysId);
+      }
+    }
+  }
+
+  function _applyFog() {
+    if (!galaxyData) return;
+
+    // Apply star visibility
+    for (const sys of galaxyData.systems) {
+      const mesh = starMeshes[sys.id];
+      if (!mesh) continue;
+      const known = _knownSystemIds.has(sys.id);
+      if (known) {
+        mesh.material = mesh.userData.knownMaterial;
+        mesh.scale.setScalar(STAR_RADIUS[sys.starType] || 2.0);
+      } else {
+        // Unknown: dim gray, smaller
+        mesh.material = _matCache.starUnknown;
+        mesh.scale.setScalar((STAR_RADIUS[sys.starType] || 2.0) * 0.6);
+      }
+    }
+
+    // Rebuild hyperlanes split by visibility
+    _rebuildHyperlanes();
+  }
+
+  function _rebuildHyperlanes() {
+    if (!galaxyData || !scene) return;
+    _removeHyperlanes();
+
+    const systems = galaxyData.systems;
+    const hyperlanes = galaxyData.hyperlanes;
+    if (!hyperlanes || hyperlanes.length === 0) return;
+
+    // Partition hyperlanes into: known (both ends known), faded (one end known), hidden (neither)
+    const knownPairs = [];
+    const fadedPairs = [];
+    for (const [a, b] of hyperlanes) {
+      const aKnown = _knownSystemIds.has(a);
+      const bKnown = _knownSystemIds.has(b);
+      if (aKnown && bKnown) {
+        knownPairs.push([a, b]);
+      } else if (aKnown || bKnown) {
+        fadedPairs.push([a, b]);
+      }
+      // neither known: hidden entirely
+    }
+
+    // Known hyperlanes (solid)
+    if (knownPairs.length > 0) {
+      const positions = new Float32Array(knownPairs.length * 6);
+      for (let i = 0; i < knownPairs.length; i++) {
+        const [a, b] = knownPairs[i];
+        const sa = systems[a], sb = systems[b];
+        positions[i * 6 + 0] = sa.x;
+        positions[i * 6 + 1] = (sa.y || 0) - 0.5;
+        positions[i * 6 + 2] = sa.z;
+        positions[i * 6 + 3] = sb.x;
+        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
+        positions[i * 6 + 5] = sb.z;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      hyperlaneKnownLines = new THREE.LineSegments(geo, _matCache.hyperlaneKnown);
+      scene.add(hyperlaneKnownLines);
+    }
+
+    // Faded hyperlanes (border of known space)
+    if (fadedPairs.length > 0) {
+      const positions = new Float32Array(fadedPairs.length * 6);
+      for (let i = 0; i < fadedPairs.length; i++) {
+        const [a, b] = fadedPairs[i];
+        const sa = systems[a], sb = systems[b];
+        positions[i * 6 + 0] = sa.x;
+        positions[i * 6 + 1] = (sa.y || 0) - 0.5;
+        positions[i * 6 + 2] = sa.z;
+        positions[i * 6 + 3] = sb.x;
+        positions[i * 6 + 4] = (sb.y || 0) - 0.5;
+        positions[i * 6 + 5] = sb.z;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      hyperlaneFadedLines = new THREE.LineSegments(geo, _matCache.hyperlaneFaded);
+      scene.add(hyperlaneFadedLines);
+    }
+  }
+
+  // ── Per-frame ship animation — extrapolate from last server state ──
+  // Each frame: take the ship's last known hopProgress + time elapsed since
+  // that update × correct tick rate → compute exact position on the lane.
+  // Mesh is reused across updates so position is continuous.
+
+  function _extrapolateTransitPos(ship, hopTicks, yOffset, updateTime, now) {
+    if (!ship.path || ship.path.length === 0) return null;
+    const fromSys = galaxyData.systems[ship.systemId];
+    const toSys = galaxyData.systems[ship.path[0]];
+    if (!fromSys || !toSys) return null;
+
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    const gameSpeed = (gs && gs.gameSpeed) || 2;
+    const paused = gs && gs.paused;
+
+    // Correct tick rate from SPEED_INTERVALS (NOT 100/gameSpeed which is wrong)
+    const msPerTick = SPEED_INTERVALS[gameSpeed] || 100;
+    const elapsedTicks = paused ? 0 : (now - updateTime) / msPerTick;
+    // Clamp: never predict past end of hop (server will tell us when hop completes)
+    const hp = Math.min((ship.hopProgress || 0) + elapsedTicks, hopTicks - 0.5);
+    const t = hp / hopTicks;
+
+    return {
+      x: fromSys.x + (toSys.x - fromSys.x) * t,
+      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
+      z: fromSys.z + (toSys.z - fromSys.z) * t,
+    };
+  }
+
+  function _animateShips() {
+    if (!galaxyData) return;
+    const now = performance.now();
+
+    // Colony ships
+    for (const mesh of colonyShipMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const pos = _extrapolateTransitPos(ship, 50, 3, mesh.userData._updateTime || now, now);
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      mesh.rotation.y = now * 0.002;
+    }
+
+    // Science ships
+    for (const mesh of scienceShipMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+
+      if (ship.path && ship.path.length > 0 && !ship.surveying) {
+        const pos = _extrapolateTransitPos(ship, 30, 4, mesh.userData._updateTime || now, now);
+        if (pos) {
+          mesh.position.set(pos.x, pos.y, pos.z);
+        }
+      } else if (ship.surveying) {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) {
+          const angle = now * 0.003;
+          mesh.position.set(
+            sys.x + Math.cos(angle) * 6,
+            (sys.y || 0) + 4,
+            sys.z + Math.sin(angle) * 6
+          );
+        }
+      } else {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) {
+          mesh.position.set(sys.x - 5, (sys.y || 0) + 5 + Math.sin(now * 0.002) * 0.5, sys.z - 5);
+        }
+      }
+      mesh.rotation.y = now * 0.003;
+    }
   }
 
   // ── Render ──
 
   function render() {
     if (renderer && scene && camera) {
+      _animateShips();
       renderer.render(scene, camera);
     }
   }
@@ -495,11 +842,14 @@
     init,
     buildGalaxy,
     updateOwnership,
+    updateColonyShips,
+    updateScienceShips,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,
     setOnSystemSelect: (cb) => { onSystemSelect = cb; },
     getGalaxyData: () => galaxyData,
+    isSystemKnown: (sysId) => _knownSystemIds.size === 0 || _knownSystemIds.has(sysId),
   };
 
   if (typeof window !== 'undefined') {

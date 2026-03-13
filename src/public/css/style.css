@@ -28,6 +28,11 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 .lobby-header h2 { flex: 1; }
 #player-name-display { color: #e94560; font-weight: bold; }
+#single-player-btn {
+  padding: 0.5rem 1rem; background: #1a6b3c; color: #fff;
+  border: 1px solid #2ecc71; border-radius: 4px; cursor: pointer;
+}
+#single-player-btn:hover { background: #2ecc71; }
 #create-room-btn {
   padding: 0.5rem 1rem; background: #0f3460; color: #fff;
   border: 1px solid #e94560; border-radius: 4px; cursor: pointer;
@@ -318,12 +323,17 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .demolish-btn.hidden { display: none; }
 
 /* ── Scoreboard ── */
-#scoreboard { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 320px; max-width: 500px; z-index: 25; }
-.scoreboard-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-.scoreboard-table th { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #2a2a4e; color: #aaa; font-weight: normal; }
-.scoreboard-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #1a1a2e; }
+#scoreboard { top: 50%; left: 50%; transform: translate(-50%, -50%); min-width: 420px; max-width: 600px; z-index: 25; }
+.scoreboard-month { text-align: center; font-family: monospace; color: #aaa; margin-bottom: 0.5rem; font-size: 0.85rem; }
+.scoreboard-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; font-family: monospace; }
+.scoreboard-table th { text-align: center; padding: 0.3rem 0.4rem; border-bottom: 1px solid #2a2a4e; color: #aaa; font-weight: normal; }
+.scoreboard-table th:nth-child(2) { text-align: left; }
+.scoreboard-table td { padding: 0.3rem 0.4rem; border-bottom: 1px solid #1a1a2e; text-align: center; }
+.scoreboard-table td:nth-child(2) { text-align: left; }
 .scoreboard-table tr.scoreboard-me td { color: #f1c40f; font-weight: bold; }
 .scoreboard-color { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.inc-pos { color: #2ecc71; }
+.inc-neg { color: #e74c3c; }
 
 /* ── VP in status bar ── */
 #status-vp { font-family: monospace; color: #f1c40f; font-weight: bold; }
@@ -350,6 +360,40 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 #game-over-lobby-btn:hover { background: #c73652; }
 
+/* ── In-Game Chat (bottom-left, collapsible) ── */
+#game-chat {
+  pointer-events: auto;
+  position: absolute; bottom: 2.8rem; left: 0.8rem;
+  width: 280px;
+  display: flex; flex-direction: column;
+  z-index: 10;
+}
+#game-chat-messages {
+  max-height: 0; overflow-y: auto;
+  background: rgba(26, 26, 46, 0.85);
+  backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e; border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  padding: 0; font-size: 0.82rem;
+  transition: max-height 0.2s ease, padding 0.2s ease;
+  scrollbar-width: thin; scrollbar-color: #2a2a4e transparent;
+}
+#game-chat.expanded #game-chat-messages {
+  max-height: 180px;
+  padding: 0.4rem 0.5rem;
+}
+#game-chat-messages .msg { margin-bottom: 0.15rem; word-wrap: break-word; }
+#game-chat-messages .msg-name { font-weight: bold; }
+#game-chat-input {
+  padding: 0.4rem 0.5rem;
+  background: rgba(22, 33, 62, 0.9);
+  color: #fff; border: 1px solid #2a2a4e;
+  border-radius: 0 0 6px 6px;
+  font-size: 0.82rem; font-family: monospace;
+  outline: none;
+}
+#game-chat-input:focus { border-color: #00ffaa; }
+
 /* ── View Indicator (bottom-left) ── */
 #view-indicator {
   pointer-events: auto;
@@ -372,6 +416,7 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .system-star-type { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
 .system-star-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .system-owner { margin-bottom: 0.4rem; font-size: 0.8rem; }
+.system-unexplored { color: #888; font-style: italic; font-size: 0.85rem; margin-top: 0.8rem; padding: 0.4rem; border: 1px dashed #3a3a5e; border-radius: 4px; text-align: center; }
 .system-planet-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; margin-top: 0.3rem; }
 .system-planet-table th { text-align: left; color: #888; padding: 0.2rem 0.3rem; border-bottom: 1px solid #2a2a4e; font-weight: normal; }
 .system-planet-table td { padding: 0.2rem 0.3rem; border-bottom: 1px solid rgba(42,42,78,0.4); }
@@ -385,6 +430,25 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   cursor: pointer; font-size: 0.8rem; text-align: center;
 }
 .system-colony-btn:hover { background: #3498db; }
+
+/* ── Event Ticker (top, scrolling) ── */
+#event-ticker {
+  pointer-events: none;
+  position: absolute; top: 72px; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  z-index: 12; max-width: 500px; width: 100%;
+}
+.ticker-item {
+  font-family: monospace; font-size: 0.75rem; color: #ccc;
+  padding: 0.15rem 0.6rem;
+  background: rgba(26, 26, 46, 0.75);
+  border-radius: 3px; margin-bottom: 0.1rem;
+  animation: tickerFadeIn 0.3s ease, tickerFadeOut 0.5s ease 5.5s forwards;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.ticker-item .ticker-player { color: #f1c40f; font-weight: bold; }
+@keyframes tickerFadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes tickerFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
 /* ── Toast Notifications ── */
 #toast-container {
@@ -427,4 +491,62 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 @keyframes warningPulse {
   0%, 100% { transform: translateX(-50%) scale(1); }
   50% { transform: translateX(-50%) scale(1.05); }
+}
+
+/* ── Colony List Sidebar ── */
+#colony-list-sidebar {
+  position: absolute; left: 10px; top: 90px;
+  width: 160px; z-index: 20;
+  background: rgba(26,26,46,0.88); backdrop-filter: blur(6px);
+  border: 1px solid #2a2a4e; border-radius: 6px;
+  padding: 0.3rem; pointer-events: auto;
+}
+#colony-list-sidebar.hidden { display: none; }
+.colony-list-title {
+  font-size: 0.75rem; color: #888; text-transform: uppercase;
+  padding: 0.2rem 0.3rem; border-bottom: 1px solid #2a2a4e;
+}
+.colony-list-entry {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.3rem 0.4rem; cursor: pointer; border-radius: 4px;
+  font-size: 0.8rem; color: #ccc;
+}
+.colony-list-entry:hover { background: rgba(52,152,219,0.2); }
+.colony-list-entry.active {
+  background: rgba(52,152,219,0.3); color: #fff;
+  border-left: 2px solid #3498db;
+}
+.colony-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
+.colony-list-pops { font-family: monospace; color: #888; font-size: 0.7rem; }
+.colony-list-ships {
+  font-size: 0.7rem; color: #00ffaa; padding: 0.3rem 0.4rem;
+  border-top: 1px solid #2a2a4e;
+}
+
+/* ── Colony Ship Build Option ── */
+.build-option-ship {
+  border-left: 3px solid #00ffaa;
+}
+
+/* ── Send Colony Ship Button ── */
+.system-send-ship-btn {
+  display: block; width: 100%; margin-top: 0.4rem;
+  padding: 0.4rem; background: #0a3030; color: #00ffaa;
+  border: 1px solid #00ffaa; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.system-send-ship-btn:hover { background: #00ffaa; color: #000; }
+
+.system-send-sci-btn {
+  display: block; width: 100%; margin-top: 0.4rem;
+  padding: 0.4rem; background: #0a2530; color: #00e5ff;
+  border: 1px solid #00e5ff; border-radius: 4px;
+  cursor: pointer; font-size: 0.8rem; text-align: center;
+}
+.system-send-sci-btn:hover { background: #00e5ff; color: #000; }
+
+.system-surveyed-badge {
+  display: inline-block; margin-top: 0.3rem; padding: 0.2rem 0.5rem;
+  background: rgba(0, 229, 255, 0.15); color: #00e5ff;
+  border: 1px solid #00e5ff44; border-radius: 3px; font-size: 0.75rem;
 }

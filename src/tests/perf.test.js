@@ -51,6 +51,29 @@ describe('Performance — payload sizes', () => {
   });
 });
 
+describe('Performance — per-player JSON caching', () => {
+  it('getPlayerStateJSON returns cached result on second call', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10 });
+    for (let i = 0; i < 10; i++) engine.tick();
+    const json1 = engine.getPlayerStateJSON(1);
+    const json2 = engine.getPlayerStateJSON(1);
+    // Should be reference-equal (cached string)
+    assert.strictEqual(json1, json2, 'Per-player JSON should be cached');
+    engine.stop();
+  });
+
+  it('per-player cache invalidates on state change', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    for (let i = 0; i < 10; i++) engine.tick();
+    const json1 = engine.getPlayerStateJSON(1);
+    // Trigger state change
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: 'e1', districtType: 'generator' });
+    const json2 = engine.getPlayerStateJSON(1);
+    assert.notStrictEqual(json1, json2, 'Cache should invalidate on state change');
+    engine.stop();
+  });
+});
+
 describe('Performance — broadcast efficiency', () => {
   it('growth-only ticks do not broadcast every tick', () => {
     let broadcastCount = 0;
@@ -140,6 +163,86 @@ describe('Performance — stress test (max load)', () => {
 
     const json = engine.getPlayerStateJSON(1);
     assert.ok(json.length < 5120, `Per-player payload ${json.length} bytes exceeds 5KB at max load`);
+    engine.stop();
+  });
+});
+
+describe('Performance — pathfinding', () => {
+  it('BFS pathfinding uses cached adjacency list', () => {
+    const engine = new GameEngine(makeRoom(2, { galaxySize: 'large' }), { tickRate: 10, profile: true });
+    // Adjacency list should be built once at construction
+    assert.ok(engine._adjacency instanceof Map, 'Adjacency list should be a Map');
+    assert.ok(engine._adjacency.size > 0, 'Adjacency list should not be empty');
+
+    // Run 100 pathfinding calls — should be fast with cached adjacency
+    const systems = engine.galaxy.systems;
+    const t0 = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) {
+      const from = i % systems.length;
+      const to = (i * 7 + 13) % systems.length;
+      engine._findPath(from, to);
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(durationMs < 50, `100 pathfinding calls took ${durationMs.toFixed(2)}ms, budget 50ms`);
+    engine.stop();
+  });
+});
+
+describe('Performance — multi-colony stress', () => {
+  it('5-colony player tick stays under budget', () => {
+    const engine = new GameEngine(makeRoom(4), { tickRate: 10, profile: true });
+    // Give player 1 additional colonies
+    for (let i = 0; i < 4; i++) {
+      const sys = engine.galaxy.systems[i + 5]; // pick non-starting systems
+      if (!sys) continue;
+      const planet = { size: 12, type: 'continental', habitability: 80 };
+      engine._createColony(1, `Colony ${i + 2}`, planet, sys.id);
+    }
+
+    for (let i = 0; i < 300; i++) engine.tick();
+    const stats = engine.getTickStats();
+    assert.ok(stats.avg < 5, `Avg tick ${stats.avg.toFixed(4)}ms exceeds 5ms with multi-colony`);
+    engine.stop();
+  });
+});
+
+describe('Performance — VP breakdown single source of truth', () => {
+  it('_calcVPBreakdown is tick-cached (8 players, no redundant computation)', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+    for (let i = 0; i < 100; i++) engine.tick();
+
+    // First call computes, subsequent calls within same tick return cached
+    const t0 = process.hrtime.bigint();
+    for (let round = 0; round < 100; round++) {
+      for (let pid = 1; pid <= 8; pid++) {
+        engine._calcVPBreakdown(pid);
+      }
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    // 800 calls should be nearly free (all cached within same tick)
+    assert.ok(durationMs < 5, `800 VP breakdown calls took ${durationMs.toFixed(2)}ms, budget 5ms`);
+
+    // Verify breakdown matches _calcVictoryPoints
+    for (let pid = 1; pid <= 8; pid++) {
+      const breakdown = engine._calcVPBreakdown(pid);
+      assert.strictEqual(breakdown.vp, engine._calcVictoryPoints(pid));
+    }
+    engine.stop();
+  });
+
+  it('_getPlayerSummary is tick-cached (N² calls reduced to N)', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+    for (let i = 0; i < 100; i++) engine.tick();
+
+    const t0 = process.hrtime.bigint();
+    // Simulate broadcast pattern: each player queries all 8 summaries
+    for (let self = 1; self <= 8; self++) {
+      for (let pid = 1; pid <= 8; pid++) {
+        engine._getPlayerSummary(pid);
+      }
+    }
+    const durationMs = Number(process.hrtime.bigint() - t0) / 1e6;
+    assert.ok(durationMs < 5, `64 summary calls took ${durationMs.toFixed(2)}ms, budget 5ms`);
     engine.stop();
   });
 });
