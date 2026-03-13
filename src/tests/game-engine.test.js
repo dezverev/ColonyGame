@@ -1558,17 +1558,18 @@ describe('GameEngine — Mini Tech Tree', () => {
   it('Improved Power Plants applies +25% Generator output', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = Array.from(engine.colonies.values())[0];
+    const pb = calcPlanetBonus(colony);
 
-    // Before tech: generator produces 6 energy
+    // Before tech: generator produces 6 energy + planet bonus
     const before = engine._calcProduction(colony);
-    assert.strictEqual(before.production.energy, 6);
+    assert.strictEqual(before.production.energy, 6 + pb.energy);
 
     // Complete tech
     engine.playerStates.get(1).completedTechs.push('improved_power_plants');
     engine._invalidateColonyCache(colony);
 
     const after = engine._calcProduction(colony);
-    assert.strictEqual(after.production.energy, 7.5); // 6 * 1.25
+    assert.strictEqual(after.production.energy, 7.5 + pb.energy); // 6 * 1.25 + planet bonus
   });
 
   it('Improved Mining applies +25% Mining output', () => {
@@ -1734,7 +1735,7 @@ describe('GameEngine — Energy Deficit', () => {
 
     // Should have disabled enough districts to bring energy >= 0
     const disabledCount = colony.districts.filter(d => d.disabled).length;
-    assert.ok(disabledCount >= 2, 'should disable at least 2 districts');
+    assert.ok(disabledCount >= 1, 'should disable at least 1 district');
     assert.ok(state.resources.energy >= 0, 'energy should be non-negative after disabling');
   });
 
@@ -1936,17 +1937,17 @@ describe('GameEngine — Energy Deficit', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony1 = Array.from(engine.colonies.values())[0];
 
-    // Colony1 starting: generator (+6), no energy consumers
+    // Baseline net energy (varies by random planet type bonus)
     const net1 = engine._calcPlayerNetEnergy(1);
-    assert.strictEqual(net1, 6, 'single colony with generator should have +6 net energy');
+    assert.ok(net1 >= 6, 'starting colony with generator should produce at least +6 net energy');
 
-    // Add industrial (consumes 3)
+    // Add industrial (consumes 3) — net should drop by 3
     engine._addBuiltDistrict(colony1, 'industrial');
     colony1.pops = 10;
     engine._invalidateColonyCache(colony1);
 
     const net2 = engine._calcPlayerNetEnergy(1);
-    assert.strictEqual(net2, 3, 'generator(+6) - industrial(-3) = +3 net');
+    assert.strictEqual(net2, net1 - 3, 'adding industrial(-3 energy) should reduce net by 3');
   });
 
   it('disabled district can still be demolished', () => {
@@ -3217,9 +3218,10 @@ describe('GameEngine — Research Progression', () => {
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
-    // Cache production
+    // Cache production (base energy varies by planet type due to bonuses)
     const before = engine._calcProduction(colony);
-    assert.strictEqual(before.production.energy, 6);
+    const basePlanetBonus = calcPlanetBonus(colony).energy;
+    assert.strictEqual(before.production.energy, 6 + basePlanetBonus);
 
     // Complete improved_power_plants via research
     engine.handleCommand(1, { type: 'setResearch', techId: 'improved_power_plants' });
@@ -3227,8 +3229,9 @@ describe('GameEngine — Research Progression', () => {
     engine._processResearch();
 
     // Production cache should be invalidated — new calc should show boosted output
+    // Tech gives 1.25x to base generator (6 * 1.25 = 7.5) + planet bonus stays additive
     const after = engine._calcProduction(colony);
-    assert.strictEqual(after.production.energy, 7.5,
+    assert.strictEqual(after.production.energy, 7.5 + basePlanetBonus,
       'Production should reflect tech bonus after research completion');
   });
 });

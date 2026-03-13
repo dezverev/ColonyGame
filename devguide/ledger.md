@@ -1139,3 +1139,93 @@ Each entry records an iteration of automated development.
 - Practice mode rooms use server defaults (10-min timer, small galaxy) — player can still configure via multiplayer path if desired
 
 **Next:** Colony crisis events or T3 tech expansion
+
+---
+
+## Entry 33 — 2026-03-12 — Colony Personality Traits + VP Bonus
+
+**Phase:** 2 (Colony Management) + Phase 1 (VP balance)
+**Status:** Complete
+
+**What was built:**
+- Colony personality trait system: when a colony has 4+ districts of the same type, it earns a named trait with empire-wide production bonuses
+- 5 trait types: Academy World (4+ Research: +10% research empire-wide), Forge World (4+ Industrial: +10% alloys), Mining Colony (4+ Mining: +10% minerals), Breadbasket (4+ Agriculture: +10% food), Power Hub (4+ Generator: +10% energy)
+- Only one trait per colony — highest district count wins. Disabled districts don't count
+- Empire-wide bonuses stack across colonies (2 Forge Worlds = +20% alloys)
+- Trait bonuses applied as multiplicative modifier in `_calcProduction` after base + tech + planet bonuses
+- +5 VP per active colony trait added to `_calcVPBreakdown` — rebalances tall vs wide play
+- `colonyTraitEarned` broadcast event emitted when district construction creates or changes a trait
+- Colony serialization includes `trait: { type, name }` (or null)
+- Client: trait badge shown in colony info panel (gold text) and colony list sidebar (gold pill badge)
+- Client: game-over scoreboard includes Traits column with count and VP contribution
+- Toast notification: "Colony earned trait: Mining Colony!" (positive type)
+- Colony list sidebar fingerprint includes trait type for rebuild on trait changes
+
+**Files changed:**
+- `server/game-engine.js` — COLONY_TRAITS constant, `_calcColonyTrait`, `_calcTraitBonuses`, trait bonus application in `_calcProduction`, traitsVP in `_calcVPBreakdown`, trait in `_serializeColony`, `colonyTraitEarned` event in construction completion, COLONY_TRAITS in module.exports
+- `src/public/js/app.js` — cpTraitRow/cpTrait DOM refs, trait display in `_updateHUD`, trait badge in colony list sidebar, traits column in game-over scoreboard, trait in colony list fingerprint
+- `src/public/index.html` — cp-trait-row in colony panel
+- `src/public/css/style.css` — .colony-list-trait, .colony-trait-badge styles
+- `src/public/js/toast-format.js` — colonyTraitEarned formatting and TOAST_TYPE_MAP entry
+- `src/tests/colony-traits.test.js` — **new** 24 tests
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 643 total (24 new: COLONY_TRAITS constant ×4, _calcColonyTrait ×8, empire-wide bonuses ×7, VP bonus ×4, serialization ×3, trait event ×2, toast formatting ×3). All passing.
+
+**Key decisions:**
+- Trait bonuses are multiplicative on total production (base + tech + planet), applied after all other modifiers — gives the most impactful reward for specialization
+- Disabled districts excluded from trait count — losing power can cost you a trait, creating cascading consequences
+- Only one trait per colony (highest count wins) — prevents gaming with exactly 4 of everything
+- Housing districts can't earn traits — consistent with housing having no production output
+- Trait calculation is not cached separately — computed on-demand in `_calcProduction`, `_calcVPBreakdown`, and `_serializeColony`. Could be cached if profiling shows a bottleneck
+- +5 VP per trait means a 3-colony empire with 3 traits gets +15 VP, competitive with a 5-colony empire's raw pop/district VP
+
+**Next:** T3 tech expansion (game-designer R31 priority #2) or colony crisis events (R31 priority #3)
+
+---
+
+## Entry 34 — 2026-03-12 — Colony Crisis Events (4 Types)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Colony crisis event system: 4 crisis types with 2-choice resolution and timing mechanics
+- **Seismic Activity**: Evacuate (lose 1 district, save pops) or Reinforce (spend 100 minerals, 70% success / 30% lose district + 1 pop)
+- **Plague Outbreak**: Quarantine (growth halted 300 ticks) or Rush Cure (50 energy + 50 food, 80% success / 20% lose 1 pop)
+- **Power Surge**: Shut Down (all districts disabled 100 ticks) or Ride It Out (+50% energy 200 ticks, 25% chance lose generator)
+- **Labor Unrest**: Negotiate (spend 25 influence, resume immediately) or Wait (strike lasts 300 ticks with 3 districts disabled)
+- Crisis timing: first crisis at 1500+ ticks (2.5 min grace), subsequent crises every 500-800 ticks with 300-tick immunity after resolution
+- 200-tick (20 sec) decision window — unresolved crises auto-resolve with worst outcome
+- Crisis state serialized to client: type, label, description, choices, timer, ongoing effects
+- Client: crisis alert panel in colony panel with choice buttons, countdown timer, ongoing effect status display
+- Toast notifications: crisisStarted (crisis type), crisisResolved (outcome)
+- Event ticker: broadcasts crisis events to all players with formatted text
+- Energy boost integration: Power Surge "Ride It Out" success gives +50% energy production via `_calcProduction`
+- Quarantine integration: Plague quarantine blocks pop growth via `_processPopGrowth` check
+- `resolveCrisis` command with full validation: ownership, active crisis, valid choice, resource cost check
+
+**Files changed:**
+- `server/game-engine.js` — CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS constants; crisisState/nextCrisisTick on colony; _processColonyCrises, _triggerCrisis, _processCrisisEffects, _autoResolveCrisis, _resolveCrisisSeismic/Plague/PowerSurge/LaborUnrest, resolveCrisis; energy boost in _calcProduction; quarantine check in _processPopGrowth; crisis in _serializeColony; tick loop integration; handleCommand resolveCrisis case
+- `server/server.js` — resolveCrisis added to command routing
+- `src/public/js/app.js` — crisis alert DOM refs, crisis panel rendering in _updateHUD, resolveCrisis send on choice click, crisisStarted/crisisResolved in event ticker
+- `src/public/js/toast-format.js` — crisisStarted/crisisResolved formatting and TOAST_TYPE_MAP entries
+- `src/public/index.html` — crisis-alert div with header/desc/timer/choices/status elements
+- `src/public/css/style.css` — crisis alert panel styles, choice button styles
+- `src/tests/colony-crises.test.js` — **new** 37 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 686 total (37 new: 4 constants, 6 triggering, 4 seismic resolution, 4 plague resolution, 4 power surge resolution, 5 labor unrest resolution, 1 auto-resolution, 5 validation, 3 serialization, 1 energy boost, 4 toast formatting). All passing.
+
+**Key decisions:**
+- First crisis delayed to 1500+ ticks (2.5 min) so early game isn't punishing — subsequent crises use normal 500-800 tick intervals
+- Crisis choices have asymmetric risk/reward: safe option always works but costs something, risky option has % chance of better/worse outcome
+- Auto-resolution picks worst outcome to incentivize active decision-making — no benefit to ignoring crises
+- Labor unrest disables 3 random districts on trigger (not on resolution) — creates immediate pressure to act
+- Energy boost applied in _calcProduction as a 1.5x multiplier on energy — production cache invalidated when boost starts/ends
+- Quarantine check added to top of _processPopGrowth loop — cleanest integration point
+- Crisis state serialized with full CRISIS_TYPES definition (choices, descriptions) so client doesn't need a local copy of the crisis definitions
+
+**Next:** T3 tech expansion (game-designer R32 priority #2) or colony planet context rendering (R32 priority #3)

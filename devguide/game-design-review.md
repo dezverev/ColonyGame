@@ -4,6 +4,537 @@
 
 ---
 
+## Review #32 — 2026-03-12 — The Missing Middle: From Colony Builder to 4X
+
+**Reviewer:** Game Design Analyst (automated)
+**Build State:** 60/162 tasks complete (37%). Colony traits, science ships, fog of war, anomalies, single-player mode. 645 tests passing. ~16,200 lines.
+**Focus:** Holistic 4X evaluation at the 37% mark. The game has exploration and expansion — what's needed to make a 20-minute session feel like a complete, satisfying game?
+
+---
+
+### 1. Current State Audit
+
+**What a player experiences today:**
+1. Enter name → "Single Player" one-click or multiplayer lobby
+2. Galaxy generated (50/100/200 systems), starting colony on habitable planet with 4 pre-built districts, 8 pops
+3. Build 6 district types with energy/mineral/food/alloy/research economy
+4. Research 6 techs across 3 tracks (2 tiers, T1 costs 150, T2 costs 500)
+5. Galaxy map with fog of war (2-hop visibility), science ships for exploration
+6. Colony ships for expansion (max 5 colonies), planet type bonuses
+7. Colony personality traits at 4+ district specialization (+10% empire-wide bonuses, +5 VP each)
+8. Energy deficit auto-disables districts, food deficit kills pops
+9. Match timer → VP scoring → scoreboard
+
+**What's conspicuously absent:**
+- No military units, combat, or threat of any kind
+- No diplomacy, trade, or player interaction beyond chat
+- No mid-game events or crises that disrupt plans
+- No win condition other than timer expiry
+- No way to interact with or respond to other players' actions
+- Tech tree ends at T2 — late game has nothing new to unlock
+- No visual progression on colonies (same look at pop 8 and pop 30)
+
+---
+
+### 2. Pillar Scores
+
+#### Strategic Depth: 4/10
+The colony specialization system (planet bonuses + traits) is genuinely good. Players make real choices about which districts to build and where to expand. But strategic depth bottoms out fast: there's no military dimension, no diplomacy, no competing victory paths. Every game plays the same — expand to 5 colonies, specialize, wait for timer. The tech tree is too shallow (6 techs) to create divergent strategies. There's no "opponent's move" that forces you to adapt.
+
+#### Pacing & Tension: 3/10
+The weakest pillar. Early game has a nice rhythm (build first districts, scout galaxy, pick expansion targets). But there's no mid-game inflection point and no late-game climax. Once you have 3-4 colonies running, you're on autopilot — queue districts, wait for pops, research finishes itself. No crises, no threats, no "oh no" moments. The match timer ending is the only dramatic beat, and it's external to gameplay. The 2-minute warning helps but can't substitute for organic tension.
+
+#### Economy & Production: 6/10
+The strongest system in the game. Energy as a power grid with auto-disable creates real tension. Food pressure via pop consumption forces agriculture investment. Alloy costs for ships create expansion trade-offs. Planet type bonuses (desert +minerals, ocean +research) make colony site selection meaningful. Colony traits reward specialization. The economy genuinely works — but it needs more sinks. Once you're stable, resources just pile up with nothing to spend them on.
+
+#### Exploration & Discovery: 5/10
+Science ships + fog of war + anomalies create a legitimate explore loop. Surveying reveals planets, anomalies give one-time bonuses, and persistent fog penetration rewards systematic scouting. But the reward space is shallow: 5 anomaly types with static bonuses. No narrative choices, no multi-step chains, no "ancient precursor mystery" to unravel. Exploration is functional but not exciting. The galaxy feels like a spreadsheet of habitability numbers rather than a frontier of wonders.
+
+#### Multiplayer Fairness: 3/10
+Hard to evaluate fully since there's no interaction beyond chat. Starting positions use galaxy generation's spacing, which is reasonable. But there are no comeback mechanics, no underdog bonuses, no way to interfere with or respond to another player. In a 2-player match, both players play solitaire on the same map. VP scoring is the only competitive element, and it heavily favors wide play (more colonies = more pops = more VP).
+
+**Overall Score: 4.2/10**
+
+---
+
+### 3. Top 5 Gaps a Playtester Would Notice
+
+1. **"Nothing is happening to me."** After the initial build-out, the game becomes purely reactive to the player's own decisions. No events, no crises, no AI actions, no opponent moves. This is the #1 fun killer — 4X games need external pressure.
+
+2. **"I've researched everything, now what?"** The tech tree empties after 6 techs. In a 20-minute match at normal speed, an active researcher finishes all T2 techs by minute 12-14. The last 6-8 minutes have no progression system.
+
+3. **"Why should I care about other players?"** In multiplayer, other players are invisible except as VP numbers. No territorial conflict, no trade, no diplomacy. The multiplayer label promises interaction but delivers parallel solitaire.
+
+4. **"My colonies all look the same."** Despite planet type bonuses, the isometric colony view doesn't change based on planet type. A Desert colony looks identical to an Arctic colony. The 3D rendering — the game's visual signature — isn't leveraging its biggest differentiator.
+
+5. **"The game just... stops."** The match timer ending feels arbitrary. There's no climax, no final push, no dramatic finish. The game needs a rising action curve that makes the last few minutes intense rather than anticlimactic.
+
+---
+
+### 4. Recommendations
+
+### R32-1: Colony Crisis Events (already designed, needs implementation)
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** Zero external pressure after initial setup. The game is a sandbox with a timer.
+**The fix:** Implement the 4 crisis types already designed in design.md (Seismic Activity, Plague, Power Surge, Labor Unrest). These are the single highest-impact addition for player engagement.
+**Why it matters:** Crises create "oh no" moments that break monotony, force resource stockpiling as insurance, and create stories ("remember when the plague hit our Forge World?"). Every good 4X has them — Stellaris has galactic crises, Civ has barbarians and natural disasters.
+**Design details:**
+- Already fully specified in Phase 2 of design.md
+- First crisis at 500-800 ticks (50-80 seconds) gives players time to establish before disruption
+- 200-tick (20 second) decision window is tight enough to feel urgent
+- Crisis immunity window (300 ticks) prevents frustrating back-to-back events
+- Priority: implement this before any other recommendation
+
+### R32-2: Tech Tree T3 Expansion
+
+**Impact:** High
+**Effort:** Low
+**Category:** Core Mechanic
+
+**The problem:** Tech tree exhausts at T2, leaving 6-8 minutes of a match with no research goals.
+**The fix:** Add T3 techs (already designed): Fusion Reactors, Genetic Engineering, Automated Mining. Cost 1000 each — unreachable without heavy research investment, creating a viable "tech rush" strategy.
+**Why it matters:** Progression systems are the backbone of 4X engagement. An empty tech tree means no reason to build research districts after minute 12. T3 techs with powerful effects (generators produce alloys, pop growth halved, mining costs 0 jobs) create late-game power spikes and viable "research victory" vibes.
+**Design details:**
+- Already specified in Phase 4 of design.md
+- At 12 research/month (2 research districts), T3 takes ~83 months (14 minutes) — forces dedicated investment
+- T3 VP bonus (+20 per tech) makes full tech completion worth +60 VP, competitive with an extra colony
+
+### R32-3: Colony Planet Context Rendering
+
+**Impact:** High
+**Effort:** Low-Medium
+**Category:** Visual Polish / Player Experience
+
+**The problem:** All colonies look identical regardless of planet type. The isometric 3D view — the game's visual signature — wastes its biggest differentiator.
+**The fix:** Change ground plane color and scene background based on planet type (already designed as R24-2 in Phase 3). Desert colonies get sandy ground (#c4956a), Arctic gets icy blue (#b8c9d4), etc.
+**Why it matters:** Visual identity makes colonies feel like distinct places rather than spreadsheet rows. When a player switches between their Ocean World and their Desert Colony, it should feel like visiting different locations. This is low-hanging fruit that dramatically improves the "feel" of multi-colony gameplay.
+**Design details:**
+- 6 ground plane colors, 6 background colors already specified
+- Implement in `buildColonyGrid()` based on `colony.planet.type`
+- Optional horizon glow adds atmosphere for minimal extra effort
+- Pure client-side change — no server modifications
+
+### R32-4: Empire Specialization Doctrines
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic / Strategic Depth
+
+**The problem:** Every game plays identically. No strategic divergence, no commitment moments, no "build identity."
+**The fix:** At 3 colonies, players choose a permanent doctrine: Expansionist (colony cap +2, ship build -40%), Industrialist (district build -25%, +1 alloy/industrial), or Scholar (research +25%, +3 VP per tech). Already designed in Phase 4.
+**Why it matters:** Permanent choices create identity and replayability. "I'm going Expansionist this game" vs "Scholar rush" creates different playstyles from the same starting point. This is the cheapest way to add strategic depth — one decision that ripples through the entire mid/late game. Reference: Endless Space 2 faction quests, Stellaris tradition trees.
+**Design details:**
+- Trigger at exactly 3 colonies — natural mid-game milestone
+- Expansionist raises cap to 7 colonies (wide play), Industrialist makes existing colonies more productive (tall play), Scholar makes research a win condition
+- +3 VP per tech for Scholar means all 6 current techs = +18 VP, competitive but not dominant
+- Show doctrine badge on scoreboard for multiplayer awareness
+
+### R32-5: Colony Mood System
+
+**Impact:** Medium-High
+**Effort:** Medium
+**Category:** Core Mechanic / Player Engagement
+
+**The problem:** Colonies are pure optimization puzzles with no personality. There's no nurturing relationship — you build districts and forget about them.
+**The fix:** Colonies have mood states (Thriving/Content/Restless/Rebellious) based on housing ratio, food surplus, and district variety. Already designed in Phase 2.
+**Why it matters:** Mood creates a caretaking relationship with colonies. A "Thriving" colony producing +10% feels rewarding. A "Rebellious" colony destroying a district feels urgent. It transforms colonies from spreadsheets into places you care about. Reference: Tropico citizen satisfaction, Civ VI amenities.
+**Design details:**
+- Thriving: housing ratio < 0.7, food surplus > 5, 4+ district types → +10% all output
+- Rebellious: housing ratio > 1.0 AND food deficit for 3+ months → -25% output, district destruction after 5 months
+- Color-coded indicator (green/white/yellow/red) in colony panel
+- Creates tension between fast expansion (cramped, unhappy) and careful development
+
+### R32-6: Dynamic Galactic News Ticker
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Multiplayer / Atmosphere
+
+**The problem:** The galaxy feels dead. In multiplayer, other players are invisible numbers. Even in single-player, events happen silently.
+**The fix:** Scrolling text feed at top of screen narrating events with procedural flavor text. "BREAKING: Player X establishes Dusthaven Colony in the Kepler system." Already designed in Phase 7.
+**Why it matters:** A news ticker makes the galaxy feel alive and populated. In multiplayer, it creates awareness of rivals without requiring direct interaction mechanics. In single-player, it adds narrative flavor. This is a pure client-side feature using existing event data — very low implementation cost for high atmosphere impact.
+**Design details:**
+- 3-4 text template variants per event type for variety
+- Single-line display, 4-second cycling, max 8 queued messages
+- Player names colored by player color
+- Already-broadcast events (colonyFounded, constructionComplete, researchComplete, popMilestone) provide the data
+
+### R32-7: Scarcity Pre-Warning System
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** UX / Player Quality of Life
+
+**The problem:** Resource shortfalls happen suddenly. A player builds an industrial district, doesn't realize it'll push energy negative, and districts get auto-disabled with no advance warning. This feels punishing rather than challenging.
+**The fix:** When the player's projected production (including in-queue buildings) would result in a deficit within 2 months, show a warning indicator. Amber for "will go negative if you build more consumers," red for "currently in deficit."
+**Why it matters:** Good 4X games give players information to plan ahead. Stellaris shows projected income. Anno shows production chains. Letting players see incoming shortfalls transforms "unfair surprise" into "strategic decision." This is the difference between a game that feels unfair and one that feels deep.
+**Design details:**
+- Calculate projected net after all queue items complete
+- Show warning icon next to resource in HUD panel
+- Tooltip: "Energy: +6/month now, -1/month when Industrial completes"
+- Server already has the data; this is a client-side projection calculation
+
+---
+
+### 5. Balance Snapshot
+
+**Resource Flow Analysis:**
+- Starting resources: 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence
+- Starting districts: 1 generator (+6 energy), 1 mining (+6 minerals), 2 agriculture (+12 food)
+- Starting pops: 8, with 4 jobs filled → 4 unemployed pops produce 4 physics/society/engineering each
+- Net month 1: +5 energy (6 produced - 1 housing), +6 minerals, +4 food (12 - 8 pops), 0 alloys
+- **Assessment:** Early economy is well-paced. Players have enough minerals (~300) for 3 districts before needing mining income. Energy becomes tight after 3-4 consumers, creating genuine tension. Food pressure from pop growth is well-calibrated.
+
+**District Balance:**
+| District | Cost | Build Time | Output/month | Energy Cost | Notes |
+|----------|------|-----------|-------------|------------|-------|
+| Housing | 100m | 20s | 5 housing | -1 energy | Necessary evil, no production |
+| Generator | 100m | 30s | 6 energy | 0 | Foundation — always needed |
+| Mining | 100m | 30s | 6 minerals | 0 | Good ROI, pays for itself in ~17 months |
+| Agriculture | 100m | 30s | 6 food | 0 | Pop growth engine |
+| Industrial | 200m | 40s | 4 alloys | -3 energy | Premium — needs generator support |
+| Research | 200m | 40s | 12 research (4×3) | -4 energy | Expensive but high VP yield |
+
+- **Issue:** Mining at 6 minerals/month for 100 mineral cost = 17-month ROI. But after initial colony build-out, minerals have nowhere to go (no ships, no starbases, limited district slots). Mining becomes less valuable than any other district type in mid-game.
+- **Fix:** This resolves naturally when military ships arrive (mineral→alloy pipeline), but in current state, consider: colony ships cost 200 minerals, so expansion gives minerals a sink. If players are expanding, mining stays relevant. No immediate rebalance needed.
+
+**Tech Pacing:**
+- T1 costs 150 research. With 2 unemployed pops (2 research/month each track) + 0 research districts = ~75 months per T1 tech (12.5 minutes). Too slow without research districts.
+- With 1 research district (4/month per track): ~25 months per T1 (4.2 minutes). Reasonable.
+- T2 costs 500. With 1 research district: ~83 months (13.8 minutes). In a 20-minute match, T2 is achievable but tight.
+- **Assessment:** Tech pacing is good for 20-minute matches. Players who invest in research can finish T1 by minute 5 and T2 by minute 14-15. Players who skip research lose ~30 VP (3×5 + 3×10) plus production bonuses. Tech is a real strategic choice, not free.
+
+**VP Distribution (typical 20-minute single-player game):**
+- 3 colonies × ~15 pops each = 45 pops × 2 = **90 VP** (dominant)
+- 3 colonies × ~8 districts each = 24 districts × 1 = **24 VP**
+- ~200 alloys stockpiled / 25 = **8 VP**
+- ~600 total research / 50 = **12 VP**
+- 6 techs completed = 3×5 + 3×10 = **45 VP**
+- 2 colony traits × 5 = **10 VP**
+- **Total: ~189 VP**
+
+- **Issue:** Pops dominate VP (48%). This heavily favors wide play (more colonies = more pops). A player with 5 colonies and 75 total pops gets 150 pop VP alone, dwarfing any tall-play strategy.
+- **Fix:** Doctrines (R32-4) help by giving tall players alternative VP paths. Colony traits are a good start (+5 VP each). Consider raising trait VP to +8 to further reward specialization depth.
+
+**Game Length:**
+- Default 20-minute match timer with 10Hz tick rate = 12,000 ticks
+- A month = 100 ticks = 10 seconds
+- 20 minutes = 120 months of game time
+- **Assessment:** Match length feels right for the current depth. As more systems are added (combat, diplomacy), 25-30 minute matches may become the sweet spot.
+
+---
+
+### 6. Content Wishlist
+
+1. **Precursor Questline:** Discovering 3+ "Precursor Artifact" anomalies across different systems unlocks a multi-step questline: triangulate the precursor homeworld → send science ship to investigate → discover a dormant megastructure → spend massive resources to activate it → permanent empire-wide bonus + 30 VP. Creates a narrative throughline for exploration-focused players and makes anomaly hunting feel purposeful rather than random.
+
+2. **Colony Governance Elections:** Every 30 months (5 minutes), colonies hold an election where 2 randomly-generated policy options are presented: "Expand Housing" (+3 housing, -1 energy/month) vs "Intensify Production" (+15% output, -2 housing). The player picks one, creating periodic meaningful micro-decisions that shape colony identity over time. Each election adds a "law" to the colony's identity, visible as badges. Makes colonies feel like living societies, not just production centers.
+
+3. **Galactic Archaeology Layer:** Hidden beneath the galaxy topology, generate "precursor ruins" at 5-10% of systems. Ruins are only discovered by science ship survey. Each ruin contains a fragment of a procedurally generated precursor civilization name and backstory. Collecting 5+ fragments reveals the full story + unlocks a unique building type for all colonies. Adds a metagame collection quest that spans the entire match and gives exploration a deeper purpose than just finding colonizable planets.
+
+4. **Stellar Phenomena as Map Hazards:** Some hyperlanes pass through nebulae (slows fleet travel 2x), black holes (instant death for unshielded ships, requires T2 tech to traverse safely), or pulsar fields (drains energy from passing fleets). Creates geography that matters — some routes are faster but dangerous, others are safe but long. The galaxy becomes a landscape with terrain, not just a graph.
+
+5. **Colony Cultural Victory:** Instead of just VP numbers, colonies that reach "Thriving" mood for 10+ consecutive months develop "Cultural Influence" that slowly converts nearby unclaimed systems to the player's territory (1 hop per 20 months of sustained thriving). Creates a peaceful expansion path that rewards careful colony management. Cultural influence visible as a soft glow on the galaxy map. A "cultural victory" alternative: first player to culturally influence 10 systems wins.
+
+---
+
+### 7. Roadmap Updates
+
+**7 new work items added to design.md** — see Phase 2 (colony mood, scarcity warnings) and Phase 7 (news ticker, VP timeline recording). Colony crises, T3 tech, planet context rendering, and doctrines were already present as existing tasks.
+
+**Prioritization recommendation for `/develop`:**
+1. Colony crisis events (Phase 2) — highest impact on engagement
+2. T3 tech expansion (Phase 4) — fills the late-game void
+3. Colony planet context rendering (Phase 3) — visual differentiation
+4. Colony mood system (Phase 2) — adds colony personality
+5. Empire doctrines (Phase 4) — strategic divergence
+6. Galactic news ticker (Phase 7) — atmosphere
+7. Scarcity pre-warning (Phase 1) — QoL
+
+---
+
+## Review #31 — 2026-03-12 — Scout First, Settle Later: The Exploration Loop Lands
+
+**Reviewer:** Game Design Analyst (automated)
+**Build State:** 57/158 tasks complete (36%). Science ships, system surveying, 5 anomaly types, persistent fog penetration, single-player mode, research VP rebalance. 611 tests passing. ~15,600 lines.
+**Focus:** Post-science-ships audit. The game now has a scout→discover→evaluate→settle loop. How does it change the player experience? What's still missing for a compelling 20-minute session?
+
+---
+
+### 1. Current State Audit
+
+**What a player experiences today:**
+1. Enter name → one-click "Single Player" or create/join multiplayer room
+2. Configure galaxy size (S/M/L), match timer (10/20/25/30 min or unlimited)
+3. Game starts: isometric 3D colony on a random planet type with 4 pre-built districts and 8 pops
+4. Build 6 district types, manage energy balance, research 6 techs across 3 tracks (2 tiers)
+5. Press G → galaxy map with fog of war (2-hop visibility from owned systems)
+6. Build science ships (100 minerals + 50 alloys) → send to explore unknown systems → auto-survey reveals planets + 20% anomaly chance per planet → 5 anomaly types with one-time bonuses
+7. Surveyed systems stay revealed permanently (persistent fog penetration)
+8. Build colony ships (200 minerals, 100 food, 100 alloys) → send along hyperlanes → found colonies
+9. Manage up to 5 colonies via sidebar list, keyboard shortcuts 1-5
+10. Planet type bonuses create differentiated colony economies
+11. VP scoring: pops×2 + districts + alloys/25 + research/50 + tech VP bonuses
+12. Game ends on timer → scoreboard with VP breakdown
+
+**What a player CANNOT do:**
+- See planets as 3D objects (system view is HTML table only)
+- Build military ships or engage in combat (no fleets)
+- Interact with other players beyond chat (no diplomacy, trade, territory claims)
+- Build buildings (only districts)
+- Specialize colonies for strategic bonus (no personality/trait system)
+- Choose different openings (every game starts identically)
+- Spend influence (100 starting, no sink)
+- Claim territory without colonizing (no outposts/starbases)
+
+**The honest assessment:** Science ships have completed the explore→exploit pipeline. There's now a genuine scouting loop: build science ship → push into fog → discover anomalies → evaluate planets → decide where to colonize. The persistent fog penetration reward feels good — surveying a system permanently reveals it. Anomaly bonuses create small dopamine hits during exploration. But the game still lacks inter-player friction, colony specialization depth, and any late-game strategic branching. The "what do I do next?" question gets answered faster than new questions arise.
+
+---
+
+### 2. 4X Design Pillar Scores
+
+#### Strategic Depth: 5/10 (unchanged from R30)
+Science ships add a planning layer (scout then settle), but don't create new strategic branches. The opener is still largely solved — build science ship first or start economy? Economy first still wins because anomaly bonuses are small one-time payoffs. The tech tree has no branching; colony specialization doesn't exist yet; there's only one way to win (VP). Strategic depth requires choices where both options are viable. Currently, the viable path is: economy → science ship → colony ship → repeat.
+
+#### Pacing & Tension: 7/10 (up from 6)
++1 from science ships. The early game now has three distinct phases: (1) build-up (minutes 0-3), (2) scouting (minutes 3-6, science ships exploring), (3) expansion (minutes 6-12, colony ships settling discovered worlds). Science ship movement creates micro-tension: "What will I find?" Anomaly discovery is a small but real excitement spike. The survey-then-settle rhythm is satisfying. But mid-to-late game still flattens once colonies are established and the galaxy is surveyed. No crises, no disruption, no opponent interaction to create turning points.
+
+#### Economy & Production: 7/10 (unchanged)
+Science ships add alloy tension (50 alloys competes with colony ships' 100 alloys). The "explore vs expand" resource trade-off is real. Anomaly bonuses (100 minerals, 50 alloys, etc.) create small economic boosts that reward scouting. Still missing: influence spending, building variety, scarcity events, and any late-game resource sinks.
+
+#### Exploration & Discovery: 7/10 (up from 5)
++2 from science ships. This is the biggest single-feature improvement to a pillar since colony ships. The loop works: push science ships into fog → systems reveal → anomalies pop → "Ancient Ruins discovered! +50 research" creates genuine delight. Surveyed systems staying visible rewards systematic exploration. The 20% anomaly chance means some systems are barren and some are treasure troves — this variance is good. Auto-return to nearest colony after survey keeps ships active. Cap of 3 science ships creates fleet management lite. Still missing: anomaly choice events (branching decisions), multi-step anomaly chains, system orbital view to make discoveries visual, and any sense of galactic-scale narrative.
+
+#### Multiplayer Fairness: 4/10 (unchanged)
+Starting positions are balanced. Fog of war creates information asymmetry that adds tension. But multiplayer is still mostly parallel play. No territorial mechanics, no economic interaction (trade, blockade), no diplomacy. Science ship scouting is entirely PvE — discovering an opponent's territory is informational only, with no mechanical consequences. The expansion alert toast helps, but there's no way to respond to territorial encroachment.
+
+**Overall Score: 6.0/10 (up from 5.4)** — Science ships drove +0.6, entirely through Pacing and Exploration.
+
+---
+
+### 3. Top 5 Things a Playtester Would Notice
+
+1. **"I explored everything and there's nothing left to do."** In a small galaxy (50 systems), 3 science ships can survey the entire map by minute 10. After that, the exploration pillar shuts off entirely. The remaining match is pure optimization with no new information. Larger galaxies help, but even medium (100 systems) gets fully explored by minute 15 in a 20-minute match.
+
+2. **"My opponent is invisible."** The biggest single gap: multiplayer matches feel like solo games with a shared scoreboard. No territorial friction, no economic interaction, no way to help or hinder another player. Chat exists but there's nothing to talk about beyond "good luck." The game needs inter-player mechanics to justify multiplayer.
+
+3. **"All my colonies play the same."** Despite planet bonuses creating different raw numbers, the build order barely changes across colonies. There's no reward for specializing a colony — no personality traits, no buildings, no colony-level upgrades. Each new colony is just another instance of the same optimization puzzle.
+
+4. **"The tech tree is too small."** 6 techs across 2 tiers completes in ~12-15 minutes with moderate research investment. After that, research districts produce VP but there's nothing exciting to unlock. T3 techs with transformative effects would give research districts purpose beyond point accumulation.
+
+5. **"I wish I could see the planets."** System information is still an HTML table. Discovering a size-20 Continental world via science ship survey should feel like finding El Dorado — instead it's a row in a table with green highlighting. The system orbital view would transform discovery moments from data events to visual experiences.
+
+---
+
+### 4. Recommendations
+
+### R31-1: Colony Personality Traits — Make Specialization Pay
+
+**Impact:** High
+**Effort:** Low
+**Category:** Core Mechanic / Strategic Depth
+
+**The problem:** 5 colonies × same build order = repetitive mid-game. Planet bonuses add variance but don't change strategy. There's no mechanical reason to go all-in on one district type.
+
+**The fix:** When a colony has 4+ districts of one type, it earns a trait with empire-wide bonuses:
+- "Forge World" (4+ Industrial): +10% alloy production empire-wide
+- "Academy World" (4+ Research): +10% research empire-wide
+- "Mining Colony" (4+ Mining): +10% minerals empire-wide
+- "Breadbasket" (4+ Agriculture): +10% food empire-wide
+- "Power Hub" (4+ Generator): +10% energy empire-wide
+
+One trait per colony (highest count wins). Traits stack across colonies. +5 VP per trait for VP balance.
+
+**Why it matters:** Creates genuine empire-building strategy. "Should I make this Ocean world a Breadbasket (food bonus) or Academy (research bonus)?" becomes a real decision. Three Forge Worlds = +30% alloys empire-wide, making tall industrialist play viable. This single feature differentiates every mid-game. Reference: Stellaris planet designation system.
+
+### R31-2: T3 Tech Expansion — The Late-Game Fork
+
+**Impact:** High
+**Effort:** Low
+**Category:** Strategic Depth
+
+**The problem:** 6 techs complete by minute 12-15. Research becomes VP-only after that. No late-game strategic decisions. No "tech rush" archetype.
+
+**The fix:** Already in design.md. Add 3 T3 techs at cost 1000:
+- Physics T3: Fusion Reactors (+100% Generator output + generators produce +1 alloy/month)
+- Society T3: Genetic Engineering (+100% Agriculture + pop growth time halved)
+- Engineering T3: Automated Mining (+100% Mining + mining districts cost 0 jobs)
+
+**Why it matters:** T3 at 1000 cost with 2 research districts (8/month) takes ~125 months (~21 min). Reaching T3 in a 20-minute match requires 3+ research districts on an Academy World — a massive early investment that sacrifices economy for a transformative payoff. This creates the "tech rush" archetype alongside "expansion rush" and "economy rush." Three viable strategies = replayability.
+
+### R31-3: Colony Crisis Events — Break the Optimization Treadmill
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Pacing & Tension
+
+**The problem:** After the exploration phase ends (~minute 10), the game becomes pure optimization with no disruption. No surprises, no threats, no adaptation required. The "tension" line goes flat.
+
+**The fix:** Already detailed in design.md (Phase 2). 4 crisis types every 500-800 ticks per colony:
+- Seismic Activity: evacuate (lose district) or reinforce (100 minerals, 30% fail)
+- Plague Outbreak: quarantine (growth halted) or rush cure (50 energy + 50 food, 20% spread)
+- Power Surge: shut down (all districts disabled 100 ticks) or ride it out (25% lose generator)
+- Labor Unrest: negotiate (25 influence) or wait (300 ticks disabled)
+
+200-tick (20 sec) decision window. Unresolved = worst outcome.
+
+**Why it matters:** Crises inject mid-game tension and test player adaptability. A plague on your Forge World while you're saving alloys for a colony ship creates genuine drama. Crises also create the first influence sink (Labor Unrest negotiation), give the event system narrative weight, and break the "build and forget" colony management pattern. Reference: Stellaris empire crises, Frostpunk dilemma events.
+
+### R31-4: Empire Specialization Doctrines — The Mid-Game Commitment
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Strategic Depth
+
+**The problem:** At minute 8-10, players have 3 colonies and the game path is the same for everyone: expand to 5, optimize, wait for timer. No asymmetric mid-game strategies.
+
+**The fix:** Already in design.md (Phase 4). At 3 colonies, unlock a permanent doctrine:
+- **Expansionist:** Colony ship build time -40%, colony cap +2 (to 7)
+- **Industrialist:** All district build time -25%, +1 alloy per Industrial
+- **Scholar:** Research +25% empire-wide, each completed tech +3 VP
+
+**Why it matters:** This is the single most impactful strategic depth feature. A permanent commitment at the mid-game pivot point creates divergent player identities: "I'm going Scholar to rush T3 Fusion Reactors" vs "I'm going Expansionist to claim 7 colonies before the timer." Opponent doctrine choices become visible strategic information that changes your own plans. Reference: Endless Space 2's faction quests, Civ VI's government system.
+
+### R31-5: System Orbital View — Make Discovery Beautiful
+
+**Impact:** Medium-High
+**Effort:** Medium
+**Category:** Visual / Core UX
+
+**The problem:** Science ships now discover valuable planets, but the discovery is displayed as a table row. The exploration loop works mechanically but lacks visual payoff. A size-20 Continental world should feel spectacular to find.
+
+**The fix:** Already in design.md. system-view.js with central star, orbital rings, colored planet spheres, habitable atmospheres. Click planet for details, "Colonize" button for colony ships. Galaxy → System → Colony navigation.
+
+**Why it matters:** The system view is where exploration meets exploitation. Surveying a system with a science ship and then *seeing* the planets orbiting their star transforms data into experience. This is the "wow" moment that screenshots are made of. Every colony ship destination becomes a visual memory, not a row in a table. Reference: Stellaris system view.
+
+### R31-6: Scarcity Seasons — Punish Monocultures
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Economy / Balance
+
+**The problem:** Once a player's economy is established, it never gets disrupted. Optimal production ratios remain static. There's no reason to diversify beyond basic needs.
+
+**The fix:** Already in design.md (Phase 2). Every 8-12 months, one resource gets -25% production for 3 months galaxy-wide. Random selection from energy/minerals/food/alloys. Pre-warning 1 month before.
+
+**Why it matters:** Scarcity rewards diversified economies and punishes monocultures. A player with 4 Mining Colonies gets devastated by mineral scarcity; a balanced empire barely notices. The pre-warning creates strategic windows: "Mineral scarcity in 1 month — should I stockpile or shift to alloys?" This is the simplest way to add mid-game economy disruption.
+
+### R31-7: Edict System — Give Influence Purpose
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Core Mechanic
+
+**The problem:** Players start with 100 influence and have zero ways to spend it. It's a dead resource that creates confusion.
+
+**The fix:** Already in design.md (Phase 2). 4 edicts spending influence for temporary bonuses:
+- Mineral Rush (50 influence): +50% mining 5 months
+- Population Drive (75 influence): +100% pop growth 5 months
+- Research Grant (50 influence): +50% research 5 months
+- Emergency Reserves (25 influence): instant +100 energy/minerals/food
+
+Max 1 active. Starting 100 influence = 1-2 strategic uses per match.
+
+**Why it matters:** Transforms a dead resource into a timing weapon. "Do I use my influence now for a population boom, or save it for a late-game research sprint?" Edicts also create VP-relevant decisions: Population Drive early compounds through pop VP; Research Grant late accelerates T3 tech completion. This is the cheapest way to add strategic timing decisions.
+
+---
+
+### 5. Balance Snapshot
+
+#### Resource Flow — Post-Science Ships
+
+**Starting position:** 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence. 8 pops on size-16 planet with 4 pre-built districts.
+
+**Science ship timing:** 100 minerals + 50 alloys = affordable by month 3-4. First survey results by month 6-8 (build + transit + survey). This is good — exploration begins before colony ship is ready.
+
+**Colony ship timing:** 200 minerals + 100 food + 100 alloys. First colony ship ready by month 8-10 (~minutes 5-6). Science ship scouting data informs colony ship targeting. The pipeline works.
+
+**Explore vs Expand tension:** Science ship (50 alloys) vs colony ship (100 alloys). Building 2 science ships costs 100 alloys — equivalent to 1 colony ship. This is the right tension: explore more or settle sooner?
+
+**5-colony empire timeline:** ~15-18 minutes in a 20-minute match. Tight but achievable. Colony personality traits (when implemented) should kick in around colony 2-3 (minute 10-12), creating mid-game strategic identity.
+
+#### VP Formula Assessment
+
+Current: Pops×2 + Districts + Alloys/25 + Research/50 + TechVP (+5/+10/+20 per tier)
+
+**Issue:** Expansion still dominates. 5 colonies × 8 districts × 10 pops = 80 VP from pops + 40 from districts = 120 base. Tech rush: 6 techs = 30 VP bonus + research stockpile. Colony traits at +5 VP each would add 15-25 VP for specialized empires.
+
+**Recommended addition:** +5 VP per colony personality trait (pending implementation). This closes the tall vs wide gap.
+
+#### Anomaly Economy
+
+5 anomaly types with 20% chance per planet. Average planet count per system: 3. Average anomalies per surveyed system: 0.6. Over 15 surveyed systems: ~9 anomaly discoveries.
+
+Average value per anomaly: ~80 resources equivalent. Total scouting value: ~720 resources from 15 systems. Science ship cost: 150 resources × 2 ships = 300 resources investment. ROI: ~2.4x. Healthy — scouting is profitable but not game-breaking.
+
+---
+
+### 6. Content Wishlist
+
+1. **Galactic Leylines:** Hidden resource veins connecting 2-3 star systems. Only revealed when you colonize one endpoint. Control all endpoints = +15% production of leyline's resource. Creates a hidden puzzle on top of expansion: the "obviously best" planet might not be on a leyline, but two mediocre planets that complete a leyline outperform it. Rewards systematic exploration over greedy colonization.
+
+2. **Opening Hands (Starting Condition Draft):** At game start, pick from 3 randomly-selected starting conditions: "Industrial Start" (+200 alloys, 1 pre-built Industrial), "Research Rush" (+500 physics research, 1 pre-built Research), "Population Boom" (+4 starting pops, +1 Housing). 30-second timer. Breaks the solved opener and adds pre-game strategic choice. Every match starts differently.
+
+3. **Dynamic Galactic News Ticker:** Shared scrolling text at top of screen narrating events in-character: "BREAKING: Commander Zhang discovers Ancient Ruins in the Vega system", "CENSUS: New Helsinki reaches 15 population." Takes existing gameEvent data and wraps in procedural flavor text. Zero mechanical impact, massive atmosphere. Makes the galaxy feel alive and other players feel present.
+
+4. **Secret Rival Objectives:** At game start in multiplayer, each player gets a hidden objective targeting another player: "Control more colonies than Player B" (+10 VP), "Out-research Player A" (+10 VP). Revealed at game end. Creates invisible competition and post-game surprise moments.
+
+5. **Post-Game VP Timeline:** Record VP snapshots every 10 months during gameplay. Show as line chart on post-game screen. Reveals inflection points, surges, and comebacks. Low effort, high emotional payoff — players learn from their pacing. "I was ahead until minute 12 when they got their third colony."
+
+---
+
+### 7. Roadmap Updates
+
+Added the following new tasks to `devguide/design.md`:
+
+**Phase 1 (1 new):**
+- Exploration exhaustion counter — track % of galaxy surveyed, surface as "X% Explored" badge
+
+**Phase 2 (1 new):**
+- Influence generation from colony traits (+2 influence/month per personality trait earned)
+
+**Phase 3 (1 new):**
+- Science ship auto-chain survey — after completing a survey, auto-target nearest unsurveyed system within 3 hops
+
+**Total: 3 new work items added + priority reorder**
+
+---
+
+### 8. Summary
+
+| Metric | R27 | R28 | R30 | R31 | Delta |
+|--------|-----|-----|-----|-----|-------|
+| Strategic Depth | 5/10 | 5/10 | 5/10 | 5/10 | 0 |
+| Pacing & Tension | 5/10 | 6/10 | 6/10 | 7/10 | +1 |
+| Economy & Production | 7/10 | 7/10 | 7/10 | 7/10 | 0 |
+| Exploration & Discovery | 3/10 | 5/10 | 5/10 | 7/10 | +2 |
+| Multiplayer Fairness | 4/10 | 4/10 | 4/10 | 4/10 | 0 |
+| **Overall** | **4.8/10** | **5.4/10** | **5.4/10** | **6.0/10** | **+0.6** |
+
+Science ships delivered the biggest single-pillar improvement since colony ships: Exploration jumped from 5 to 7. The scout→discover→settle loop now works. But Strategic Depth and Multiplayer Fairness remain stuck — the game needs inter-player mechanics and strategic branching to climb above 6.0.
+
+**Critical path for next +1.0 to overall score:**
+1. Colony personality traits (Strategic Depth +1)
+2. T3 tech expansion (Strategic Depth +1)
+3. Colony crisis events (Pacing +1)
+4. System orbital view (Exploration +1 through visual payoff)
+
+**Priority order for `/develop`:**
+1. Colony personality traits (Phase 2) — highest impact-to-effort ratio
+2. T3 tech expansion (Phase 4) — unlocks tech rush strategy
+3. Colony crisis events (Phase 2) — breaks mid-game flatline
+4. Empire doctrines (Phase 4) — mid-game strategic fork
+5. System orbital view (Phase 3) — visual payoff for exploration
+6. Scarcity seasons (Phase 2) — economy disruption
+7. Edict system (Phase 2) — influence sink
+8. Surface anomalies on colony grid (Phase 1) — spatial puzzles
+
+---
+
 ## Review #30 — 2026-03-12 — The Strategy Gap: VP Rebalance Landed, But Where Are the Choices?
 
 **Reviewer:** Game Design Analyst (automated)
@@ -260,681 +791,4 @@ Research VP rebalance moved the needle on strategic viability but not on moment-
 
 ---
 
-## Review #29 — 2026-03-12 — The Multiplayer 4X Emerges: Chat, Scoreboard, and the Missing Middle Game
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 55/153 tasks complete (36%). In-game chat, enhanced scoreboard, event ticker, fog of war, colony ships, multi-colony management, BFS pathfinding, planet bonuses, game speed, toast HUD, mini tech tree, VP scoring, energy deficit. 495 tests passing. ~12,700 lines.
-**Focus:** Post-multiplayer-awareness audit. The game now has fog of war, chat, scoreboards, and broadcast events — the multiplayer shell exists. Where is the player experience today, and what's the most impactful path forward?
-
----
-
-### 1. Current State Audit
-
-**What a player experiences today:**
-1. Enter name, create/join room, configure galaxy size + match timer + practice mode
-2. Game starts: isometric 3D colony on a random planet type with 4 pre-built districts
-3. Build 6 district types, manage energy balance, watch pops grow with food surplus
-4. Research 6 techs (2 tiers x 3 tracks) via R key panel
-5. Press G for galaxy map — fog of war reveals 2-hop radius, unknown systems dim
-6. Build colony ships (200m/100f/100a), send them along hyperlane paths to colonize
-7. Manage up to 5 colonies via sidebar list (keyboard shortcuts 1-5)
-8. Chat with other players via collapsible in-game chat panel
-9. See rival progress on Tab scoreboard (VP, colonies, pops, income rates)
-10. Event ticker broadcasts significant actions (colony founded, construction, research, pop milestones)
-11. Game ends on timer — highest VP wins (pops x2 + districts + alloys/25 + research/100)
-
-**What a player CANNOT do:**
-- Build buildings (only districts exist — no specialization beyond type)
-- Build science ships, military ships, or any non-colony vessel
-- Attack, trade with, or diplomatically interact with other players
-- See a system orbital view (galaxy jumps directly to colony)
-- Respond to random events or crises
-- Choose a faction or specialization
-- Win through any means other than VP-on-timer
-
----
-
-### 2. 4X Design Pillar Scores
-
-#### Strategic Depth: 4/10
-The game has resource management and expansion decisions, but lacks the tension between competing priorities that defines great 4X. Every player follows roughly the same build order: agriculture for food → mining for minerals → expand → repeat. The tech tree is too small (6 techs, all linear upgrades) to create meaningful divergence. There's no military threat, no diplomatic leverage, no reason NOT to expand. Colony specialization is implied by planet bonuses but not deep enough to create real identity for each colony.
-
-**Bright spot:** The colony ship cost (200m/100f/100a) creates a genuine "save up vs build now" decision, and fog of war adds uncertainty to expansion timing.
-
-#### Pacing & Tension: 5/10
-Improved significantly with fog of war and the event ticker. The early game has a clear arc: stabilize energy → grow food → build colony ship → expand. But the mid-game is a flatline — once you have 3-4 colonies, you're just building more districts with no new mechanics unlocking. There's no crisis, no rival interaction, no "oh no" moment. The scoreboard creates mild competitive tension but without the ability to interfere with opponents, it's just a number-watching exercise.
-
-**Bright spot:** Match timer creates urgency. Fog of war creates genuine "what's out there?" excitement during expansion.
-
-#### Economy & Production: 6/10
-The strongest pillar. Six resource types with clear purposes. Energy as a bottleneck (consumed by industrial and research) creates real trade-offs. Planet type bonuses reward matching districts to terrain. Pop-job-housing triangle works well. Food surplus drives growth speed in a satisfying way. The shared resource pool (Stellaris model) keeps accounting simple.
-
-**Issues:** All districts of a type are identical — no upgrade path, no adjacency bonuses, no specialization within types. Building costs are uniform (100m for basic, 200m for advanced), creating no interesting cost curve as the game progresses.
-
-#### Exploration & Discovery: 5/10
-Fog of war is a strong foundation. The 2-hop visibility radius creates a genuine frontier. Unknown systems showing as dim dots preserves galaxy shape awareness while hiding details. Colony ships as the only exploration tool is limiting — you're committing 200m/100f/100a just to see what's out there.
-
-**Critical gap:** No science ships. No anomalies during exploration. No reward for scouting except finding habitable planets. The galaxy is just geometry — no narrative, no surprises, no "what if I go deeper?" pull.
-
-#### Multiplayer Fairness: 5/10
-Starting positions are spread via the galaxy generator's `assignStartingSystems`. All players start with identical resources and districts. The scoreboard and event ticker create information symmetry. But there are no comeback mechanics — a player who expands faster just wins, with no way for laggards to catch up. No diplomacy means no kingmaking, but also no coalition-building against a leader.
-
-**Overall Score: 5.0/10**
-
----
-
-### 3. Top 5 Things a Playtester Would Notice
-
-1. **"There's nothing to do in the mid-game."** After your 3rd colony, you're just queuing districts and waiting for timers. No new mechanics unlock, no threats emerge, no decisions escalate. The game needs a mid-game catalyst.
-
-2. **"I can't interact with other players at all."** Chat and scoreboard exist, but gameplay is completely parallel. You can't trade, attack, block, or meaningfully affect another player. It's a competitive idle game, not a multiplayer 4X.
-
-3. **"Every colony feels the same."** You build the same districts in the same order. Planet bonuses are too subtle (+1-2 resources) to drive different strategies. Colonies need identity — buildings, features, crises, specialization.
-
-4. **"The tech tree is over in 5 minutes."** 6 techs, all linear upgrades, exhausted quickly. There's no branching, no exclusive choices, no "tech rush" viable as a strategy. Research feels like a checklist, not a strategic dimension.
-
-5. **"I can't see the system — there's no bridge between galaxy and colony."** Clicking a star on the galaxy map teleports you to the colony grid. The system view (planets orbiting a star) is missing. You never see the planets you're choosing to colonize.
-
----
-
-### 4. Recommendations
-
-### R29-1: Science Ships and the Scout-Settle Loop
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Colony ships are the only mobile unit. Exploring costs 400 resources (colony ship) and commits you to settling. There's no lightweight scouting, no "peek before you commit" gameplay. The explore phase of 4X is stunted.
-**The fix:** Already well-specified in design.md as "Science ship unit type (game-designer R28)." This is the single highest-impact unimplemented feature. Cheap ships (100m + 50a), fast (30 ticks/hop), auto-survey on arrival (reveals planets + 20% anomaly chance), max 3 per player. Creates the core 4X loop: scout → evaluate → settle.
-**Why it matters:** Every great 4X game has a scout unit that's separate from settlers. Stellaris has science ships, Civ has scouts/warriors, Endless Space has probes. Without this, exploration is just "send an expensive colony ship and hope." Science ships transform fog of war from a visual feature into a gameplay system.
-**Design details:**
-- Survey time: 100 ticks (10 sec) per system
-- Anomaly types: 5 simple one-time bonuses (already designed)
-- Persistent fog penetration: surveyed systems stay revealed
-- Render as cyan diamond on galaxy map
-- Creates "scout then settle" planning layer
-
-### R29-2: Colony Crisis Events — Breaking the Optimization Monotony
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Once you have your colonies running, there's zero disruption. Nothing bad ever happens. The game becomes "click build, wait, click build." Great 4X games interrupt optimization with problems that demand reactive play.
-**The fix:** Already specified in design.md as "Colony crisis events (3 types)." Every 5-8 months per colony, trigger a crisis requiring player choice within 2 months. "Seismic Activity" (evacuate vs endure), "Plague" (halts growth unless cured), "Power Surge" (risky bonus). Forces attention management across multiple colonies.
-**Why it matters:** Stellaris anomalies and crises are what make mid-game memorable. Without disruption, optimization is just a spreadsheet. Crises create stories ("remember when the plague hit my main colony right before the timer?") and force strategic flexibility.
-**Design details:**
-- 3 crisis types with binary choices
-- `resolveCrisis` command with choice parameter
-- Unresolved crises auto-resolve with worst outcome (punishes inattention)
-- 500-800 tick interval between crises per colony
-- Events create multiplayer drama via broadcast
-
-### R29-3: System Orbital View — The Missing Visual Layer
-
-**Impact:** Medium-High
-**Effort:** Medium
-**Category:** Core Mechanic / Visual
-
-**The problem:** Galaxy map → colony view is an abrupt jump. Players never see the system they're colonizing — the planets, the star, the orbital layout. This is the visual centerpiece of space 4X games and it's completely absent.
-**The fix:** Already specified as "System orbital view (game-designer R24-1)." Central star, orbital rings, planets sized by planet.size, colored by type, habitable planets with atmosphere glow. Click planet for detail panel. Navigation: Galaxy → System → Colony.
-**Why it matters:** This is the "wow" moment for space 4X. Stellaris's system view is where you fall in love with the universe. It's also functional: it's where you evaluate colonization targets, see what's in a system, and eventually manage starbases/fleets. Without it, the galaxy is abstract nodes.
-**Design details:**
-- PerspectiveCamera, slight top-down angle
-- Planets orbit slowly (cosmetic)
-- Clickable planets with detail panel
-- "Colonize" button for colony ship targeting
-- Escape returns to galaxy
-
-### R29-4: Tech Tree T3 Expansion — Making Research a Strategy
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Content / Balance
-
-**The problem:** The tech tree has 6 techs across 2 tiers. All are linear upgrades (+25%/+50%). A player can exhaust the entire tree in 5-10 minutes. Research doesn't feel like a strategic investment — it's a checklist you complete early and forget.
-**The fix:** Already specified as "Tech tree T3 expansion (game-designer R17-5)." Add 3 Tier 3 techs with powerful, game-changing effects: Fusion Reactors (+100% generator + generators produce alloys), Genetic Engineering (+100% agriculture + growth halved), Automated Mining (+100% mining + mining costs 0 jobs). Cost 1000 — unreachable without heavy research investment.
-**Why it matters:** T3 techs at cost 1000 create a viable "tech rush" strategy. A player who invests heavily in research gets a transformative payoff that changes their economy. This adds a strategic dimension that doesn't exist today: invest in tech or invest in expansion?
-**Design details:**
-- T3 costs ~167 months with 2 research districts — forces commitment
-- Each T3 has a secondary effect (alloy production, job reduction, growth speed) that changes how you play
-- Creates strategy divergence: Fusion player pivots to alloys, Gene Crops player grows pops fast, Automated Mining player frees up pops
-
-### R29-5: Empire Doctrines — Asymmetric Mid-Game Identity
-
-**Impact:** Medium
-**Effort:** Low-Medium
-**Category:** Core Mechanic
-
-**The problem:** All empires play identically. There's no strategic identity beyond "who expanded faster." No meaningful choice permanently shapes your playstyle.
-**The fix:** Already specified as "Empire specialization doctrines (game-designer R28)." At 3 colonies, choose one permanent doctrine: Expansionist (colony ship -40% build time, +2 colony cap), Industrialist (district build -25%, +1 alloy/industrial), Scholar (research +25%, +3 VP/tech). Cannot change.
-**Why it matters:** This is Stellaris civics meets Civ VI government. It creates the mid-game pivot point the game desperately needs. At 3 colonies, you stop and think: "What kind of empire am I building?" The choice is permanent, creating commitment and regret in equal measure.
-**Design details:**
-- Trigger: 3 colonies → `doctrineAvailable` event
-- 3 options align with wide/tall/tech strategies
-- Doctrine badge on scoreboard creates multiplayer reads ("they went Scholar, expect a late-game VP surge")
-- Simple to implement: modifier applied in existing processing functions
-
-### R29-6: Military Outposts — Territorial Gameplay Without Combat
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** The only way to claim space is to colonize. With 5-colony cap, you control at most 5 of 50+ systems. The galaxy map has vast unclaimed space with no way to project territorial influence.
-**The fix:** Already specified as "Military outpost system (game-designer R22-6)." Buildable at owned systems for 100 alloys + 200 ticks. Claims system, +1 influence/month, extends fog by +1 hop. Max 3 per player. +3 VP each.
-**Why it matters:** Outposts are the lightest possible territorial mechanic. They don't require combat, they don't require colonization, they just say "this space is mine." They create contested territory before military exists, extend fog of war (making exploration more rewarding), and add VP pressure.
-**Design details:**
-- Build from galaxy map on owned systems
-- Only within 2 hops of existing territory
-- If another player colonizes the system, outpost transfers
-- Creates chokepoint awareness: "if I outpost that system, I block their expansion corridor"
-
-### R29-7: Contested Colonization — Multiplayer Friction Point
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Multiplayer
-
-**The problem:** Two players can send colony ships to the same planet and there's no resolution. First-arrive-wins needs to be explicit, and near-misses need to feel dramatic.
-**The fix:** Already specified as "Contested colonization race resolution (game-designer R28)." First to arrive wins. Same-tick arrivals: coin flip, loser gets 50% refund. Emit race events.
-**Why it matters:** This is the first real multiplayer interaction. Two colony ships racing to the same system is inherently dramatic — especially with fog of war. It creates stories, rivalry, and the feeling that other players matter.
-**Design details:**
-- Check `planet.colonized === false` in `_foundColonyFromShip`
-- Seeded random for same-tick ties
-- 50% resource refund to loser
-- Events broadcast to both players
-
----
-
-### 5. Balance Snapshot
-
-#### Resource Flow Analysis
-| Resource | Start | Basic District Output | Monthly Cost (8 pops, 4 districts) | Net/Month |
-|----------|-------|----------------------|-------------------------------------|-----------|
-| Energy | 100 | 6/generator | 6 gen - 1 housing = +5 | Stable |
-| Minerals | 300 | 6/mining | 6 mining, no consumption = +6 | Accumulates |
-| Food | 100 | 6/agriculture | 12 agri - 8 pops = +4 | Slow growth OK |
-| Alloys | 50 | 4/industrial | 4 ind - 3 energy cost = net +4 alloys, -3 energy | Tight |
-
-**Verdict:** Starting economy is well-balanced. Energy is correctly the bottleneck. Minerals accumulate fastest, making them the primary building currency. Alloys are appropriately scarce (colony ship costs 100 alloys = 25 months of 1 industrial).
-
-#### Colony Ship Economics
-- Cost: 200m + 100f + 100a = ~45 months of saving with 1 mining + 2 agriculture + 1 industrial
-- This is appropriate — expansion should feel expensive. But the 60-second build time adds significant delay
-- **Suggested tweak:** None needed. The economics create a satisfying "save up → commit → expand" rhythm
-
-#### VP Balance Concerns
-- Pops x2 is the dominant VP source (8 starting pops = 16 VP)
-- Districts x1 is secondary (4 starting = 4 VP)
-- Alloys/25 and Research/100 are negligible in short games
-- **Issue:** Research VP (total_research/100) is almost worthless. A player with 2 research districts generates 8/month per track = 24 total/month. Over a 20-minute game (~120 months), that's 2,880 research = 28 VP from research. Meanwhile, 3 colonies with 15 pops each = 90 VP from pops alone.
-- **Fix:** Increase research VP weight to total_research/50 (doubles VP contribution) OR add VP per completed tech (e.g., +5 VP per T1 tech, +10 per T2, +20 per T3)
-
-#### Build Time Analysis
-| Item | Ticks | Real Time (speed 2) | Feel |
-|------|-------|---------------------|------|
-| Basic district | 200-300 | 20-30 sec | Good |
-| Advanced district | 400 | 40 sec | Slightly long |
-| Colony ship | 600 | 60 sec | Appropriate for cost |
-| New colony first 3 districts | 50% time | 10-20 sec | Good accelerant |
-
-**Verdict:** Build times are reasonable. The 50% discount for first 3 districts on new colonies is a great mechanic that makes expansion immediately rewarding.
-
-#### Game Length
-- 20-minute timer (default): ~120 months in-game
-- Feels right for the current content depth
-- With more mechanics (combat, diplomacy), 30 minutes would be more appropriate
-- **No change needed** for current state
-
----
-
-### 6. Content Wishlist — "Wouldn't It Be Cool If..."
-
-1. **Galactic Leylines** (already in design.md): Hidden resource veins connecting star systems. Colonize all endpoints to activate a 15% production bonus. Creates an expansion puzzle layer — "settle the obvious planet or complete the leyline?" This is the most distinctive idea in the roadmap. Prioritize it.
-
-2. **Colony Personality System**: Each colony develops a "character" based on what you build. Research-heavy colonies become "Academic Centers" (bonus: +1 research per pop). Military-focused become "Fortress Worlds" (bonus: defense bonus). Agriculture-heavy become "Breadbasket Worlds" (bonus: food exports to other colonies at +25%). Personality emerges at 10+ districts of a majority type. Creates emergent colony identity without requiring explicit player choice.
-
-3. **Precursor Storyline**: Scattered across the galaxy, 5 "Precursor Artifact" systems (special star type). Surveying all 5 with science ships reveals a "Precursor Homeworld" — a size 25 planet with pre-built districts. First player to survey all 5 and send a colony ship claims it. Creates a galaxy-spanning treasure hunt that intersects with exploration, territory control, and multiplayer racing.
-
-4. **Galactic Council**: At 50% game time elapsed, a "Galactic Council" forms. Every 3 minutes, a resolution is voted on: "Mutual Research Pact" (+10% research for all), "Demilitarization" (ship build time +50%), "Open Borders" (fog of war removed for all). Each player casts one vote. Creates diplomatic interaction without a formal diplomacy system.
-
-5. **Colony Time-Lapse on Game Over**: Already in design.md as "Spectator replay time-lapse." Record snapshots every 10 months, replay as 30-second animation on game over. This is a low-effort emotional hook that turns every game into a shareable story.
-
----
-
-### 7. Roadmap Alignment
-
-The existing design.md roadmap is comprehensive and well-specified. Most of my recommendations are already present as tasks. The key issue is **prioritization** — Phase 2-7 are mostly untouched while Phase 1 keeps growing.
-
-**Recommended build order for maximum player impact:**
-1. Science ships (design.md: already specified) — unlocks exploration loop
-2. Colony crisis events (design.md: already specified) — breaks mid-game monotony
-3. System orbital view (design.md: already specified) — visual wow factor
-4. T3 tech expansion (design.md: already specified) — strategic depth
-5. Empire doctrines (design.md: already specified) — mid-game identity
-6. Military outposts (design.md: already specified) — territorial gameplay
-7. Contested colonization (design.md: already specified) — multiplayer friction
-
-**New tasks added to design.md:** 3 (research VP rebalance, colony personality system, Galactic Council mid-game vote)
-
----
-
-## Review #28 — 2026-03-12 — Fog of War: The Galaxy Has Secrets Now
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 51/149 tasks complete (34%). Fog of war, colony ships, multi-colony management, BFS pathfinding, planet bonuses, game speed, toast HUD, mini tech tree, VP scoring, energy deficit. 438 tests passing. ~11,600 lines.
-**Focus:** Post-fog-of-war audit — the exploration pillar finally exists. What's the game's identity shaping up to be, and where does it go next?
-
----
-
-### 1. Current State Audit
-
-**What a player experiences today:**
-1. Enter name, create/join room, configure galaxy size + match timer
-2. Game starts: isometric 3D colony view with 4 pre-built districts on a random planet type
-3. Build districts (6 types) by clicking empty tiles, manage energy balance
-4. Research 6 techs across 3 tracks (2 tiers) via R key panel
-5. Press G for galaxy map — star systems visible in fog tiers (known 2-hop radius, unknown dim gray)
-6. Build colony ships (200m + 100f + 100a) from colony build menu
-7. Send colony ships along hyperlanes — discover new systems as fog lifts, found colonies (2 pops)
-8. Manage up to 5 colonies via sidebar list, keyboard shortcuts 1-5
-9. Fog of war creates genuine "what's out there?" tension — unknown systems show as dim dots, hovering shows "Unknown System", system panel shows "Unexplored"
-10. Game ends on timer — highest VP wins (pops x2 + districts + alloys/25 + research/100)
-
-**What a player CANNOT do:**
-- Interact with other players during gameplay (no chat, diplomacy, trade, or combat)
-- See a scoreboard showing rival progress
-- Build buildings (only districts exist)
-- Specialize colonies for empire-wide bonuses (no personality traits)
-- Scout without colonizing (no science ships or scouts)
-- Claim territory without settling (no starbases/outposts)
-- Choose different openings (every game starts identically)
-- Use influence (100 starting, no way to spend)
-
-**The honest assessment:** Fog of war has completed the *feeling* of exploration. The galaxy now has secrets — you send colony ships into gray space and discover what's there. Combined with colony ships, the core loop is: build economy → build colony ship → push into fog → discover → found colony → fog recedes, revealing more targets. This is a real 4X loop. But the game is still a **multiplayer solitaire empire builder** — two players in the same galaxy might never know each other exist until end-of-match scores. The next breakthrough needs to be **player interaction**.
-
----
-
-### 2. 4X Design Pillar Scores
-
-#### Strategic Depth: 5/10 (unchanged from R27)
-Fog of war adds information asymmetry but doesn't change strategic decision-making mechanically. The "tall vs wide" tension from colony ships remains the primary strategic axis. The opener is still nearly solved. Tech tree is still linear. Colony specialization doesn't exist beyond planet bonuses. Fog creates *interesting positions* but not yet *interesting choices* — you still colonize the best planet you can see, regardless of fog.
-
-#### Pacing & Tension: 6/10 (was 5)
-Fog of war adds a genuine discovery arc. Early game: build up your homeworld in a small bubble. Mid-game: push colony ships into unknown space, discover new systems as they arrive. Late-game: your fog has receded to reveal most of the galaxy. The "just one more colony" hook is strong — each new colony reveals 2-3 new systems, creating cascading discovery. The tension of sending a ship into fog and waiting to see what's there is real. Still missing: late-game crisis, player-vs-player tension, and any reason to care about what's happening beyond your borders.
-
-#### Economy & Production: 7/10 (unchanged)
-Solid and well-balanced. The resource pipeline works. Alloys have purpose through colony ships. Energy balance creates real constraints. Planet bonuses differentiate colonies. Multi-colony shared resource pool is clean. Still missing: influence spending, late-game resource sinks, building variety.
-
-#### Exploration & Discovery: 5/10 (was 3)
-The biggest jump this review. Fog of war creates genuine exploration: dim unknown systems beckon from the edge of your known space. Colonizing a new world reveals 2-3 more systems — creating the "what's next?" cascade that makes 4X exploration addictive. Ownership dots on unknown systems create intrigue ("someone's out there"). The "Unexplored" system panel creates an itch to send a ship. However, exploration is still binary — you either can see a system (and know everything about it) or you can't. There's no graduated discovery (survey → scan → full intel). No anomalies, no narrative discoveries, no "oh wow" moments beyond seeing planet stats. Science ships would add a whole discovery layer.
-
-#### Multiplayer Fairness: 4/10 (unchanged)
-Fog of war actually creates information asymmetry, which is good — different players see different parts of the galaxy. Starting positions remain evenly distributed. But multiplayer interaction is still zero. Two players in the same galaxy are playing parallel games with a shared timer. The only evidence of another player is ownership dots on fogged systems and a final scoreboard.
-
-**Overall Score: 5.4/10 (was 4.8)** — Half a point up, driven by fog of war completing the exploration arc.
-
----
-
-### 3. Top 5 Things a Playtester Would Notice
-
-1. **"I never once talked to or interacted with the other player."** This is now the #1 issue. Colony ships and fog of war have made the single-player experience compelling. But a "multiplayer" game where players can't communicate, compete, or cooperate isn't multiplayer. Chat, scoreboard, and event ticker are the critical missing layer. This is the gap that separates "promising prototype" from "actual game."
-
-2. **"I found a great planet but someone already colonized it."** Fog of war creates a new pain point — you push into unknown space, discover a size-18 Continental world, and an ownership dot tells you it's already taken. But there's no way to react to this. No diplomacy, no fleet to send, no way to contest. The game creates tension and then provides no resolution mechanics. Even just chat ("hey, that was my planet!") would help.
-
-3. **"All five of my colonies feel the same."** With no personality traits, no buildings, and a solved build order (Agriculture → Housing → Mining → Industrial), managing 5 colonies feels like managing one colony five times. Planet bonuses add +1-2 to specific resources but don't change what you build or when. Colony personality traits would transform this — "my Forge World in the desert, my Academy on the ocean planet" is a story; "five colonies with the same district mix" is a chore.
-
-4. **"I researched everything and then... nothing."** 6 techs complete in roughly 10-15 minutes. After that, research districts produce research that accumulates with no purpose except VP (at a poor rate of 1 VP per 100 research). The late-game tech experience is dead. T3 techs with game-changing effects would create a research endgame.
-
-5. **"What's that player doing? Are they ahead of me?"** Fog of war makes you aware that other players exist (ownership dots), but you can't assess the competitive landscape at all. No scoreboard, no relative indicators, no idea whether you're winning or losing until the timer expires. A Tab-key scoreboard showing colony count, pop totals, and VP would create competitive awareness throughout the match.
-
----
-
-### 4. Recommendations
-
-### R28-1: Multiplayer Awareness Bundle — Chat, Scoreboard, Event Ticker
-
-**Impact:** Critical
-**Effort:** Low-Medium (chat infrastructure exists, scoreboard is data display, ticker is formatting)
-**Category:** Multiplayer UX
-
-**The problem:** The game is multiplayer in name only. Two players share a galaxy but have zero interaction, zero awareness, and zero competitive feedback until the final score screen. This is the single biggest gap in the player experience.
-
-**The fix:** Three features that ship together:
-1. **In-game chat** — collapsible bottom-left overlay, reuses existing WebSocket chat infrastructure, player names colored by player color. Messages visible to all players in room.
-2. **Scoreboard overlay (Tab key)** — player name, color swatch, colony count, total pops, VP score, resource income rates. All public info. Toggle with Tab, auto-close on release.
-3. **Event ticker** — scrolling text at top of screen narrating major events: "Player B founded a colony in Epsilon Eridani", "Player A reached 30 pops", "Player B completed Advanced Reactors". Uses existing gameEvent broadcasts with flavor text formatting.
-
-**Why it matters:** These three features transform the psychological experience of multiplayer. Chat creates social dynamics ("nice expansion", "race you to that system"). Scoreboard creates competitive motivation ("she has 3 colonies and I only have 2 — I need to expand"). Event ticker creates narrative awareness ("he just colonized near my border — should I be worried?"). Combined, they turn parallel solitaire into a shared competitive experience. This is the highest impact-to-effort improvement available.
-
-**Design details:**
-- Chat: 200px wide collapsible panel, bottom-left, semi-transparent background. Enter key to focus, Escape to close. Last 50 messages. Player color dot next to name. System messages in gray ("Player X has disconnected")
-- Scoreboard: Full-width overlay at ~60% opacity. Columns: Rank, Player (colored), Colonies, Pops, VP, Energy/mo, Minerals/mo, Alloys/mo. Sorted by VP descending. Update every 3 seconds (matches broadcast rate)
-- Event ticker: Top-center, single-line scrolling, 4-second per message, max 3 queued. Color-coded by event source player. "🌍 Player B founded Kepler Colony", "📈 Player A reached 25 pops", "🔬 Player B completed Deep Mining"
-
-### R28-2: Colony Personality Traits — Make Each Colony a Character
-
-**Impact:** High
-**Effort:** Low (server-side trait calculation + client display)
-**Category:** Core Mechanic / Strategic Depth
-
-**The problem:** Managing 5 colonies feels like managing 1 colony five times. Planet bonuses create slight differentiation but don't change build priorities. There's no reward for specialization and no empire-level strategy beyond "more colonies = more VP."
-
-**The fix:** Already specified in design.md. When a colony has 4+ districts of one type, it earns a trait:
-- **Forge World** (4+ Industrial): +10% alloy production empire-wide
-- **Academy World** (4+ Research): +10% research production empire-wide
-- **Mining Colony** (4+ Mining): +10% mineral production empire-wide
-- **Breadbasket** (4+ Agriculture): +10% food production empire-wide
-- **Power Hub** (4+ Generator): +10% energy production empire-wide
-
-One trait per colony (highest district count wins). Traits stack across colonies. +5 VP per trait earned.
-
-**Why it matters:** This single feature creates empire-level strategy. With 5 colonies, you can build: 1 Forge World + 1 Academy + 1 Mining Colony + 1 Breadbasket + 1 balanced capital = +10% across four resources + 20 VP. Or go aggressive: 3 Forge Worlds = +30% alloys. Or go all-in: 5 Academy Worlds = +50% research for a tech rush. Planet bonuses finally have strategic implications — a Desert world (+2 minerals/mining) is now the ideal Mining Colony. An Ocean world (+1 research/research district) is the ideal Academy. The galaxy becomes a strategic puzzle: "Which planets support which traits?"
-
-### R28-3: Science Ships — Turn Exploration Into Gameplay
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic / Exploration
-
-**The problem:** Exploration currently means "send colony ships into fog and read planet stats." There's no dedicated exploration unit, no graduated discovery, no anomalies, and no narrative moments. The fog creates mystery but the reveal is just numbers in a table.
-
-**The fix:** Science ships — a cheaper, faster exploration unit:
-- **Cost:** 100 minerals + 50 alloys (half a colony ship)
-- **Build time:** 300 ticks (30 sec, half a colony ship)
-- **Speed:** 30 ticks/hop (3 sec, faster than colony ships)
-- **Survey action:** When a science ship arrives at an unexplored system, it automatically surveys for 100 ticks (10 sec). Survey reveals full planet data and has a 20% chance per planet of discovering an anomaly
-- **Anomalies:** Simple one-time bonuses: "Ancient Ruins" (+50 research each track), "Mineral Deposit" (+100 minerals), "Habitable Moon" (+2 planet size), "Precursor Artifact" (+25 influence), "Derelict Ship" (+50 alloys). Anomalies fire events to the discovering player's toast system
-
-**Why it matters:** Science ships create the classic 4X "scout then settle" loop: send a science ship into fog → it surveys the system → you learn what's there → you decide whether to colonize. This adds a planning layer to expansion (scout ahead, then send the expensive colony ship). Anomalies add narrative surprise — "I found ancient ruins!" is a memorable moment that numbers on a screen aren't. The 20% anomaly rate means ~1-2 anomalies per system, creating intermittent rewards that drive continued exploration.
-
-**Design details:**
-- Science ships share galaxy map rendering with colony ships (diamond marker, different color: cyan vs green)
-- Survey progress visible as a loading bar on the galaxy view when hovering the system
-- Surveyed systems remember their surveyed state per player — if you survey a system, it stays revealed even if it's outside your 2-hop visibility (persistent fog penetration)
-- Science ships return to nearest colony after surveying (no permanent scout positioning needed)
-- Max 3 science ships per player
-
-### R28-4: Edict System — Make Influence Meaningful
-
-**Impact:** Medium-High
-**Effort:** Low
-**Category:** Economy / Player Agency
-
-**The problem:** Influence starts at 100 and never changes. It's a dead resource visible in the HUD that players learn to ignore. Experienced players will notice it's completely non-functional.
-
-**The fix:** Already specified in design.md. 4 empire-wide edicts spending influence:
-- **Mineral Rush** (50 influence): +50% mining output for 5 months
-- **Population Drive** (75 influence): +100% pop growth for 5 months
-- **Research Grant** (50 influence): +50% research output for 5 months
-- **Emergency Reserves** (25 influence): Instantly grants +100 energy, +100 minerals, +100 food
-
-Max 1 active edict at a time. No influence regeneration (100 starting = entire game budget until diplomacy exists).
-
-**Why it matters:** With 100 influence and 4 edicts, players get 1-3 impactful timing decisions across a 20-minute match. "Do I Population Drive early for faster growth, or save for Research Grant when my Academy World is online?" Emergency Reserves becomes a clutch save when a colony ship drains your resources. The finite budget creates genuine opportunity cost — every influence spent is influence you can't spend later.
-
-### R28-5: T3 Techs — Create a Research Endgame
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Strategic Depth / Content
-
-**The problem:** 6 techs complete in 10-15 minutes. After that, research districts produce VP at a poor rate (1 VP per 100 cumulative research). There's no research endgame and no reason to invest heavily in tech over expansion.
-
-**The fix:** Already specified in design.md. Add 3 Tier 3 techs at cost 1000:
-- **Fusion Reactors** (physics, requires Advanced Reactors): Generator districts also produce +2 alloys each. Effect: `districtBonus` for generator adding alloy production
-- **Genetic Engineering** (society, requires Gene Crops): Pop growth time halved (0.5x multiplier). Effect: `growthBonus` multiplier 0.5
-- **Automated Mining** (engineering, requires Deep Mining): Mining districts require 0 jobs (pop-free production). Effect: `jobOverride` district: mining, jobs: 0
-
-**Why it matters:** T3 at cost 1000 with 2 research districts (8 research/month) takes ~125 months (~21 min at normal speed). In a 20-minute match, getting ANY T3 requires heavy research investment: multiple research districts on an Academy World colony. This creates a viable "tech rush" strategy distinct from "expansion rush." Automated Mining is a game-changer: 4 mining districts producing minerals with 0 pops means those pops can work other districts. Fusion Reactors removes the generator "tax" by making them produce alloys. Each T3 reshapes the economy in a way that rewards the research investment.
-
-### R28-6: Colony Planet Atmosphere Rendering — Visual Identity
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Visual / UX
-
-**The problem:** All colonies look identical in the isometric view. Desert, Ocean, Arctic — same dark ground plane, same space background. With 5 colonies accessible via keyboard shortcuts, players can't visually distinguish them at a glance.
-
-**The fix:** Already specified in design.md. Per-planet-type visual treatment:
-- Ground plane color: Desert=#c4956a, Ocean=#1a3a5c, Arctic=#b8c9d4, Tropical=#2d7d46, Continental=#3d6b35, Arid=#8b7355
-- Atmosphere tint on horizon: warm orange for Desert, blue for Ocean, white for Arctic, green for Tropical
-- Skybox color shift matching atmosphere
-
-**Why it matters:** When cycling between 5 colonies with keyboard shortcuts 1-5, instant visual recognition matters. "The sandy one is my Mining Colony" is faster and more immersive than reading the colony name. This is cheap to implement (material color changes) and immediately enriches the multi-colony experience. Validates the feedback about visuals being core — each planet should feel like a different place.
-
----
-
-### 5. Balance Snapshot
-
-#### Resource Flow (Post-Fog of War — No Mechanical Changes)
-
-The balance numbers haven't changed since R27. The economy remains well-tuned:
-
-**Starting position:** 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence. 8 pops on size-16 planet with 4 pre-built districts.
-
-**First colony ship:** ~5-6 minutes. Good pacing — expansion begins as the single-colony opener feels solved.
-
-**5-colony empire by 20 minutes:** Achievable but tight. Creates intended tall vs. wide tension.
-
-#### VP Formula — Needs Trait VP Bonus
-
-Current: Pops x2 + Districts + Alloys/25 + Research/100
-
-**Issue persists from R27:** Expansion dominates. 5 small colonies (40 pops, 20 districts = 100 VP) beats 2 big specialized colonies (30 pops, 20 districts = 80 VP). Colony personality traits need +5 VP each to make tall play competitive.
-
-**Recommended VP formula:** Pops x2 + Districts + Alloys/25 + Research/100 + (Traits x 5)
-
-A 3-colony empire with 3 traits (15 VP bonus + more efficient production) should be competitive with a 5-colony zero-trait empire. This creates genuine strategic diversity.
-
-#### Tech Pacing with T3
-
-| Tech Tier | Cost | Time (1 Research) | Time (2 Research) | Time (3 Research on Academy World) |
-|-----------|------|-------------------|-------------------|------------------------------------|
-| T1 | 150 | 37.5 mo (6.3 min) | 18.75 mo (3.1 min) | 12.5 mo (2.1 min) |
-| T2 | 500 | 125 mo (20.8 min) | 62.5 mo (10.4 min) | 41.7 mo (6.9 min) |
-| T3 | 1000 | 250 mo (41.7 min) | 125 mo (20.8 min) | 83.3 mo (13.9 min) |
-
-**Analysis:** T3 is unreachable with 1 research district in a 20-minute match. With 2 research districts it's barely achievable (20.8 min). With 3 research districts on an Academy World (+10% bonus = 13.2 research/mo effective), it's reachable at ~14 minutes — leaving time for the T3 bonus to compound. This creates the intended "tech rush" archetype: sacrifice early economy to get a transformative late-game advantage.
-
-#### Science Ship Economy
-
-Proposed: 100 minerals + 50 alloys, 300 ticks build. In a small galaxy (50 systems), a player will want to survey 10-15 systems. At 30 ticks/hop + 100 ticks/survey, a science ship can survey ~3-4 systems in 5 minutes. Two science ships survey the galaxy in 10 minutes. The mineral/alloy cost means scouting competes with colony ships for alloys — creating a real "explore vs exploit" tension.
-
----
-
-### 6. Content Wishlist
-
-1. **Contested Colonization Races:** When fog is active, two players might unknowingly send colony ships toward the same unclaimed planet. The first ship to arrive wins. The losing ship gets stranded in the system with a "Colonization Failed — planet already claimed" event and a "Return Home" order. On the galaxy map, two colored diamonds converging on the same star creates beautiful visual tension. No combat needed — just racing. This emerges naturally from fog + colony ships.
-
-2. **Galactic Wonders:** Three unique megaprojects that only one player can build (empire-wide broadcast when started, visible to all): **Dyson Sphere** (2000 alloys + 30 months: all generators produce double), **Great Library** (1000 alloys + 500 research each track: instantly complete one T3 tech), **Colony Nexus** (1500 alloys: colony cap +3, all colonies gain +5 housing). First to complete claims the wonder. Creates dramatic end-game races visible to all players. Reference: Civ VI's wonders system.
-
-3. **Planetary Features as Tile Modifiers:** Instead of uniform colony grids, planets have special tiles: "Geothermal Vent" (+3 energy if generator built here), "Rare Crystal Deposit" (+2 research if research built here), "Ancient Ruins" (one-time +50 research on first district built). These are revealed when the colony is founded. Creates spatial puzzles on each colony surface. Reference: Civ VI's appeal/adjacency system.
-
-4. **Empire Specialization Doctrines:** At 3 colonies, players unlock a permanent doctrine choice (pick one of three, cannot change): **Expansionist** (colony ship build time -40%, colony cap +2), **Industrialist** (all district build time -25%, +1 alloy per Industrial district), **Scholar** (research +25% empire-wide, each completed tech grants +3 VP). Creates asymmetric strategies with a permanent commitment. Replaces the "every empire plays the same" feeling.
-
-5. **Dynamic Galactic News:** A shared scrolling ticker at top of screen narrating events in-character: "BREAKING: Commander Zhang reports mineral boom on Kepler-7b", "ALERT: Colony ship detected crossing the Orion Frontier", "MARKETS: Alloy prices spike as expansion accelerates." Takes existing gameEvent data and wraps in procedural flavor text templates. Zero mechanical impact, massive atmosphere. Makes the galaxy feel alive.
-
----
-
-### 7. Roadmap Updates
-
-Added the following new tasks to `devguide/design.md`:
-
-**Phase 2 (2 new):**
-- Science ship unit type (buildable, BFS pathfinding, survey mechanic, anomaly discovery)
-- Planetary features as tile modifiers on colony grid (stretch goal)
-
-**Phase 3 (1 new):**
-- Contested colonization race resolution (first-to-arrive wins, loser ship returns)
-
-**Phase 4 (1 new):**
-- Empire specialization doctrines (pick 1 of 3 at 3 colonies)
-
-**Phase 7 (1 new):**
-- Dynamic galactic news ticker with procedural flavor text
-
-**Total: 5 new work items added**
-
----
-
-### 8. Summary
-
-| Metric | R25 | R27 | R28 | Delta |
-|--------|-----|-----|-----|-------|
-| Strategic Depth | 3/10 | 5/10 | 5/10 | 0 |
-| Pacing & Tension | 4/10 | 5/10 | 6/10 | +1 |
-| Economy & Production | 6/10 | 7/10 | 7/10 | 0 |
-| Exploration & Discovery | 2/10 | 3/10 | 5/10 | +2 |
-| Multiplayer Fairness | 4/10 | 4/10 | 4/10 | 0 |
-| **Overall** | **3.8/10** | **4.8/10** | **5.4/10** | **+0.6** |
-
-**Fog of war was worth +2 on Exploration and +1 on Pacing.** The game now has a genuine exploration loop: push into fog → discover → evaluate → colonize → fog recedes → repeat. But the score plateaus without multiplayer interaction — the game's strongest systems (economy, colony ships, fog) create a compelling single-player experience that happens to have multiple players in the same galaxy.
-
-**Critical path:** Multiplayer awareness (chat + scoreboard + ticker) → Colony personality traits → Science ships → Edicts → T3 techs → Colony planet rendering. The first item is the most important — every other feature compounds in value when players can see and react to each other.
-
----
-
-## Review #27 — 2026-03-12 — The Expansion Age: Colony Ships Changed Everything
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 50/145 tasks complete (34%). Colony ships, multi-colony management, BFS pathfinding, planet bonuses, game speed, toast HUD, mini tech tree, VP scoring, energy deficit. 400 tests passing. ~10,800 lines.
-**Focus:** Full game design audit post-colony-ships — the game's first real 4X moment.
-
----
-
-### 1. Current State Audit
-
-**What a player experiences today:**
-1. Enter name, create/join room, configure galaxy size + match timer
-2. Game starts: isometric 3D colony view with 4 pre-built districts on a random planet type
-3. Build districts (6 types) by clicking empty tiles, manage energy balance
-4. Research 6 techs across 3 tracks (2 tiers) via R key panel
-5. Press G for galaxy map — star systems, hyperlanes, ownership rings, colony ship markers
-6. Build colony ships (200 minerals, 100 food, 100 alloys) from colony build menu
-7. Send colony ships along hyperlanes to habitable planets — found new colonies (2 pops)
-8. Manage up to 5 colonies via sidebar list, keyboard shortcuts 1-5
-9. Game ends on timer — highest VP wins (pops x2 + districts + alloys/25 + research/100)
-
-**What a player CANNOT do:**
-- Discover hidden space (no fog of war — entire galaxy visible from turn 1)
-- See planets as 3D objects (system panel is HTML table only)
-- Interact with other players (no chat, diplomacy, trade, or combat)
-- Build buildings (only districts exist)
-- Specialize colonies for strategic benefit (no personality/trait system)
-- Choose different openings (every game starts identically)
-- Survey systems or find anomalies (no science ships)
-- Claim territory without colonizing (no outposts/starbases)
-
-**The honest assessment:** Colony ships have transformed the game from a single-colony city builder into an actual proto-4X. There's now a real decision arc: invest in your economy vs. expand to new worlds. Planet type bonuses create meaningful colonization targets. The galaxy map has purpose. But the galaxy is a fishbowl — everything is visible, there's nothing to discover, and other players are ghosts you never interact with. The game needs mystery, tension, and rivalry.
-
----
-
-### 2. 4X Design Pillar Scores
-
-#### Strategic Depth: 5/10 (was 3)
-Colony ships created a genuine "tall vs wide" tension. Do you invest in your homeworld or rush a second colony? Planet type bonuses mean colonization order matters — settling a Desert world first for minerals is different from settling an Ocean world for research. The 5-colony cap with shared resource pool creates empire-level decisions. But the opener is still nearly solved (Agriculture → Housing → Mining → Industrial → colony ship), and there's no branching in the tech tree (you research everything eventually). Colony specialization exists only in planet bonuses — there's no reward for going all-in on one district type.
-
-#### Pacing & Tension: 5/10 (was 4)
-The early game now has two phases: the build-up (minutes 0-5, growing your homeworld) and the expansion (minutes 5-10, colony ship rush). This creates a natural gear shift. The mid-game of developing multiple colonies is engaging. But there's no late-game crescendo — once you've filled your 5 colonies, you're back to watching numbers tick up. No crises, no scarcity, no threats from other players. The match timer creates artificial urgency but not dramatic tension.
-
-#### Economy & Production: 7/10 (was 6)
-Alloys now have purpose (colony ships cost 100). The resource pipeline is clear: minerals build things, food grows pops, energy powers industry, alloys fund expansion. Multi-colony economies create interesting trade-offs — should your new colony build food first (it only has 2 pops) or mining (to fund the next colony ship)? Planet bonuses on colony types create differentiated economic profiles. Still missing: influence spending (100 starting, no way to use), building variety, and any late-game resource sinks.
-
-#### Exploration & Discovery: 3/10 (was 2)
-Colony ships can travel to other systems, which is better than nothing. You evaluate planets in the system panel, choose targets, and send ships along hyperlanes. But the entire galaxy is visible from tick 1. There's no fog of war, no mystery, no "what's out there?" moment. Clicking a distant system reveals all its planets immediately. The scouting loop is: look at table → check habitability → send ship. No surprise, no narrative, no discovery dopamine. This remains the biggest design gap.
-
-#### Multiplayer Fairness: 4/10 (unchanged)
-Starting positions are evenly distributed. Shared galaxy means equal access to expansion targets. But multiplayer is still parallel solitaire — two players racing to colonize the same planets don't even know they're competing until a "colony founded" toast appears. No chat, no rivalry indicators, no territorial tension mechanics. The race for good planets creates implicit competition, but the game does nothing to surface or amplify it.
-
-**Overall Score: 4.8/10 (was 3.8)** — A full point improvement driven entirely by colony ships.
-
----
-
-### 3. Top 5 Things a Playtester Would Notice
-
-1. **"I can see everything — there's nothing to explore."** The entire galaxy is laid bare. Every planet's stats are visible from tick 1. When you send a colony ship to a system 6 hops away, you already know exactly what's there. Fog of war is the most critical missing feature for creating the exploration pillar.
-
-2. **"I never once noticed the other player."** In a multiplayer match, the only evidence of another player is an occasional toast notification ("Player B founded a colony in Epsilon Eridani"). No chat, no rivalry, no territorial competition, no ability to react to what they're doing. The game might as well be single-player.
-
-3. **"Once I had 5 colonies, I ran out of things to do."** The colony cap means expansion ends. After that, you're optimizing 5 colonies — building districts in the same priority order on each one. No buildings to unlock, no personality traits to earn, no late-game projects. The endgame is waiting for the timer.
-
-4. **"Why are all my colonies the same?"** Despite planet bonuses, the optimal build order barely changes. Desert colony and Ocean colony both need Agriculture first (2 starting pops need food), then Housing, then their specialty district. Colony personality traits would reward committing to a specialization, but they don't exist yet.
-
-5. **"Planets are just rows in a table."** The system panel shows planet type, size, and habitability as HTML text. There's no visual representation of planets — no orbital view, no 3D planet rendering, no sense of scale or beauty. The isometric colony view is gorgeous; the system view is a spreadsheet. This contrast is jarring.
-
----
-
-### 4. Recommendations
-
-### R27-1: Fog of War — Make the Galaxy a Frontier
-
-**Impact:** Critical
-**Effort:** Medium (client-side only, already specified in design.md)
-**Category:** Core Mechanic
-
-**The problem:** The galaxy has zero mystery. Every system's planets are visible from tick 1. "Exploration" means reading a table and picking the best stats. There's no incentive to expand toward the unknown because nothing is unknown.
-
-**The fix:** Implement client-side fog of war as specified. BFS 2-hop visibility from owned systems. Unknown systems render as dim gray dots with no names or planet data. System panel shows "Unexplored" for fogged systems.
-
-**Why it matters:** This single change creates the entire exploration pillar. Sending a colony ship into fog and discovering a size-20 Continental world is a dopamine hit. Discovering an enemy colony 3 hops away creates tension. Information asymmetry makes each player's game position unique. Combined with colony ships, fog turns the galaxy from a map into a frontier.
-
-**Design details:**
-- 2-hop visibility creates a ~6-system visible radius per colony, meaning 5 colonies reveal roughly 30 systems — about 60% of a small galaxy. This leaves dark zones that create end-game mystery
-- Other players' colonies appear as colored ownership dots in fog (you know someone claimed it, but not what's there)
-- Colonizing a new system cascades visibility — revealing 2-3 new potential targets. This creates a "just one more turn" expansion hook
-- No server changes needed — all rendering logic
-
-### R27-2: Colony Personality System — Reward Specialization
-
-**Impact:** High
-**Effort:** Low
-**Category:** Core Mechanic / Strategic Depth
-
-**The problem:** All colonies play identically. The optimal district ratio is the same everywhere. Planet bonuses add +1-2 resources but don't change build order. There's no strategic payoff for committing to a theme.
-
-**The fix:** Already specified in design.md (Phase 2). When a colony has 4+ districts of one type, it earns a trait: "Forge World" (4+ Industrial: +10% alloy output empire-wide), "Academy World" (4+ Research: +10% research empire-wide), "Mining Colony" (4+ Mining: +10% minerals empire-wide), "Breadbasket" (4+ Agriculture: +10% food empire-wide), "Power Hub" (4+ Generator: +10% energy empire-wide). One trait per colony, highest count wins. Traits stack across colonies.
-
-**Why it matters:** With 5 colonies, players can create a specialized empire: 1 Forge World, 1 Academy, 1 Breadbasket, 1 Mining Colony, 1 balanced capital. Or go 3 Forge Worlds for +30% alloys. This creates meaningful empire-level strategy that compounds across the multi-colony system. Every colony placement becomes a strategic decision: "This Desert world with +2 minerals is perfect for a Mining Colony." The trait names create emotional attachment and narrative ("My empire's backbone is the Breadbasket on Tau Ceti").
-
-### R27-3: In-Game Chat + Player Visibility — Make Multiplayer Real
-
-**Impact:** High
-**Effort:** Low (chat infrastructure exists from lobby)
-**Category:** Multiplayer UX
-
-**The problem:** Two players in the same match have zero interaction. The game is multiplayer in name only. No communication, no rivalry indicators, no awareness of what the other player is doing.
-
-**The fix:** Two features that ship together:
-1. **In-game chat** — collapsible bottom-left panel, reuses existing WebSocket chat infrastructure. Player names colored by player color. Messages visible to all players in room.
-2. **Scoreboard overlay (Tab key)** — already specified. Player name, colony count, total pops, resource income rates, VP. All info public.
-
-**Why it matters:** Chat enables the social layer that makes multiplayer games fun. Even basic messages ("nice colony spot", "I see you going wide") create engagement. The scoreboard creates competitive awareness — seeing that your opponent has 3 colonies when you have 2 creates urgency to expand. Together they transform parallel solitaire into a shared experience. This is the lowest-effort, highest-impact multiplayer improvement.
-
-### R27-4: System Orbital View — The Visual Bridge
-
-**Impact:** Medium-High
-**Effort:** Medium
-**Category:** Visual / Core UX
-
-**The problem:** Planets are rows in an HTML table. The game has a beautiful isometric colony view and a functional galaxy map, but the bridge between them — the system where you evaluate and choose planets — is a spreadsheet. Colony ships deserve a destination that looks like a destination.
-
-**The fix:** Build system-view.js as specified. Central star, planets on orbital rings as colored spheres, habitable planets with atmosphere halos. Click planet for details, "Colonize" button for colony ships. Navigation: Galaxy → System → Colony.
-
-**Why it matters:** The system view is where expansion decisions happen. Seeing a green Continental world orbiting a yellow sun, with a "Colonize" button beckoning, is fundamentally more compelling than reading "Continental, Size 16, 80%". This view becomes the staging ground for colony ship targeting and eventually fleet positioning. Reference: Stellaris's system view is one of its most screenshot-worthy features.
-
-### R27-5: T3 Techs + Tech Rush Strategy
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Strategic Depth
-
-**The problem:** The tech tree has 6 techs and no branching. Every player researches everything eventually. Research districts are built for VP, not because the techs are exciting. There's no "tech rush" strategy.
-
-**The fix:** Already specified in design.md (Phase 4 priority). Add 3 T3 techs at cost 1000: Fusion Reactors (generators produce alloys), Genetic Engineering (pop growth halved), Automated Mining (mining jobs cost 0). These are game-changing effects that reward heavy research investment.
-
-**Why it matters:** T3 at cost 1000 with 2 research districts (8 research/month total with bonuses) takes ~125 months (~21 min). In a 20-minute match, getting T3 requires building 3+ research districts on an Academy World — a massive investment that sacrifices near-term economy for a late-game power spike. This creates a viable "tech rush" strategy distinct from "expansion rush" (build 5 colonies fast) or "economy rush" (maximize VP through districts and alloys). The three paths make the game replayable.
-
-*(Reviews R27-R25 and earlier trimmed for space — see git history)*
+*(Reviews R29 and earlier trimmed for space — see git history)*

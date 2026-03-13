@@ -36,6 +36,16 @@ const PLANET_BONUSES = {
   arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
 };
 
+// Colony personality traits: 4+ districts of same type earns a trait
+// Only one trait per colony (highest count wins, ties broken by order below)
+const COLONY_TRAITS = {
+  research:    { name: 'Academy World',  threshold: 4, bonus: { physics: 0.10, society: 0.10, engineering: 0.10 } },
+  industrial:  { name: 'Forge World',    threshold: 4, bonus: { alloys: 0.10 } },
+  mining:      { name: 'Mining Colony',  threshold: 4, bonus: { minerals: 0.10 } },
+  agriculture: { name: 'Breadbasket',    threshold: 4, bonus: { food: 0.10 } },
+  generator:   { name: 'Power Hub',      threshold: 4, bonus: { energy: 0.10 } },
+};
+
 // Colony ship constants
 const COLONY_SHIP_COST = { minerals: 200, food: 100, alloys: 100 };
 const COLONY_SHIP_BUILD_TIME = 600; // 60 seconds at 10Hz
@@ -57,6 +67,53 @@ const ANOMALY_TYPES = [
   { type: 'precursorArtifact', label: 'Precursor Artifact', reward: { influence: 25 } },
   { type: 'derelictShip', label: 'Derelict Ship', reward: { alloys: 50 } },
 ];
+
+// Colony crisis event constants
+const CRISIS_MIN_TICKS = 500;  // Minimum ticks between crises per colony
+const CRISIS_MAX_TICKS = 800;  // Maximum ticks between crises per colony
+const CRISIS_CHOICE_TICKS = 200; // 20 seconds to decide
+const CRISIS_IMMUNITY_TICKS = 300; // 30 seconds immunity after resolution
+
+const CRISIS_TYPES = {
+  seismic: {
+    type: 'seismic',
+    label: 'Seismic Activity',
+    description: 'Tremors threaten your colony infrastructure.',
+    choices: [
+      { id: 'evacuate', label: 'Evacuate', description: 'Lose 1 district, save all pops' },
+      { id: 'reinforce', label: 'Reinforce', description: 'Spend 100 minerals — 70% success, 30% lose district + 1 pop', cost: { minerals: 100 } },
+    ],
+  },
+  plague: {
+    type: 'plague',
+    label: 'Plague Outbreak',
+    description: 'A deadly plague is spreading through the colony.',
+    choices: [
+      { id: 'quarantine', label: 'Quarantine', description: 'Growth halted for 300 ticks, no pop loss' },
+      { id: 'rushCure', label: 'Rush Cure', description: 'Spend 50 energy + 50 food — 80% cured, 20% spreads', cost: { energy: 50, food: 50 } },
+    ],
+  },
+  powerSurge: {
+    type: 'powerSurge',
+    label: 'Power Surge',
+    description: 'Unstable energy grid threatens colony systems.',
+    choices: [
+      { id: 'shutDown', label: 'Shut Down', description: 'All districts disabled for 100 ticks' },
+      { id: 'rideItOut', label: 'Ride It Out', description: '+50% energy for 200 ticks, but 25% chance to lose a generator' },
+    ],
+  },
+  laborUnrest: {
+    type: 'laborUnrest',
+    label: 'Labor Unrest',
+    description: 'Workers are striking across 3 districts.',
+    choices: [
+      { id: 'negotiate', label: 'Negotiate', description: 'Spend 25 influence to resume immediately', cost: { influence: 25 } },
+      { id: 'wait', label: 'Wait It Out', description: 'Strike ends in 300 ticks' },
+    ],
+  },
+};
+
+const CRISIS_TYPE_KEYS = Object.keys(CRISIS_TYPES);
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
@@ -177,6 +234,9 @@ class GameEngine {
     this._tickTimingsIdx = 0;
     this._tickTimingsMax = 100;
 
+    // Colony crisis tracking — crisisState stored on colony objects, nextCrisisTick for scheduling
+    this._crisisRng = 0; // simple counter for deterministic-ish crisis type picking
+
     this._initPlayerStates();
 
     // Generate galaxy
@@ -270,10 +330,15 @@ class GameEngine {
       playerBuiltDistricts: 0,    // count of districts player has built (not pre-built)
       pops: 8,                     // starting population
       growthProgress: 0,           // ticks accumulated toward next pop
+      crisisState: null,           // active crisis: { type, ticksRemaining, resolved, disabledIds, quarantineTicks, strikeTicks, energyBoostTicks }
+      nextCrisisTick: 0,           // tick when next crisis can occur (set on colony creation)
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
     };
+    // Schedule first crisis: current tick + random delay
+    // First crisis has a grace period of 1500+ ticks (~2.5 min) so early game isn't punishing
+    colony.nextCrisisTick = this.tickCount + 1500 + Math.floor(Math.random() * (CRISIS_MAX_TICKS - CRISIS_MIN_TICKS));
     this.colonies.set(id, colony);
     // Maintain player -> colonies index
     if (!this._playerColonies.has(ownerId)) {
@@ -313,10 +378,21 @@ class GameEngine {
     colony._cachedHousing = null;
     colony._cachedJobs = null;
     colony._cachedProduction = null;
+    colony._cachedTrait = undefined; // undefined = not computed, null = no trait
     this._dirtyPlayers.add(colony.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
     this._summaryCacheTick = -1; // summary depends on colonies
+  }
+
+  // Invalidate production caches for ALL colonies of a player.
+  // Needed when trait bonuses change — they're empire-wide and affect all colonies.
+  _invalidatePlayerProductionCaches(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) colony._cachedProduction = null;
+    }
   }
 
   // Count total districts (built + in queue)
@@ -348,6 +424,51 @@ class GameEngine {
     }
     colony._cachedJobs = jobs;
     return jobs;
+  }
+
+  // Calculate colony personality trait based on district composition
+  // Returns { type, name, bonus } or null if no trait earned
+  // Cached on the colony object — invalidated by _invalidateColonyCache
+  _calcColonyTrait(colony) {
+    if (colony._cachedTrait !== undefined) return colony._cachedTrait;
+    const counts = {};
+    for (const d of colony.districts) {
+      if (d.disabled) continue;
+      if (!COLONY_TRAITS[d.type]) continue;
+      counts[d.type] = (counts[d.type] || 0) + 1;
+    }
+    let bestType = null;
+    let bestCount = 0;
+    for (const [type, count] of Object.entries(counts)) {
+      if (count >= COLONY_TRAITS[type].threshold && count > bestCount) {
+        bestCount = count;
+        bestType = type;
+      }
+    }
+    if (!bestType) {
+      colony._cachedTrait = null;
+      return null;
+    }
+    const traitDef = COLONY_TRAITS[bestType];
+    colony._cachedTrait = { type: bestType, name: traitDef.name, bonus: traitDef.bonus };
+    return colony._cachedTrait;
+  }
+
+  // Calculate empire-wide trait bonuses for a player (sum across all colonies)
+  // Returns { resource: multiplier } e.g. { alloys: 0.20 } for 2 Forge Worlds
+  _calcTraitBonuses(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    const bonuses = {};
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) continue;
+      const trait = this._calcColonyTrait(colony);
+      if (!trait) continue;
+      for (const [resource, amount] of Object.entries(trait.bonus)) {
+        bonuses[resource] = (bonuses[resource] || 0) + amount;
+      }
+    }
+    return bonuses;
   }
 
   // Calculate per-month production for a colony (cached — invalidated on district/pop changes)
@@ -410,6 +531,19 @@ class GameEngine {
 
     // Pops consume 1 food each per month
     consumption.food = colony.pops;
+
+    // Apply empire-wide colony trait bonuses (multiplicative on production)
+    const traitBonuses = this._calcTraitBonuses(colony.ownerId);
+    for (const [resource, bonus] of Object.entries(traitBonuses)) {
+      if (production[resource]) {
+        production[resource] = Math.round(production[resource] * (1 + bonus) * 100) / 100;
+      }
+    }
+
+    // Power surge energy boost: +50% energy production during energyBoostTicks
+    if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
+      production.energy = Math.round(production.energy * 1.5 * 100) / 100;
+    }
 
     const result = { production, consumption };
     colony._cachedProduction = result;
@@ -507,6 +641,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else {
+          const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
@@ -515,6 +650,19 @@ class GameEngine {
             districtType: item.type,
             playerName: ownerName,
           }, true);
+          // Check if a new colony trait was earned or changed
+          const traitAfter = this._calcColonyTrait(colony);
+          if (traitAfter && (!traitBefore || traitBefore.type !== traitAfter.type)) {
+            // Trait bonuses are empire-wide — invalidate all sibling colonies' production caches
+            this._invalidatePlayerProductionCaches(colony.ownerId);
+            this._emitEvent('colonyTraitEarned', colony.ownerId, {
+              colonyId: colony.id,
+              colonyName: colony.name,
+              traitType: traitAfter.type,
+              traitName: traitAfter.name,
+              playerName: ownerName,
+            }, true);
+          }
         }
 
         if (colony.buildQueue.length === 0) {
@@ -545,6 +693,9 @@ class GameEngine {
   // Process pop growth every tick — increment growthProgress when food surplus > 0
   _processPopGrowth() {
     for (const [, colony] of this.colonies) {
+      // Plague quarantine halts growth
+      if (colony.crisisState && colony.crisisState.quarantineTicks > 0) continue;
+
       const housing = this._calcHousing(colony);
       if (colony.pops >= housing) continue;
 
@@ -686,6 +837,444 @@ class GameEngine {
         }
       }
     }
+  }
+
+  // --- Colony Crisis Processing ---
+
+  // Pick a crisis type deterministically using a simple counter
+  _pickCrisisType() {
+    const idx = this._crisisRng % CRISIS_TYPE_KEYS.length;
+    this._crisisRng++;
+    return CRISIS_TYPE_KEYS[idx];
+  }
+
+  // Schedule next crisis for a colony (after resolution or initial)
+  _scheduleCrisis(colony) {
+    colony.nextCrisisTick = this.tickCount + CRISIS_IMMUNITY_TICKS + CRISIS_MIN_TICKS +
+      Math.floor(Math.random() * (CRISIS_MAX_TICKS - CRISIS_MIN_TICKS));
+  }
+
+  // Process colony crises — called every tick
+  _processColonyCrises() {
+    for (const [, colony] of this.colonies) {
+      // Skip if colony has < 2 districts (too small for crises)
+      if (colony.districts.length < 2) continue;
+
+      // Process active crisis effects (ongoing effects like plague pop loss, strike timers)
+      if (colony.crisisState) {
+        this._processCrisisEffects(colony);
+        continue; // don't trigger new crisis while one is active
+      }
+
+      // Check if it's time for a new crisis
+      if (this.tickCount >= colony.nextCrisisTick) {
+        this._triggerCrisis(colony);
+      }
+    }
+  }
+
+  // Trigger a new crisis on a colony
+  _triggerCrisis(colony) {
+    const crisisKey = this._pickCrisisType();
+    const crisisDef = CRISIS_TYPES[crisisKey];
+
+    // For labor unrest, pick 3 random enabled districts to disable
+    let disabledIds = new Set();
+    if (crisisKey === 'laborUnrest') {
+      const enabled = colony.districts.filter(d => !d.disabled);
+      // Shuffle and pick up to 3
+      for (let i = enabled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [enabled[i], enabled[j]] = [enabled[j], enabled[i]];
+      }
+      disabledIds = new Set(enabled.slice(0, 3).map(d => d.id));
+      for (const d of colony.districts) {
+        if (disabledIds.has(d.id)) {
+          d.disabled = true;
+        }
+      }
+      this._invalidateColonyCache(colony);
+    }
+
+    colony.crisisState = {
+      type: crisisKey,
+      ticksRemaining: CRISIS_CHOICE_TICKS,
+      resolved: false,
+      disabledIds,          // labor unrest: which districts were disabled
+      quarantineTicks: 0,   // plague quarantine countdown
+      strikeTicks: 0,       // labor unrest wait countdown
+      energyBoostTicks: 0,  // power surge ride-it-out boost countdown
+      shutdownTicks: 0,     // power surge shutdown countdown
+    };
+
+    this._dirtyPlayers.add(colony.ownerId);
+    this._invalidateStateCache();
+
+    // Broadcast crisis event to all players
+    const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+    this._emitEvent('crisisStarted', colony.ownerId, {
+      colonyId: colony.id,
+      colonyName: colony.name,
+      crisisType: crisisKey,
+      crisisLabel: crisisDef.label,
+      ticksRemaining: CRISIS_CHOICE_TICKS,
+      playerName: ownerName,
+    }, true);
+  }
+
+  // Process ongoing crisis effects each tick
+  _processCrisisEffects(colony) {
+    const crisis = colony.crisisState;
+
+    // Plague quarantine: count down, then clear
+    if (crisis.quarantineTicks > 0) {
+      crisis.quarantineTicks--;
+      if (crisis.quarantineTicks <= 0) {
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._invalidateStateCache();
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'plague',
+          outcome: 'Quarantine lifted',
+        });
+      }
+      return;
+    }
+
+    // Labor unrest wait: count down, then re-enable districts
+    if (crisis.strikeTicks > 0) {
+      crisis.strikeTicks--;
+      if (crisis.strikeTicks <= 0) {
+        // Re-enable struck districts
+        for (const d of colony.districts) {
+          if (crisis.disabledIds.has(d.id)) {
+            delete d.disabled;
+          }
+        }
+        this._invalidateColonyCache(colony);
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'laborUnrest',
+          outcome: 'Strike ended',
+        });
+      }
+      this._dirtyPlayers.add(colony.ownerId);
+      return;
+    }
+
+    // Power surge shutdown: count down, then re-enable all
+    if (crisis.shutdownTicks > 0) {
+      crisis.shutdownTicks--;
+      if (crisis.shutdownTicks <= 0) {
+        for (const d of colony.districts) {
+          if (d.disabled) delete d.disabled;
+        }
+        this._invalidateColonyCache(colony);
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'powerSurge',
+          outcome: 'Systems back online',
+        });
+      }
+      this._dirtyPlayers.add(colony.ownerId);
+      return;
+    }
+
+    // Power surge energy boost: count down
+    if (crisis.energyBoostTicks > 0) {
+      crisis.energyBoostTicks--;
+      if (crisis.energyBoostTicks <= 0) {
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._invalidateColonyCache(colony); // remove energy boost
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'powerSurge',
+          outcome: 'Energy surge subsided',
+        });
+      }
+      this._dirtyPlayers.add(colony.ownerId);
+      return;
+    }
+
+    // Unresolved crisis: count down choice timer
+    if (!crisis.resolved) {
+      crisis.ticksRemaining--;
+      // Throttle dirty marking to every 10 ticks
+      if (this.tickCount % 10 === 0) {
+        this._dirtyPlayers.add(colony.ownerId);
+      }
+      if (crisis.ticksRemaining <= 0) {
+        // Auto-resolve with worst outcome
+        this._autoResolveCrisis(colony);
+      }
+    }
+  }
+
+  // Auto-resolve crisis with worst outcome when timer expires
+  _autoResolveCrisis(colony) {
+    const crisis = colony.crisisState;
+    switch (crisis.type) {
+      case 'seismic':
+        // Worst: lose district + 1 pop
+        this._resolveCrisisSeismic(colony, 'reinforce', true); // force failure
+        break;
+      case 'plague':
+        // Worst: lose 1 pop, no cure
+        if (colony.pops > 1) colony.pops--;
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._invalidateColonyCache(colony);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'plague',
+          outcome: 'Plague unchecked — 1 pop lost',
+        });
+        break;
+      case 'powerSurge':
+        // Worst: lose a generator
+        this._resolveCrisisPowerSurge(colony, 'rideItOut', true); // force failure
+        break;
+      case 'laborUnrest':
+        // Worst: strike continues for 300 ticks (already disabled)
+        crisis.resolved = true;
+        crisis.strikeTicks = 300;
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'laborUnrest',
+          outcome: 'Unrest continues — strike for 300 ticks',
+        });
+        break;
+    }
+  }
+
+  // Resolve seismic crisis
+  _resolveCrisisSeismic(colony, choice, forceFailure = false) {
+    if (choice === 'evacuate') {
+      // Lose 1 district (last built), save pops
+      if (colony.districts.length > 0) {
+        colony.districts.pop();
+      }
+      this._invalidateColonyCache(colony);
+      colony.crisisState = null;
+      this._scheduleCrisis(colony);
+      this._emitEvent('crisisResolved', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        crisisType: 'seismic',
+        outcome: 'Evacuated — 1 district lost, pops safe',
+      });
+    } else {
+      // Reinforce: 70% success, 30% fail (lose district + 1 pop)
+      const success = !forceFailure && Math.random() < 0.7;
+      if (success) {
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'seismic',
+          outcome: 'Reinforcement succeeded — no damage',
+        });
+      } else {
+        if (colony.districts.length > 0) colony.districts.pop();
+        if (colony.pops > 1) colony.pops--;
+        this._invalidateColonyCache(colony);
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'seismic',
+          outcome: 'Reinforcement failed — district + 1 pop lost',
+        });
+      }
+    }
+    this._dirtyPlayers.add(colony.ownerId);
+  }
+
+  // Resolve plague crisis
+  _resolveCrisisPlague(colony, choice, forceFailure = false) {
+    if (choice === 'quarantine') {
+      // Growth halted for 300 ticks, no pop loss
+      colony.crisisState.resolved = true;
+      colony.crisisState.quarantineTicks = 300;
+      colony.growthProgress = 0; // reset growth
+      this._dirtyPlayers.add(colony.ownerId);
+      this._emitEvent('crisisResolved', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        crisisType: 'plague',
+        outcome: 'Quarantine in effect — growth halted 300 ticks',
+      });
+    } else {
+      // Rush Cure: 80% success, 20% spreads (lose 1 pop)
+      const success = !forceFailure && Math.random() < 0.8;
+      if (success) {
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'plague',
+          outcome: 'Cure successful — plague eradicated!',
+        });
+      } else {
+        if (colony.pops > 1) colony.pops--;
+        this._invalidateColonyCache(colony);
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'plague',
+          outcome: 'Cure failed — plague spread, 1 pop lost',
+        });
+      }
+    }
+  }
+
+  // Resolve power surge crisis
+  _resolveCrisisPowerSurge(colony, choice, forceFailure = false) {
+    if (choice === 'shutDown') {
+      // Disable all districts for 100 ticks
+      for (const d of colony.districts) {
+        d.disabled = true;
+      }
+      this._invalidateColonyCache(colony);
+      colony.crisisState.resolved = true;
+      colony.crisisState.shutdownTicks = 100;
+      this._dirtyPlayers.add(colony.ownerId);
+      this._emitEvent('crisisResolved', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        crisisType: 'powerSurge',
+        outcome: 'Emergency shutdown — districts offline for 100 ticks',
+      });
+    } else {
+      // Ride it out: 25% chance to lose a generator
+      const failed = forceFailure || Math.random() < 0.25;
+      if (failed) {
+        // Find and remove a generator district
+        const genIdx = colony.districts.findIndex(d => d.type === 'generator' && !d.disabled);
+        if (genIdx !== -1) {
+          colony.districts.splice(genIdx, 1);
+        }
+        this._invalidateColonyCache(colony);
+        colony.crisisState = null;
+        this._scheduleCrisis(colony);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'powerSurge',
+          outcome: 'Power surge damaged generator — district lost',
+        });
+      } else {
+        // Success: +50% energy for 200 ticks (applied via energyBoostTicks)
+        colony.crisisState.resolved = true;
+        colony.crisisState.energyBoostTicks = 200;
+        this._invalidateColonyCache(colony); // production recalc for energy boost
+        this._dirtyPlayers.add(colony.ownerId);
+        this._emitEvent('crisisResolved', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          crisisType: 'powerSurge',
+          outcome: 'Surge harnessed — +50% energy for 200 ticks!',
+        });
+      }
+    }
+  }
+
+  // Resolve labor unrest crisis
+  _resolveCrisisLaborUnrest(colony, choice) {
+    if (choice === 'negotiate') {
+      // Re-enable struck districts immediately
+      for (const d of colony.districts) {
+        if (colony.crisisState.disabledIds.has(d.id)) {
+          delete d.disabled;
+        }
+      }
+      this._invalidateColonyCache(colony);
+      colony.crisisState = null;
+      this._scheduleCrisis(colony);
+      this._dirtyPlayers.add(colony.ownerId);
+      this._emitEvent('crisisResolved', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        crisisType: 'laborUnrest',
+        outcome: 'Negotiations successful — work resumed',
+      });
+    } else {
+      // Wait it out: strike lasts 300 ticks
+      colony.crisisState.resolved = true;
+      colony.crisisState.strikeTicks = 300;
+      this._dirtyPlayers.add(colony.ownerId);
+      this._emitEvent('crisisResolved', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        crisisType: 'laborUnrest',
+        outcome: 'Waiting out strike — 300 ticks until resolution',
+      });
+    }
+  }
+
+  // Main resolve command — called from handleCommand
+  resolveCrisis(playerId, colonyId, choiceId) {
+    const colony = this.colonies.get(colonyId);
+    if (!colony) return { error: 'Colony not found' };
+    if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+    if (!colony.crisisState) return { error: 'No active crisis' };
+    if (colony.crisisState.resolved) return { error: 'Crisis already resolved' };
+
+    const crisisDef = CRISIS_TYPES[colony.crisisState.type];
+    if (!crisisDef) return { error: 'Unknown crisis type' };
+
+    // Validate choice
+    const validChoices = crisisDef.choices.map(c => c.id);
+    if (!validChoices.includes(choiceId)) return { error: 'Invalid choice' };
+
+    // Check resource cost
+    const choiceDef = crisisDef.choices.find(c => c.id === choiceId);
+    if (choiceDef.cost) {
+      const state = this.playerStates.get(playerId);
+      for (const [resource, amount] of Object.entries(choiceDef.cost)) {
+        if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+          return { error: `Not enough ${resource}` };
+        }
+      }
+      // Deduct resources
+      for (const [resource, amount] of Object.entries(choiceDef.cost)) {
+        state.resources[resource] -= amount;
+      }
+    }
+
+    // Dispatch to type-specific resolution
+    switch (colony.crisisState.type) {
+      case 'seismic': this._resolveCrisisSeismic(colony, choiceId); break;
+      case 'plague': this._resolveCrisisPlague(colony, choiceId); break;
+      case 'powerSurge': this._resolveCrisisPowerSurge(colony, choiceId); break;
+      case 'laborUnrest': this._resolveCrisisLaborUnrest(colony, choiceId); break;
+    }
+
+    this._invalidateStateCache();
+    return { ok: true };
   }
 
   // Calculate net energy production/month across all colonies for a player
@@ -1052,28 +1641,33 @@ class GameEngine {
   }
 
   // Full VP breakdown for a player — single source of truth for the VP formula.
-  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP }
+  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP }
   _calcVPBreakdown(playerId) {
     const cached = this._vpBreakdownCache.get(playerId);
     if (cached && this._vpCacheTick === this.tickCount) return cached;
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0 };
       return empty;
     }
 
-    // Pops × 2 + Districts × 1 (single pass)
+    // Pops × 2 + Districts × 1 (single pass) + count traits
     let totalPops = 0;
     let totalDistricts = 0;
+    let traitCount = 0;
     const colonyIds = this._playerColonies.get(playerId) || [];
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (colony) {
         totalPops += colony.pops;
         totalDistricts += colony.districts.length;
+        if (this._calcColonyTrait(colony)) traitCount++;
       }
     }
+
+    // Colony personality traits: +5 VP per active trait
+    const traitsVP = traitCount * 5;
 
     // Alloys stockpiled / 25
     const alloysVP = Math.floor(state.resources.alloys / 25);
@@ -1095,13 +1689,14 @@ class GameEngine {
       }
     }
 
-    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP;
+    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP + traitsVP;
     const breakdown = {
       vp, pops: totalPops, popsVP: totalPops * 2,
       districts: totalDistricts, districtsVP: totalDistricts,
       alloys: state.resources.alloys, alloysVP,
       totalResearch, researchVP,
       techs: (state.completedTechs || []).length, techVP,
+      traits: traitCount, traitsVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -1303,6 +1898,9 @@ class GameEngine {
     // Process science ship movement and surveying every tick
     this._processScienceShipMovement();
 
+    // Process colony crises every tick
+    this._processColonyCrises();
+
     // Pop growth every tick
     this._processPopGrowth();
 
@@ -1410,8 +2008,14 @@ class GameEngine {
         // Check built districts first
         const idx = colony.districts.findIndex(d => d.id === districtId);
         if (idx !== -1) {
+          const traitBefore = this._calcColonyTrait(colony);
           colony.districts.splice(idx, 1);
           this._invalidateColonyCache(colony);
+          // If trait changed/lost, invalidate all sibling colonies' production caches
+          const traitAfter = this._calcColonyTrait(colony);
+          if ((traitBefore && !traitAfter) || (traitBefore && traitAfter && traitBefore.type !== traitAfter.type)) {
+            this._invalidatePlayerProductionCaches(colony.ownerId);
+          }
           return { ok: true };
         }
 
@@ -1629,6 +2233,12 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'resolveCrisis': {
+        const { colonyId, choiceId } = cmd;
+        if (!colonyId || !choiceId) return { error: 'Missing parameters' };
+        return this.resolveCrisis(playerId, colonyId, choiceId);
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -1820,12 +2430,32 @@ class GameEngine {
       else if (foodSurplus > 5) growthStatus = 'fast';
       else growthStatus = 'slow';
     }
+    const trait = this._calcColonyTrait(c);
+    // Serialize crisis state for client (if active)
+    let crisisData = null;
+    if (c.crisisState) {
+      const crisisDef = CRISIS_TYPES[c.crisisState.type];
+      crisisData = {
+        type: c.crisisState.type,
+        label: crisisDef ? crisisDef.label : c.crisisState.type,
+        description: crisisDef ? crisisDef.description : '',
+        choices: crisisDef && !c.crisisState.resolved ? crisisDef.choices : [],
+        ticksRemaining: c.crisisState.ticksRemaining,
+        resolved: c.crisisState.resolved,
+        quarantineTicks: c.crisisState.quarantineTicks || 0,
+        strikeTicks: c.crisisState.strikeTicks || 0,
+        energyBoostTicks: c.crisisState.energyBoostTicks || 0,
+        shutdownTicks: c.crisisState.shutdownTicks || 0,
+      };
+    }
     return {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
       isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
+      trait: trait ? { type: trait.type, name: trait.name } : null,
+      crisis: crisisData,
       netProduction: {
         energy: production.energy - (consumption.energy || 0),
         minerals: production.minerals - (consumption.minerals || 0),
@@ -1859,4 +2489,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, generateGalaxy, assignStartingSystems };

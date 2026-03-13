@@ -322,6 +322,8 @@
   const growthBarFill = document.getElementById('growth-bar-fill');
   const colonyPanelTitle = document.getElementById('colony-panel-title');
   const cpPlanet = document.getElementById('cp-planet');
+  const cpTraitRow = document.getElementById('cp-trait-row');
+  const cpTrait = document.getElementById('cp-trait');
   const cpDistricts = document.getElementById('cp-districts');
   const cpWorking = document.getElementById('cp-working');
   const cpIdle = document.getElementById('cp-idle');
@@ -329,6 +331,12 @@
   const colonyQueueHeader = document.getElementById('colony-queue-header');
   const colonyQueueList = document.getElementById('colony-queue-list');
   const buildMenuResources = document.getElementById('build-menu-resources');
+  const crisisAlert = document.getElementById('crisis-alert');
+  const crisisAlertHeader = document.getElementById('crisis-alert-header');
+  const crisisAlertDesc = document.getElementById('crisis-alert-desc');
+  const crisisAlertTimer = document.getElementById('crisis-alert-timer');
+  const crisisAlertChoices = document.getElementById('crisis-alert-choices');
+  const crisisAlertStatus = document.getElementById('crisis-alert-status');
 
   // ── Tile selection UI ──
   const buildMenu = document.getElementById('build-menu');
@@ -413,6 +421,10 @@
         return `${player} researched ${msg.techName || 'a technology'}`;
       case 'surveyComplete':
         return `${player} surveyed ${msg.systemName || 'a system'}` + (msg.discoveries && msg.discoveries.length > 0 ? ` — ${msg.discoveries.length} anomal${msg.discoveries.length === 1 ? 'y' : 'ies'} found!` : '');
+      case 'crisisStarted':
+        return `<span style="color:#e74c3c">⚠ ${msg.crisisLabel || 'Crisis'}</span> on ${player}'s ${msg.colonyName || 'colony'}!`;
+      case 'crisisResolved':
+        return `${player}'s ${msg.colonyName || 'colony'}: ${msg.outcome || 'crisis resolved'}`;
       default:
         return null;
     }
@@ -859,6 +871,66 @@
       // Colony info panel
       colonyPanelTitle.textContent = colony.name;
       cpPlanet.textContent = (colony.planet.type || 'Unknown') + ' (Size ' + colony.planet.size + ')';
+      // Colony personality trait badge
+      if (colony.trait && cpTraitRow && cpTrait) {
+        cpTraitRow.classList.remove('hidden');
+        cpTrait.textContent = colony.trait.name;
+      } else if (cpTraitRow) {
+        cpTraitRow.classList.add('hidden');
+      }
+      // Crisis alert panel — only rebuild buttons when crisis type/state changes
+      if (colony.crisis && crisisAlert) {
+        crisisAlert.classList.remove('hidden');
+        crisisAlertHeader.textContent = '\u26A0 ' + colony.crisis.label;
+        crisisAlertDesc.textContent = colony.crisis.description;
+
+        if (!colony.crisis.resolved && colony.crisis.ticksRemaining > 0) {
+          const sec = (colony.crisis.ticksRemaining / 10).toFixed(0);
+          crisisAlertTimer.textContent = 'Time to decide: ' + sec + 's';
+          crisisAlertTimer.classList.remove('hidden');
+        } else {
+          crisisAlertTimer.classList.add('hidden');
+        }
+
+        // Show choices or status
+        if (!colony.crisis.resolved && colony.crisis.choices && colony.crisis.choices.length > 0) {
+          // Only rebuild buttons if crisis type changed (avoid DOM churn at 3.3Hz)
+          const crisisKey = colony.crisis.type + ':' + colony.id;
+          if (crisisAlertChoices.dataset.crisisKey !== crisisKey) {
+            crisisAlertChoices.dataset.crisisKey = crisisKey;
+            crisisAlertChoices.innerHTML = '';
+            for (const ch of colony.crisis.choices) {
+              const btn = document.createElement('button');
+              btn.className = 'crisis-choice-btn';
+              btn.innerHTML = '<span class="choice-label">' + ch.label + '</span><span class="choice-desc">' + ch.description + '</span>';
+              btn.addEventListener('click', () => {
+                send({ type: 'resolveCrisis', colonyId: colony.id, choiceId: ch.id });
+              });
+              crisisAlertChoices.appendChild(btn);
+            }
+          }
+          crisisAlertStatus.textContent = '';
+        } else if (colony.crisis.resolved) {
+          if (crisisAlertChoices.dataset.crisisKey !== '') {
+            crisisAlertChoices.dataset.crisisKey = '';
+            crisisAlertChoices.innerHTML = '';
+          }
+          // Show ongoing effect status
+          const st = [];
+          if (colony.crisis.quarantineTicks > 0) st.push('Quarantine: ' + (colony.crisis.quarantineTicks / 10).toFixed(0) + 's remaining');
+          if (colony.crisis.strikeTicks > 0) st.push('Strike: ' + (colony.crisis.strikeTicks / 10).toFixed(0) + 's remaining');
+          if (colony.crisis.energyBoostTicks > 0) st.push('Energy boost: ' + (colony.crisis.energyBoostTicks / 10).toFixed(0) + 's remaining');
+          if (colony.crisis.shutdownTicks > 0) st.push('Shutdown: ' + (colony.crisis.shutdownTicks / 10).toFixed(0) + 's remaining');
+          crisisAlertStatus.textContent = st.length > 0 ? st.join(' | ') : 'Resolving...';
+        }
+      } else if (crisisAlert) {
+        crisisAlert.classList.add('hidden');
+        if (crisisAlertChoices.dataset.crisisKey !== '') {
+          crisisAlertChoices.dataset.crisisKey = '';
+          crisisAlertChoices.innerHTML = '';
+        }
+      }
+
       const totalDistricts = colony.districts.length + colony.buildQueue.length;
       cpDistricts.textContent = totalDistricts + '/' + colony.planet.size;
       const working = Math.min(colony.pops, colony.jobs);
@@ -928,7 +1000,7 @@
     const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
-    for (const col of myColonies) key += col.id + ':' + col.pops + ',';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ',';
     key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
@@ -938,8 +1010,10 @@
     myColonies.forEach((col, idx) => {
       const entry = document.createElement('div');
       entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
+      const traitBadge = col.trait ? `<span class="colony-list-trait">${col.trait.name}</span>` : '';
       entry.innerHTML =
         `<span class="colony-list-name">${col.name}</span>` +
+        traitBadge +
         `<span class="colony-list-pops">${col.pops} pop</span>`;
       entry.addEventListener('click', () => {
         _viewingColonyIndex = idx;
@@ -1262,7 +1336,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1270,7 +1344,8 @@
         `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
         `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
         `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
-        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td></tr>`;
+        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
+        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
