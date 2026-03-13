@@ -526,6 +526,59 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   border-top: 1px solid #2a2a4e;
 }
 
+/* ── Crisis Alert Panel ── */
+#crisis-alert {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: rgba(231, 76, 60, 0.15);
+  border: 1px solid #e74c3c;
+  border-radius: 4px;
+}
+#crisis-alert-header {
+  font-weight: bold;
+  color: #e74c3c;
+  font-size: 0.85rem;
+  margin-bottom: 0.3rem;
+}
+#crisis-alert-desc {
+  font-size: 0.75rem;
+  color: #ccc;
+  margin-bottom: 0.3rem;
+}
+#crisis-alert-timer {
+  font-size: 0.7rem;
+  color: #f39c12;
+  margin-bottom: 0.4rem;
+  font-family: monospace;
+}
+#crisis-alert-choices {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+.crisis-choice-btn {
+  flex: 1;
+  min-width: 80px;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.7rem;
+  background: #2a2a4e;
+  color: #e0e0e0;
+  border: 1px solid #e74c3c;
+  border-radius: 3px;
+  cursor: pointer;
+  text-align: center;
+}
+.crisis-choice-btn:hover { background: #3a2a4e; }
+.crisis-choice-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.crisis-choice-btn .choice-label { display: block; font-weight: bold; color: #f1c40f; }
+.crisis-choice-btn .choice-desc { display: block; font-size: 0.6rem; color: #aaa; }
+#crisis-alert-status {
+  font-size: 0.7rem;
+  color: #f39c12;
+  margin-top: 0.3rem;
+  font-style: italic;
+}
+
 /* ── Colony Ship Build Option ── */
 .build-option-ship {
   border-left: 3px solid #00ffaa;

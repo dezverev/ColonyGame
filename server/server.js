@@ -243,7 +243,8 @@ function startServer(options = {}) {
       case 'buildColonyShip':
       case 'sendColonyShip':
       case 'buildScienceShip':
-      case 'sendScienceShip': {
+      case 'sendScienceShip':
+      case 'resolveCrisis': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);
