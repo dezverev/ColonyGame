@@ -25,7 +25,9 @@
   let scienceShipPool = [];    // reusable science ship mesh pool
   let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
   let _lastScienceShipData = null;
-  let _lastShipUpdateTime = 0;     // timestamp of last state update (for extrapolation)
+
+  // Must match server/game-engine.js SPEED_INTERVALS exactly
+  const SPEED_INTERVALS = { 1: 200, 2: 100, 3: 50, 4: 33, 5: 20 };
 
   // Fog of war state
   let _adjacency = null;       // adjacency list built from hyperlanes
@@ -473,80 +475,75 @@
     if (onSystemSelect) onSystemSelect(null);
   }
 
-  // ── Colony ship rendering ──
+  // ── Ship mesh management — reuse meshes by ship ID across updates ──
 
-  // Get current game speed from client state (for tick extrapolation)
-  function _getGameSpeed() {
-    if (typeof window !== 'undefined' && window.GameClient) {
-      const gs = window.GameClient.getState();
-      if (gs && gs.gameSpeed) return gs.gameSpeed;
+  function _getOrCreateShipMesh(shipKey, geoKey, playerColor, activeMeshMap, pool) {
+    // Reuse existing mesh for this ship (preserves position for smooth animation)
+    let mesh = activeMeshMap[shipKey];
+    let isNew = false;
+    const matKey = geoKey + '_' + playerColor;
+    if (!_matCache[matKey]) {
+      _matCache[matKey] = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
+      });
     }
-    return 2; // default
+    if (mesh) {
+      mesh.material = _matCache[matKey];
+    } else {
+      isNew = true;
+      if (pool.length > 0) {
+        mesh = pool.pop();
+        mesh.material = _matCache[matKey];
+        mesh.visible = true;
+      } else {
+        mesh = new THREE.Mesh(_geoCache[geoKey], _matCache[matKey]);
+        scene.add(mesh);
+      }
+    }
+    return { mesh, isNew };
   }
 
-  // Extrapolate ship position along its path using elapsed time since last server update.
-  // hopTicks = ticks per hop (30 for science, 50 for colony). yOffset = height above system plane.
-  function _extrapolateShipPos(ship, hopTicks, yOffset, now) {
-    if (!ship.path || ship.path.length === 0) return null;
-
-    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
-    const gameSpeed = (gs && gs.gameSpeed) || 2;
-    const paused = gs && gs.paused;
-
-    const msPerTick = 100 / gameSpeed;
-    const elapsedTicks = paused ? 0 : (now - _lastShipUpdateTime) / msPerTick;
-    // Extrapolated progress along current hop (clamped so we don't overshoot)
-    const progress = Math.min(ship.hopProgress + elapsedTicks, hopTicks);
-    const t = progress / hopTicks;
-
-    const fromSys = galaxyData.systems[ship.systemId];
-    const toSys = galaxyData.systems[ship.path[0]];
-    if (!fromSys || !toSys) return null;
-
-    return {
-      x: fromSys.x + (toSys.x - fromSys.x) * t,
-      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
-      z: fromSys.z + (toSys.z - fromSys.z) * t,
-    };
+  function _recycleStaleMeshes(meshArray, activeIds, pool) {
+    const keep = [];
+    for (const mesh of meshArray) {
+      if (activeIds.has(mesh.userData._shipKey)) {
+        keep.push(mesh);
+      } else {
+        mesh.visible = false;
+        mesh.userData._shipKey = null;
+        pool.push(mesh);
+      }
+    }
+    return keep;
   }
 
   function updateColonyShips(ships) {
     if (!scene || !galaxyData) return;
     _lastColonyShipData = ships;
-    _lastShipUpdateTime = performance.now();
+    const now = performance.now();
 
-    // Return active meshes to pool (hide, don't destroy)
-    for (const mesh of colonyShipMeshes) {
-      mesh.visible = false;
-      colonyShipPool.push(mesh);
-    }
-    colonyShipMeshes = [];
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('c' + s.id);
+    colonyShipMeshes = _recycleStaleMeshes(colonyShipMeshes, activeIds, colonyShipPool);
 
     if (!ships || ships.length === 0) return;
 
+    const meshByKey = {};
+    for (const m of colonyShipMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    colonyShipMeshes = [];
+
     for (const ship of ships) {
-      const playerColor = _getPlayerColor(ship.ownerId);
-      const matKey = 'colonyShip_' + playerColor;
-      if (!_matCache[matKey]) {
-        _matCache[matKey] = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
-        });
-      }
-
-      let mesh;
-      if (colonyShipPool.length > 0) {
-        mesh = colonyShipPool.pop();
-        mesh.material = _matCache[matKey];
-        mesh.visible = true;
-      } else {
-        mesh = new THREE.Mesh(_geoCache.colonyShip, _matCache[matKey]);
-        scene.add(mesh);
-      }
-
-      const currentSys = galaxyData.systems[ship.systemId];
-      if (!currentSys) { mesh.visible = false; colonyShipPool.push(mesh); continue; }
+      const shipKey = 'c' + ship.id;
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'colonyShip', _getPlayerColor(ship.ownerId), meshByKey, colonyShipPool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; colonyShipPool.push(mesh); continue; }
 
       mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
       colonyShipMeshes.push(mesh);
     }
   }
@@ -554,40 +551,30 @@
   function updateScienceShips(ships) {
     if (!scene || !galaxyData) return;
     _lastScienceShipData = ships;
-    _lastShipUpdateTime = performance.now();
+    const now = performance.now();
 
-    // Return active meshes to pool
-    for (const mesh of scienceShipMeshes) {
-      mesh.visible = false;
-      scienceShipPool.push(mesh);
-    }
-    scienceShipMeshes = [];
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('s' + s.id);
+    scienceShipMeshes = _recycleStaleMeshes(scienceShipMeshes, activeIds, scienceShipPool);
 
     if (!ships || ships.length === 0) return;
 
+    const meshByKey = {};
+    for (const m of scienceShipMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    scienceShipMeshes = [];
+
     for (const ship of ships) {
-      const playerColor = _getPlayerColor(ship.ownerId);
-      const matKey = 'scienceShip_' + playerColor;
-      if (!_matCache[matKey]) {
-        _matCache[matKey] = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(playerColor), transparent: true, opacity: 0.9,
-        });
-      }
-
-      let mesh;
-      if (scienceShipPool.length > 0) {
-        mesh = scienceShipPool.pop();
-        mesh.material = _matCache[matKey];
-        mesh.visible = true;
-      } else {
-        mesh = new THREE.Mesh(_geoCache.scienceShip, _matCache[matKey]);
-        scene.add(mesh);
-      }
-
-      const currentSys = galaxyData.systems[ship.systemId];
-      if (!currentSys) { mesh.visible = false; scienceShipPool.push(mesh); continue; }
+      const shipKey = 's' + ship.id;
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'scienceShip', _getPlayerColor(ship.ownerId), meshByKey, scienceShipPool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; scienceShipPool.push(mesh); continue; }
 
       mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x - 5, (sys.y || 0) + 5, sys.z - 5);
+      }
       scienceShipMeshes.push(mesh);
     }
   }
@@ -736,40 +723,64 @@
     }
   }
 
-  // ── Per-frame ship animation (extrapolation from server state) ──
+  // ── Per-frame ship animation — extrapolate from last server state ──
+  // Each frame: take the ship's last known hopProgress + time elapsed since
+  // that update × correct tick rate → compute exact position on the lane.
+  // Mesh is reused across updates so position is continuous.
+
+  function _extrapolateTransitPos(ship, hopTicks, yOffset, updateTime, now) {
+    if (!ship.path || ship.path.length === 0) return null;
+    const fromSys = galaxyData.systems[ship.systemId];
+    const toSys = galaxyData.systems[ship.path[0]];
+    if (!fromSys || !toSys) return null;
+
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    const gameSpeed = (gs && gs.gameSpeed) || 2;
+    const paused = gs && gs.paused;
+
+    // Correct tick rate from SPEED_INTERVALS (NOT 100/gameSpeed which is wrong)
+    const msPerTick = SPEED_INTERVALS[gameSpeed] || 100;
+    const elapsedTicks = paused ? 0 : (now - updateTime) / msPerTick;
+    // Clamp: never predict past end of hop (server will tell us when hop completes)
+    const hp = Math.min((ship.hopProgress || 0) + elapsedTicks, hopTicks - 0.5);
+    const t = hp / hopTicks;
+
+    return {
+      x: fromSys.x + (toSys.x - fromSys.x) * t,
+      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
+      z: fromSys.z + (toSys.z - fromSys.z) * t,
+    };
+  }
 
   function _animateShips() {
     if (!galaxyData) return;
     const now = performance.now();
 
-    // Colony ships — extrapolate position along path
+    // Colony ships
     for (const mesh of colonyShipMeshes) {
       const ship = mesh.userData.shipData;
       if (!ship) continue;
-      const pos = _extrapolateShipPos(ship, 50, 3, now); // COLONY_SHIP_HOP_TICKS = 50
+      const pos = _extrapolateTransitPos(ship, 50, 3, mesh.userData._updateTime || now, now);
       if (pos) {
         mesh.position.set(pos.x, pos.y, pos.z);
       } else {
-        // Idle — hover near system
         const sys = galaxyData.systems[ship.systemId];
         if (sys) mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
       }
       mesh.rotation.y = now * 0.002;
     }
 
-    // Science ships — extrapolate for transit, orbit for surveying, bob for idle
+    // Science ships
     for (const mesh of scienceShipMeshes) {
       const ship = mesh.userData.shipData;
       if (!ship) continue;
 
       if (ship.path && ship.path.length > 0 && !ship.surveying) {
-        // Transit — extrapolate along path
-        const pos = _extrapolateShipPos(ship, 30, 4, now); // SCIENCE_SHIP_HOP_TICKS = 30
+        const pos = _extrapolateTransitPos(ship, 30, 4, mesh.userData._updateTime || now, now);
         if (pos) {
           mesh.position.set(pos.x, pos.y, pos.z);
         }
       } else if (ship.surveying) {
-        // Smooth orbiting during survey
         const sys = galaxyData.systems[ship.systemId];
         if (sys) {
           const angle = now * 0.003;
@@ -780,7 +791,6 @@
           );
         }
       } else {
-        // Idle — gentle bob near system
         const sys = galaxyData.systems[ship.systemId];
         if (sys) {
           mesh.position.set(sys.x - 5, (sys.y || 0) + 5 + Math.sin(now * 0.002) * 0.5, sys.z - 5);

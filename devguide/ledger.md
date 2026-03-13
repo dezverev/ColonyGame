@@ -1111,3 +1111,31 @@ Each entry records an iteration of automated development.
 - Surveyed check prevents sending ships to already-surveyed systems — no wasted turns
 
 **Next:** Colony crisis events (game-designer R30 priority #1) or T3 tech expansion (R17-5)
+
+---
+
+## Entry 32 — 2026-03-12 — Single-Player Mode Client UI
+
+**Phase:** 1 (Foundation — Client UX)
+**Status:** Complete
+
+**What was built:**
+- "Single Player" button in lobby header — one click creates a practice-mode room and enters it
+- Room screen hides Ready button and shows Launch immediately in practice mode
+- Green-accented button styling to visually distinguish from multiplayer "Create Room"
+- Server already had full practiceMode support (maxPlayers=1, canLaunch bypasses ready check, 10-min default timer) — this was purely a client UI gap
+
+**Files changed:**
+- `src/public/index.html` — added `#single-player-btn` in lobby header
+- `src/public/js/app.js` — added DOM ref, click handler sending `practiceMode: true`, updated `renderRoom()` to hide ready/show launch in practice mode
+- `src/public/css/style.css` — `#single-player-btn` styling (green accent)
+- `devguide/ledger.md` — this entry
+
+**Tests:** 566 total, all passing. No new tests needed — server-side practiceMode already had 7+ dedicated tests in room-manager.test.js and server-integration.test.js.
+
+**Key decisions:**
+- Single click creates + enters room (no dialog) — minimizes friction for solo play
+- Room name auto-set to "{playerName}'s Game" — no input needed
+- Practice mode rooms use server defaults (10-min timer, small galaxy) — player can still configure via multiplayer path if desired
+
+**Next:** Colony crisis events or T3 tech expansion

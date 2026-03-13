@@ -781,6 +781,9 @@ class GameEngine {
     for (const ship of arrivals) {
       this._foundColonyFromShip(ship);
     }
+
+    // Ship state was mutated — clear cached JSON for fresh broadcasts
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Remove a colony ship by reference (in-place splice, no new array)
@@ -896,6 +899,10 @@ class GameEngine {
     for (const ship of completed) {
       this._completeSurvey(ship);
     }
+
+    // Ship state was mutated (hopProgress, systemId, path) — clear cached JSON
+    // so the next broadcast serializes fresh data instead of stale values.
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Complete a survey and discover anomalies
