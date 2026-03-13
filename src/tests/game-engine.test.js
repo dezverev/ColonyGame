@@ -1936,17 +1936,17 @@ describe('GameEngine — Energy Deficit', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony1 = Array.from(engine.colonies.values())[0];
 
-    // Colony1 starting: generator (+6), no energy consumers
+    // Baseline net energy (varies by random planet type bonus)
     const net1 = engine._calcPlayerNetEnergy(1);
-    assert.strictEqual(net1, 6, 'single colony with generator should have +6 net energy');
+    assert.ok(net1 >= 6, 'starting colony with generator should produce at least +6 net energy');
 
-    // Add industrial (consumes 3)
+    // Add industrial (consumes 3) — net should drop by 3
     engine._addBuiltDistrict(colony1, 'industrial');
     colony1.pops = 10;
     engine._invalidateColonyCache(colony1);
 
     const net2 = engine._calcPlayerNetEnergy(1);
-    assert.strictEqual(net2, 3, 'generator(+6) - industrial(-3) = +3 net');
+    assert.strictEqual(net2, net1 - 3, 'adding industrial(-3 energy) should reduce net by 3');
   });
 
   it('disabled district can still be demolished', () => {

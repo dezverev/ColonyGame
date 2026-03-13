@@ -438,6 +438,82 @@ describe('colonyTraitEarned event', () => {
 
 // ── Toast formatting ──
 
+describe('Colony trait — empire-wide production cache invalidation', () => {
+  it('earning a trait on one colony updates production on sibling colonies', () => {
+    const engine = makeEngine({ seed: 42 });
+    const colony1 = getFirstColony(engine, 1);
+
+    // Create a second colony for the same player
+    const system = engine.galaxy.systems[1];
+    const planet = system.planets.find(p => p.habitability > 0) || system.planets[0];
+    const colony2Id = engine._createColony(1, 'Colony 2', planet, system.id).id;
+    engine._playerColonies.get(1).push(colony2Id);
+    const colony2 = engine.colonies.get(colony2Id);
+
+    // Give colony2 a mining district so it produces minerals
+    engine._addBuiltDistrict(colony2, 'mining');
+    colony2.pops = 4;
+    engine._invalidateColonyCache(colony2);
+
+    // Get baseline mineral production for colony2
+    const before = engine._calcProduction(colony2);
+    const mineralsBefore = before.production.minerals;
+
+    // Now earn a Mining Colony trait on colony1 (need 4 mining districts)
+    // Clear colony1 districts first
+    colony1.districts = [];
+    for (let i = 0; i < 4; i++) engine._addBuiltDistrict(colony1, 'mining');
+    colony1.pops = 8;
+    engine._invalidateColonyCache(colony1);
+
+    // Simulate what happens during construction: trait change detection + invalidation
+    const trait = engine._calcColonyTrait(colony1);
+    assert.ok(trait, 'colony1 should have a mining trait');
+    engine._invalidatePlayerProductionCaches(1);
+
+    // Colony2's production should now reflect the empire-wide +10% mining bonus
+    const after = engine._calcProduction(colony2);
+    const mineralsAfter = after.production.minerals;
+    assert.ok(mineralsAfter > mineralsBefore,
+      `colony2 minerals should increase from ${mineralsBefore} to reflect empire-wide trait bonus, got ${mineralsAfter}`);
+  });
+
+  it('demolishing a trait-giving district invalidates sibling production caches', () => {
+    const engine = makeEngine({ seed: 42 });
+    const colony1 = getFirstColony(engine, 1);
+
+    // Build 4 mining districts on colony1 to earn a trait
+    colony1.districts = [];
+    for (let i = 0; i < 4; i++) engine._addBuiltDistrict(colony1, 'mining');
+    colony1.pops = 8;
+    engine._invalidateColonyCache(colony1);
+
+    // Create colony2 with a mining district
+    const system = engine.galaxy.systems[1];
+    const planet = system.planets.find(p => p.habitability > 0) || system.planets[0];
+    const colony2Id = engine._createColony(1, 'Colony 2', planet, system.id).id;
+    engine._playerColonies.get(1).push(colony2Id);
+    const colony2 = engine.colonies.get(colony2Id);
+    engine._addBuiltDistrict(colony2, 'mining');
+    colony2.pops = 4;
+    engine._invalidateColonyCache(colony2);
+
+    // Force production cache to be computed (includes +10% mining trait bonus)
+    const withTrait = engine._calcProduction(colony2);
+    const mineralsWithTrait = withTrait.production.minerals;
+
+    // Demolish a mining district from colony1 — lose the trait
+    const districtId = colony1.districts[0].id;
+    engine.handleCommand(1, { type: 'demolish', colonyId: colony1.id, districtId });
+
+    // Colony2's production should be recomputed without the trait bonus
+    const withoutTrait = engine._calcProduction(colony2);
+    const mineralsWithoutTrait = withoutTrait.production.minerals;
+    assert.ok(mineralsWithoutTrait < mineralsWithTrait,
+      `colony2 minerals should decrease from ${mineralsWithTrait} after trait loss, got ${mineralsWithoutTrait}`);
+  });
+});
+
 describe('Colony trait toast formatting', () => {
   it('should format colonyTraitEarned toast', () => {
     const msg = { eventType: 'colonyTraitEarned', colonyName: 'New Mars', traitName: 'Mining Colony' };

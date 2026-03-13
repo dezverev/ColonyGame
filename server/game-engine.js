@@ -323,10 +323,21 @@ class GameEngine {
     colony._cachedHousing = null;
     colony._cachedJobs = null;
     colony._cachedProduction = null;
+    colony._cachedTrait = undefined; // undefined = not computed, null = no trait
     this._dirtyPlayers.add(colony.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
     this._summaryCacheTick = -1; // summary depends on colonies
+  }
+
+  // Invalidate production caches for ALL colonies of a player.
+  // Needed when trait bonuses change — they're empire-wide and affect all colonies.
+  _invalidatePlayerProductionCaches(playerId) {
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony) colony._cachedProduction = null;
+    }
   }
 
   // Count total districts (built + in queue)
@@ -362,7 +373,9 @@ class GameEngine {
 
   // Calculate colony personality trait based on district composition
   // Returns { type, name, bonus } or null if no trait earned
+  // Cached on the colony object — invalidated by _invalidateColonyCache
   _calcColonyTrait(colony) {
+    if (colony._cachedTrait !== undefined) return colony._cachedTrait;
     const counts = {};
     for (const d of colony.districts) {
       if (d.disabled) continue;
@@ -377,9 +390,13 @@ class GameEngine {
         bestType = type;
       }
     }
-    if (!bestType) return null;
+    if (!bestType) {
+      colony._cachedTrait = null;
+      return null;
+    }
     const traitDef = COLONY_TRAITS[bestType];
-    return { type: bestType, name: traitDef.name, bonus: traitDef.bonus };
+    colony._cachedTrait = { type: bestType, name: traitDef.name, bonus: traitDef.bonus };
+    return colony._cachedTrait;
   }
 
   // Calculate empire-wide trait bonuses for a player (sum across all colonies)
@@ -576,6 +593,8 @@ class GameEngine {
           // Check if a new colony trait was earned or changed
           const traitAfter = this._calcColonyTrait(colony);
           if (traitAfter && (!traitBefore || traitBefore.type !== traitAfter.type)) {
+            // Trait bonuses are empire-wide — invalidate all sibling colonies' production caches
+            this._invalidatePlayerProductionCaches(colony.ownerId);
             this._emitEvent('colonyTraitEarned', colony.ownerId, {
               colonyId: colony.id,
               colonyName: colony.name,
@@ -1485,8 +1504,14 @@ class GameEngine {
         // Check built districts first
         const idx = colony.districts.findIndex(d => d.id === districtId);
         if (idx !== -1) {
+          const traitBefore = this._calcColonyTrait(colony);
           colony.districts.splice(idx, 1);
           this._invalidateColonyCache(colony);
+          // If trait changed/lost, invalidate all sibling colonies' production caches
+          const traitAfter = this._calcColonyTrait(colony);
+          if ((traitBefore && !traitAfter) || (traitBefore && traitAfter && traitBefore.type !== traitAfter.type)) {
+            this._invalidatePlayerProductionCaches(colony.ownerId);
+          }
           return { ok: true };
         }
 
