@@ -1447,14 +1447,15 @@ describe('GameEngine — Per-Player State Filtering', () => {
 });
 
 describe('GameEngine — Mini Tech Tree', () => {
-  it('TECH_TREE has 6 techs across 3 tracks and 2 tiers', () => {
+  it('TECH_TREE has 9 techs across 3 tracks and 3 tiers', () => {
     const techs = Object.entries(TECH_TREE);
-    assert.strictEqual(techs.length, 6);
+    assert.strictEqual(techs.length, 9);
     for (const track of ['physics', 'society', 'engineering']) {
       const trackTechs = techs.filter(([, t]) => t.track === track);
-      assert.strictEqual(trackTechs.length, 2, `${track} should have 2 techs`);
+      assert.strictEqual(trackTechs.length, 3, `${track} should have 3 techs`);
       assert.ok(trackTechs.some(([, t]) => t.tier === 1), `${track} missing T1`);
       assert.ok(trackTechs.some(([, t]) => t.tier === 2), `${track} missing T2`);
+      assert.ok(trackTechs.some(([, t]) => t.tier === 3), `${track} missing T3`);
     }
   });
 

@@ -298,6 +298,9 @@
     advanced_reactors:     { track: 'physics', tier: 2, name: 'Advanced Reactors', desc: '+50% Generator output', cost: 500, requires: 'improved_power_plants' },
     gene_crops:            { track: 'society', tier: 2, name: 'Gene Crops', desc: '+50% Agriculture output', cost: 500, requires: 'frontier_medicine' },
     deep_mining:           { track: 'engineering', tier: 2, name: 'Deep Mining', desc: '+50% Mining output', cost: 500, requires: 'improved_mining' },
+    fusion_reactors:       { track: 'physics', tier: 3, name: 'Fusion Reactors', desc: '+100% Generator output, +1 Alloy/generator', cost: 1000, requires: 'advanced_reactors' },
+    genetic_engineering:   { track: 'society', tier: 3, name: 'Genetic Engineering', desc: '+100% Agri output, growth halved', cost: 1000, requires: 'gene_crops' },
+    automated_mining:      { track: 'engineering', tier: 3, name: 'Automated Mining', desc: '+100% Mining output, 0 jobs', cost: 1000, requires: 'deep_mining' },
   };
 
   // ── HUD elements ──

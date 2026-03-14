@@ -1229,3 +1229,42 @@ Each entry records an iteration of automated development.
 - Crisis state serialized with full CRISIS_TYPES definition (choices, descriptions) so client doesn't need a local copy of the crisis definitions
 
 **Next:** T3 tech expansion (game-designer R32 priority #2) or colony planet context rendering (R32 priority #3)
+
+---
+
+## Entry 35 — 2026-03-13 — T3 Tech Expansion + Crisis Interval Scaling
+
+**Phase:** 4 (Technology & Research) + Phase 2 (Colony Management balance)
+**Status:** Complete
+
+**What was built:**
+- 3 new Tier 3 techs added to TECH_TREE (cost 1000 each, requires T2 prerequisite):
+  - **Fusion Reactors** (Physics T3): +100% Generator output (2.0x multiplier) + generators produce +1 alloy per working district. New `alloysBonus` effect property in tech modifier system
+  - **Genetic Engineering** (Society T3): +100% Agriculture output (2.0x multiplier) + pop growth time halved (0.5x stacking with Frontier Medicine's 0.75x = 0.375x total). New `districtBonusAndGrowth` effect type combines district and growth bonuses
+  - **Automated Mining** (Engineering T3): +100% Mining output (2.0x multiplier) + mining districts cost 0 jobs. New `jobOverride` effect property allows districts to produce without consuming a pop slot
+- `_getTechModifiers` expanded to return `alloysBonus` and `jobOverride` maps alongside existing `district` and `growth` fields
+- `_calcJobs` now checks `techMods.jobOverride` — mining districts with Automated Mining contribute 0 jobs, freeing pops for other work
+- `_calcProduction` updated: applies `alloysBonus` per working generator, handles `effectiveJobs === 0` with `def.jobs > 0` (tech override) to allow production without pop assignment
+- Client TECH_TREE_UI updated with 3 new T3 cards showing in research panel
+- VP: T3 techs grant +20 VP each (all 9 techs = 105 total techVP vs previous 45 for 6 techs)
+- **Crisis interval scaling:** `_scheduleCrisis` now adds +100 ticks per colony beyond 3. A 5-colony empire gets +200 ticks between crises (~20 extra seconds), reducing late-game crisis whack-a-mole
+
+**Files changed:**
+- `server/game-engine.js` — 3 new TECH_TREE entries, `_getTechModifiers` returns alloysBonus/jobOverride, `_calcJobs` uses jobOverride, `_calcProduction` applies alloysBonus and handles 0-job tech override, `_scheduleCrisis` colony count scaling
+- `src/public/js/app.js` — 3 new TECH_TREE_UI entries (fusion_reactors, genetic_engineering, automated_mining)
+- `src/tests/t3-techs-crisis-scaling.test.js` — **new** 28 tests
+- `src/tests/game-engine.test.js` — updated 1 test (TECH_TREE count 6→9, tiers 2→3)
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 718 total (28 new: T3 structure ×5, Fusion Reactors ×3, Genetic Engineering ×2, Automated Mining ×4, VP bonuses ×2, research validation ×2, crisis interval scaling ×3, tech modifier properties ×3, existing test updated ×1). All passing.
+
+**Key decisions:**
+- Fusion Reactors alloy bonus is flat +1 per generator (not multiplicative) — prevents overpowered stacking, keeps it as a side benefit rather than replacing Industrial districts
+- Genetic Engineering growth multiplier stacks multiplicatively with Frontier Medicine (0.75 × 0.5 = 0.375) — both techs in the same track, late-game payoff for full society investment
+- Automated Mining uses `jobOverride` mechanism rather than modifying DISTRICT_DEFS — clean separation between base definitions and tech effects, tech modifier cache handles invalidation
+- Mining districts with 0 jobs still produce even with 0 pops — they're fully automated. This is a powerful late-game economy enabler
+- Crisis scaling uses colony count at scheduling time, not a fixed value — dynamically adapts as player expands or loses colonies
+- T3 cost of 1000 requires heavy research investment: with 1 Research district (12/month across 3 tracks = 4 per track), T3 takes ~250 months (~42 min). Players need 2-3 Research districts to complete T3 in a 20-min match
+
+**Next:** Colony planet context rendering (game-designer R33 priority #2) or influence economy/edicts (R33 priority #3)

@@ -130,7 +130,7 @@ const SPEED_INTERVALS = {
 const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
 const DEFAULT_SPEED = 2;
 
-// Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
+// Mini tech tree: 3 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
   improved_power_plants: {
     track: 'physics', tier: 1,
@@ -179,6 +179,30 @@ const TECH_TREE = {
     cost: 500,
     effect: { type: 'districtBonus', district: 'mining', multiplier: 1.5 },
     requires: 'improved_mining',
+  },
+  fusion_reactors: {
+    track: 'physics', tier: 3,
+    name: 'Fusion Reactors',
+    description: '+100% Generator output, generators produce +1 alloy',
+    cost: 1000,
+    effect: { type: 'districtBonus', district: 'generator', multiplier: 2.0, alloysBonus: 1 },
+    requires: 'advanced_reactors',
+  },
+  genetic_engineering: {
+    track: 'society', tier: 3,
+    name: 'Genetic Engineering',
+    description: '+100% Agriculture output, pop growth halved',
+    cost: 1000,
+    effect: { type: 'districtBonusAndGrowth', district: 'agriculture', multiplier: 2.0, growthMultiplier: 0.5 },
+    requires: 'gene_crops',
+  },
+  automated_mining: {
+    track: 'engineering', tier: 3,
+    name: 'Automated Mining',
+    description: '+100% Mining output, mining costs 0 jobs',
+    cost: 1000,
+    effect: { type: 'districtBonus', district: 'mining', multiplier: 2.0, jobOverride: 0 },
+    requires: 'deep_mining',
   },
 };
 
@@ -416,11 +440,16 @@ class GameEngine {
   // Calculate jobs provided by districts (cached)
   _calcJobs(colony) {
     if (colony._cachedJobs !== null) return colony._cachedJobs;
+    const playerState = this.playerStates.get(colony.ownerId);
+    const techMods = this._getTechModifiers(playerState);
     let jobs = 0;
     for (const d of colony.districts) {
       if (d.disabled) continue; // disabled districts provide no jobs
       const def = DISTRICT_DEFS[d.type];
-      if (def) jobs += def.jobs;
+      if (!def) continue;
+      // T3 Automated Mining: mining districts cost 0 jobs
+      const jobCount = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
+      jobs += jobCount;
     }
     colony._cachedJobs = jobs;
     return jobs;
@@ -488,6 +517,7 @@ class GameEngine {
     const planetBonus = PLANET_BONUSES[colony.planet.type] || null;
 
     // Assign pops to districts in order — each working district needs 1 pop
+    // (unless tech overrides jobs to 0, e.g., Automated Mining)
     let assignedPops = 0;
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
@@ -496,20 +526,33 @@ class GameEngine {
       // Disabled districts produce nothing, consume nothing, provide no jobs
       if (d.disabled) continue;
 
-      // Jobless districts (e.g., housing) still consume resources
-      if (def.jobs === 0) {
+      // Effective job cost (T3 Automated Mining makes mining districts cost 0 jobs)
+      const effectiveJobs = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
+
+      // Jobless districts (e.g., housing, or districts with tech job override) still consume resources
+      if (effectiveJobs === 0 && def.jobs === 0) {
+        // Naturally jobless (housing) — consume only, no production
         for (const [resource, amount] of Object.entries(def.consumes)) {
           consumption[resource] = (consumption[resource] || 0) + amount;
         }
         continue;
       }
 
-      if (assignedPops >= workingPops) break;
-      assignedPops++;
+      // Check if this district needs a pop to work
+      if (effectiveJobs > 0) {
+        if (assignedPops >= workingPops) break;
+        assignedPops++;
+      }
+      // effectiveJobs === 0 but def.jobs > 0 means tech override — produces without consuming a pop
 
       const districtMod = techMods.district[d.type] || 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
         production[resource] = (production[resource] || 0) + (amount * districtMod);
+      }
+      // T3 Fusion Reactors: generators produce bonus alloys per district
+      const alloysExtra = techMods.alloysBonus[d.type];
+      if (alloysExtra) {
+        production.alloys = (production.alloys || 0) + alloysExtra;
       }
       // Planet type signature bonuses (additive, after tech modifier)
       const districtBonus = planetBonus && planetBonus[d.type];
@@ -850,7 +893,11 @@ class GameEngine {
 
   // Schedule next crisis for a colony (after resolution or initial)
   _scheduleCrisis(colony) {
-    colony.nextCrisisTick = this.tickCount + CRISIS_IMMUNITY_TICKS + CRISIS_MIN_TICKS +
+    // Scale crisis interval by colony count: +100 ticks per colony beyond 3
+    // Prevents late-game micro fatigue with many colonies
+    const colonyCount = (this._playerColonies.get(colony.ownerId) || []).length;
+    const extraDelay = Math.max(0, colonyCount - 3) * 100;
+    colony.nextCrisisTick = this.tickCount + CRISIS_IMMUNITY_TICKS + CRISIS_MIN_TICKS + extraDelay +
       Math.floor(Math.random() * (CRISIS_MAX_TICKS - CRISIS_MIN_TICKS));
   }
 
@@ -1610,7 +1657,7 @@ class GameEngine {
 
   // Get district output multipliers from completed techs (cached per player)
   _getTechModifiers(playerState) {
-    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1 };
+    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1, alloysBonus: {}, jobOverride: {} };
 
     // Return cached value if available and tech count unchanged
     const cached = this._techModCache.get(playerState.id);
@@ -1618,24 +1665,38 @@ class GameEngine {
 
     const modifiers = {}; // districtType -> multiplier
     let growthMultiplier = 1;
+    const alloysBonus = {}; // districtType -> bonus alloys per working district
+    const jobOverride = {}; // districtType -> overridden job count
 
     for (const techId of playerState.completedTechs) {
       const tech = TECH_TREE[techId];
       if (!tech) continue;
 
-      if (tech.effect.type === 'districtBonus') {
+      if (tech.effect.type === 'districtBonus' || tech.effect.type === 'districtBonusAndGrowth') {
         const current = modifiers[tech.effect.district] || 1;
-        // Use the highest multiplier (T2 supersedes T1 for same district)
+        // Use the highest multiplier (T3 supersedes T2 supersedes T1 for same district)
         if (tech.effect.multiplier > current) {
           modifiers[tech.effect.district] = tech.effect.multiplier;
         }
-      } else if (tech.effect.type === 'growthBonus') {
-        // Stack growth bonuses multiplicatively
+        // T3 bonus: generators produce extra alloys
+        if (tech.effect.alloysBonus) {
+          alloysBonus[tech.effect.district] = tech.effect.alloysBonus;
+        }
+        // T3 bonus: mining districts cost 0 jobs
+        if (tech.effect.jobOverride !== undefined) {
+          jobOverride[tech.effect.district] = tech.effect.jobOverride;
+        }
+      }
+      if (tech.effect.type === 'growthBonus') {
         growthMultiplier *= tech.effect.multiplier;
+      }
+      // districtBonusAndGrowth: both district bonus (handled above) and growth bonus
+      if (tech.effect.type === 'districtBonusAndGrowth' && tech.effect.growthMultiplier) {
+        growthMultiplier *= tech.effect.growthMultiplier;
       }
     }
 
-    const result = { district: modifiers, growth: growthMultiplier, _techCount: playerState.completedTechs.length };
+    const result = { district: modifiers, growth: growthMultiplier, alloysBonus, jobOverride, _techCount: playerState.completedTechs.length };
     this._techModCache.set(playerState.id, result);
     return result;
   }
