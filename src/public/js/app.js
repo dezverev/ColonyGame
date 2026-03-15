@@ -1294,7 +1294,8 @@
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
     for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ':' + (col.occupiedBy || '') + ',';
-    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
+    const sciAutoKey = mySciShipsAll.map(s => (s.autoSurvey !== false ? '1' : '0')).join('');
+    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit + '|' + sciAutoKey;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
 
@@ -1325,8 +1326,25 @@
     if (myShips.length > 0) {
       const shipInfo = document.createElement('div');
       shipInfo.className = 'colony-list-ships';
-      shipInfo.textContent = `Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
+      shipInfo.textContent = `Colony Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
       sidebar.appendChild(shipInfo);
+    }
+    // Science ship list with auto-survey toggle
+    if (mySciShipsAll.length > 0) {
+      const sciInfo = document.createElement('div');
+      sciInfo.className = 'colony-list-ships';
+      const sciAutoCount = mySciShipsAll.filter(s => s.autoSurvey !== false).length;
+      sciInfo.innerHTML = `Science Ships: ${mySciShipsAll.length} (${sciAutoCount} auto)`;
+      sidebar.appendChild(sciInfo);
+      for (const ship of mySciShipsAll) {
+        const shipEntry = document.createElement('div');
+        shipEntry.className = 'colony-list-sci-ship';
+        const status = ship.surveying ? 'Surveying' : (ship.path && ship.path.length > 0) ? 'In transit' : 'Idle';
+        const autoLabel = ship.autoSurvey !== false ? 'ON' : 'OFF';
+        const autoClass = ship.autoSurvey !== false ? 'auto-on' : 'auto-off';
+        shipEntry.innerHTML = `<span class="sci-ship-status">${status}</span> <button class="auto-survey-btn ${autoClass}" onclick="window._toggleAutoSurvey('${ship.id}')">Auto: ${autoLabel}</button>`;
+        sidebar.appendChild(shipEntry);
+      }
     }
   }
 
@@ -2192,6 +2210,11 @@
       send({ type: 'giftResources', targetPlayerId, resource: resource.trim().toLowerCase(), amount });
     };
   }
+
+  // Toggle auto-survey for a science ship
+  window._toggleAutoSurvey = function(shipId) {
+    send({ type: 'toggleAutoSurvey', shipId });
+  };
 
   // Expose send and gameState for future modules (renderer, UI)
   if (typeof window !== 'undefined') {

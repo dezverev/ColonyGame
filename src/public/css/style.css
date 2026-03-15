@@ -592,6 +592,16 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
   font-size: 0.7rem; color: #00ffaa; padding: 0.3rem 0.4rem;
   border-top: 1px solid #2a2a4e;
 }
+.colony-list-sci-ship {
+  font-size: 0.65rem; color: #00e5ff; padding: 0.15rem 0.4rem;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.auto-survey-btn {
+  font-size: 0.6rem; padding: 1px 6px; border: 1px solid #444;
+  border-radius: 3px; cursor: pointer; background: #1a1a2e; color: #aaa;
+}
+.auto-survey-btn.auto-on { color: #2ecc71; border-color: #2ecc71; }
+.auto-survey-btn.auto-off { color: #e74c3c; border-color: #e74c3c; }
 
 /* ── Crisis Alert Panel ── */
 #crisis-alert {

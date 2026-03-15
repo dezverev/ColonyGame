@@ -414,7 +414,7 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
     this._colonyShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
-    this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress, autoSurvey }
     this._scienceShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
     this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
@@ -1502,7 +1502,7 @@ class GameEngine {
 
   // Called when a player stations a military ship or colonizes the rush system
   _claimResourceRush(playerId) {
-    if (!this._resourceRushSystem || this._resourceRushOwner) return false;
+    if (this._resourceRushSystem === null || this._resourceRushOwner) return false;
     this._resourceRushOwner = playerId;
     this._resourceRushTicksLeft = CATALYST_RUSH_DURATION;
     const state = this.playerStates.get(playerId);
@@ -2414,6 +2414,7 @@ class GameEngine {
             hopProgress: 0,
             surveying: false,
             surveyProgress: 0,
+            autoSurvey: true,
           };
           this._scienceShips.push(sciShip);
           let sArr = this._scienceShipsByPlayer.get(colony.ownerId);
@@ -3232,7 +3233,7 @@ class GameEngine {
         this._dirtyPlayers.add(ship.ownerId);
 
         // Check if this system is the Resource Rush motherlode
-        if (this._resourceRushSystem && ship.systemId === this._resourceRushSystem && !this._resourceRushOwner) {
+        if (this._resourceRushSystem !== null && ship.systemId === this._resourceRushSystem && !this._resourceRushOwner) {
           this._claimResourceRush(ship.ownerId);
         }
 
@@ -3681,7 +3682,7 @@ class GameEngine {
     }, true);
 
     // Check Resource Rush claim via colonization
-    if (this._resourceRushSystem && ship.targetSystemId === this._resourceRushSystem && !this._resourceRushOwner) {
+    if (this._resourceRushSystem !== null && ship.targetSystemId === this._resourceRushSystem && !this._resourceRushOwner) {
       this._claimResourceRush(ship.ownerId);
     }
 
@@ -3816,6 +3817,9 @@ class GameEngine {
     this._dirtyPlayers.add(ship.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1;
+
+    // Auto-chain: find next unsurveyed system within 3 hops and dispatch
+    this._autoChainSurvey(ship);
   }
 
   // Simple seeded random for survey determinism (hash-based, not stored)
@@ -3847,6 +3851,46 @@ class GameEngine {
       ship.path = nearestPath;
       ship.hopProgress = 0;
     }
+  }
+
+  // Auto-chain: find nearest unsurveyed system within 3 hops and dispatch
+  _autoChainSurvey(ship) {
+    if (!ship.autoSurvey) return false;
+    if (!this.galaxy) return false;
+
+    const surveyed = this._surveyedSystems.get(ship.ownerId) || new Set();
+    const adj = this._adjacency;
+    const maxDepth = 3;
+
+    // BFS from ship's current position, max 3 hops
+    const visited = new Set([ship.systemId]);
+    let frontier = [ship.systemId];
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      const nextFrontier = [];
+      for (const sysId of frontier) {
+        const neighbors = adj.get(sysId) || [];
+        for (const neighbor of neighbors) {
+          if (visited.has(neighbor)) continue;
+          visited.add(neighbor);
+
+          // Found an unsurveyed system — dispatch to it
+          if (!surveyed.has(neighbor)) {
+            const path = this._findPath(ship.systemId, neighbor);
+            if (path && path.length > 0) {
+              ship.targetSystemId = neighbor;
+              ship.path = path;
+              ship.hopProgress = 0;
+              this._dirtyPlayers.add(ship.ownerId);
+              this._invalidateStateCache();
+              return true;
+            }
+          }
+          nextFrontier.push(neighbor);
+        }
+      }
+      frontier = nextFrontier;
+    }
+    return false; // No unsurveyed system within range
   }
 
   // Remove a science ship by reference
@@ -4608,6 +4652,21 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'toggleAutoSurvey': {
+        const { shipId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        const ship = (this._scienceShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
+        if (!ship) return { error: 'Science ship not found' };
+        ship.autoSurvey = !ship.autoSurvey;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        // If toggling ON and ship is idle, try to auto-chain immediately
+        if (ship.autoSurvey && !ship.surveying && (!ship.path || ship.path.length === 0)) {
+          this._autoChainSurvey(ship);
+        }
+        return { ok: true, autoSurvey: ship.autoSurvey };
+      }
+
       case 'buildCorvette': {
         const { colonyId, variant } = cmd;
         if (!colonyId) return { error: 'Missing colonyId' };
@@ -5210,6 +5269,7 @@ class GameEngine {
       hopProgress: s.hopProgress,
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
+      autoSurvey: s.autoSurvey !== false,
     }));
     // Include military ships (corvettes)
     state.militaryShips = this._militaryShips.map(s => ({
@@ -5283,6 +5343,7 @@ class GameEngine {
         hopProgress: s.hopProgress,
         surveying: s.surveying || false,
         surveyProgress: s.surveyProgress || 0,
+        autoSurvey: s.autoSurvey !== false,
       })),
       militaryShips: this._militaryShips.map(s => ({
         id: s.id, ownerId: s.ownerId, systemId: s.systemId,
@@ -5408,7 +5469,7 @@ class GameEngine {
     }
 
     // Mid-game catalyst event state
-    if (this._resourceRushSystem) {
+    if (this._resourceRushSystem !== null) {
       state.resourceRush = {
         systemId: this._resourceRushSystem,
         resource: this._resourceRushResource,

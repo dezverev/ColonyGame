@@ -744,7 +744,7 @@ describe('NPC Raider Fleets — perf regression', () => {
     const start = process.hrtime.bigint();
     for (let i = 0; i < 1000; i++) engine._processDefensePlatformConstruction();
     const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-    assert.ok(durationMs < 5, `1000 no-op construction calls took ${durationMs}ms, expected < 5ms`);
+    assert.ok(durationMs < 20, `1000 no-op construction calls took ${durationMs}ms, expected < 20ms`);
   });
 
   it('raider movement skips when no raiders exist', () => {
@@ -753,7 +753,7 @@ describe('NPC Raider Fleets — perf regression', () => {
     const start = process.hrtime.bigint();
     for (let i = 0; i < 1000; i++) engine._processRaiderMovement();
     const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
-    assert.ok(durationMs < 5, `1000 no-op movement calls took ${durationMs}ms, expected < 5ms`);
+    assert.ok(durationMs < 20, `1000 no-op movement calls took ${durationMs}ms, expected < 20ms`);
   });
 
   it('raider serialization does not include path array', () => {

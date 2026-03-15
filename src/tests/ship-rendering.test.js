@@ -153,6 +153,7 @@ describe('Ship rendering — server data produces correct positions', () => {
   });
 
   it('server never sends ship back to source system during transit', () => {
+    sciShip.autoSurvey = false; // disable auto-chain for this test
     engine.handleCommand(playerId, { type: 'sendScienceShip', shipId: sciShip.id, targetSystemId: targetSystem });
 
     let leftHome = false;

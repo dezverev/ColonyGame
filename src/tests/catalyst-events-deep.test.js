@@ -43,7 +43,7 @@ describe('Catalyst Events Deep — Resource Rush auto-claim', () => {
     processCatalystAndFlush(engine);
 
     const rushSystemId = engine._resourceRushSystem;
-    assert.ok(rushSystemId, 'rush system should be set');
+    assert.ok(rushSystemId !== null && rushSystemId !== undefined, 'rush system should be set');
 
     // Manually set up a military ship arriving at the rush system
     const ship = {
@@ -156,7 +156,7 @@ describe('Catalyst Events Deep — Rush fallback paths', () => {
     for (const [, colony] of engine.colonies) colonizedSystems.add(colony.systemId);
     const unclaimed = allSystemIds.filter(s => !colonizedSystems.has(s));
     if (unclaimed.length > 0) {
-      assert.ok(engine._resourceRushSystem, 'should pick an unclaimed system');
+      assert.ok(engine._resourceRushSystem !== null, 'should pick an unclaimed system');
     }
   });
 });
