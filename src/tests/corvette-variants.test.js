@@ -329,7 +329,7 @@ describe('Corvette variants — combat counter-targeting', () => {
     engine._addMilitaryShip(interceptor);
 
     const gunboat = { id: 'gb1', ownerId: 'p2', systemId: sys, targetSystemId: null, path: [],
-      hopProgress: 0, hp: 15, attack: 4, variant: 'gunboat', regen: 0, maxHp: 15 };
+      hopProgress: 0, hp: 15, attack: 3, variant: 'gunboat', regen: 0, maxHp: 15 };
     engine._addMilitaryShip(gunboat);
 
     const sentinel = { id: 'sn1', ownerId: 'p2', systemId: sys, targetSystemId: null, path: [],
@@ -388,29 +388,20 @@ describe('Corvette variants — combat counter-targeting', () => {
       hopProgress: 0, hp: 8, attack: 5, variant: 'interceptor', regen: 0, maxHp: 8 };
     engine._addMilitaryShip(interceptor);
 
-    // Gunboat: 15 HP, 4 ATK, priority 1
+    // Gunboat: 15 HP, 3 ATK, priority 1
     const gunboat = { id: 'gb1', ownerId: 'p2', systemId: sys, targetSystemId: null, path: [],
-      hopProgress: 0, hp: 15, attack: 4, variant: 'gunboat', regen: 0, maxHp: 15 };
+      hopProgress: 0, hp: 15, attack: 3, variant: 'gunboat', regen: 0, maxHp: 15 };
     engine._addMilitaryShip(gunboat);
 
     engine._checkFleetCombat();
 
     // Interceptor (5 ATK) needs 3 rounds to kill Gunboat (15 HP)
-    // Gunboat (4 ATK) needs 2 rounds to kill Interceptor (8 HP)
-    // But interceptor attacks first each round (priority 3 vs 1)
-    // R1: Int does 5 to GB (10 HP left), GB does 4 to Int (4 HP left)
-    // R2: Int does 5 to GB (5 HP left), GB does 4 to Int (0 HP, dead)
-    // R3: GB no target — combat ends. Wait, interceptor died in R2.
-    // Actually damage is accumulated per round then applied. Let me reconsider...
-    // The priority sorts who attacks first, but damage accumulates in damageMap then applies simultaneously
-    // So priority determines target selection order, not damage application order
-    // Both ships attack each round, damage applied simultaneously.
-    // R1: Int deals 5 to GB, GB deals 4 to Int. GB: 10 HP, Int: 4 HP
-    // R2: Int deals 5 to GB, GB deals 4 to Int. GB: 5 HP, Int: 0 HP (dead)
-    // R3: no Int left. Combat ends. GB wins.
-    // Hmm, interceptor doesn't actually beat gunboat 1v1 with these stats...
-    // The spec says "Beats Gunboats (attacks first via speed priority)" — but with simultaneous damage, that's 2 rounds to die vs 3 rounds to kill.
-    // Let's just verify combat happened and check the result
+    // Gunboat (3 ATK) needs 3 rounds to kill Interceptor (8 HP)
+    // Damage applied simultaneously each round.
+    // R1: Int deals 5 to GB, GB deals 3 to Int. GB: 10 HP, Int: 5 HP
+    // R2: Int deals 5 to GB, GB deals 3 to Int. GB: 5 HP, Int: 2 HP
+    // R3: Int deals 5 to GB, GB deals 3 to Int. GB: 0 HP, Int: -1 HP — both die
+    // With ATK=3 the matchup is closer — verify combat resolved
     const p1Ships = engine._militaryShipsByPlayer.get('p1') || [];
     const p2Ships = engine._militaryShipsByPlayer.get('p2') || [];
     // With these exact stats, gunboat survives — that's fine, the advantage is in fleet composition, not pure 1v1
@@ -457,9 +448,9 @@ describe('Corvette variants — combat counter-targeting', () => {
 
     const sys = getFirstColony(engine, 'p1').systemId;
 
-    // Gunboat: 15 HP, 4 ATK
+    // Gunboat: 15 HP, 3 ATK (updated from 4)
     const gunboat = { id: 'gb1', ownerId: 'p1', systemId: sys, targetSystemId: null, path: [],
-      hopProgress: 0, hp: 15, attack: 4, variant: 'gunboat', regen: 0, maxHp: 15 };
+      hopProgress: 0, hp: 15, attack: 3, variant: 'gunboat', regen: 0, maxHp: 15 };
     engine._addMilitaryShip(gunboat);
 
     // Sentinel: 12 HP, 3 ATK, 2 regen
@@ -469,19 +460,10 @@ describe('Corvette variants — combat counter-targeting', () => {
 
     engine._checkFleetCombat();
 
-    // Net damage to sentinel: 4 - 2 regen = 2 net/round. 12/2 = 6 rounds to kill sentinel
-    // Net damage to gunboat: 3/round, 0 regen. 15/3 = 5 rounds to kill gunboat
-    // Gunboat dies first! Actually...
-    // Wait: both take damage simultaneously.
-    // R1: GB takes 3 (12 HP), SN takes 4 (8 HP), SN regens 2 (10 HP)
-    // R2: GB takes 3 (9 HP), SN takes 4 (6 HP), SN regens 2 (8 HP)
-    // R3: GB takes 3 (6 HP), SN takes 4 (4 HP), SN regens 2 (6 HP)
-    // R4: GB takes 3 (3 HP), SN takes 4 (2 HP), SN regens 2 (4 HP)
-    // R5: GB takes 3 (0 HP), SN takes 4 (0 HP) — both die!
-    // Hmm, that's a draw. Sentinel regen is quite strong.
-    // R5: Actually, SN regens after damage: SN 0 HP + 2 regen... no, regen only if hp > 0
-    // Both at 0 HP → both destroyed
-    // Let's just verify the combat resolved
+    // With ATK=3: Net damage to sentinel: 3 - 2 regen = 1 net/round. 12/1 = 12 rounds
+    // Net damage to gunboat: 3/round, 0 regen. 15/3 = 5 rounds
+    // Gunboat dies in ~5 rounds, sentinel survives with regen advantage
+    // Verify combat resolved
     const p1Ships = engine._militaryShipsByPlayer.get('p1') || [];
     const p2Ships = engine._militaryShipsByPlayer.get('p2') || [];
     // Combat happened — verify ships were destroyed
