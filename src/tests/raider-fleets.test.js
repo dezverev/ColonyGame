@@ -388,6 +388,7 @@ describe('NPC Raider Fleets — combat resolution', () => {
       { id: 'd1', type: 'mining', disabled: true, _raiderDisableTick: engine.tickCount + 5 },
       { id: 'd2', type: 'generator' },
     ];
+    engine._raiderDisableTimers.add(colony.id);
 
     // Tick 5 times
     for (let i = 0; i < 5; i++) {
@@ -712,5 +713,72 @@ describe('NPC Raider Fleets — full lifecycle integration', () => {
     // Check events (in _pendingEvents since we call internal methods)
     const defeatEvt = engine._pendingEvents.find(e => e.eventType === 'raiderDefeated');
     assert.ok(defeatEvt);
+  });
+});
+
+describe('NPC Raider Fleets — perf regression', () => {
+  it('edge system cache: second call is instant', () => {
+    const engine = createEngine();
+    // First call computes
+    const edges1 = engine._getEdgeSystems();
+    assert.ok(edges1.length > 0, 'should find edge systems');
+    // Second call should return cached result (same reference)
+    const edges2 = engine._getEdgeSystems();
+    assert.strictEqual(edges1, edges2, 'edge systems should be cached');
+  });
+
+  it('disable timer processing skips when no active timers', () => {
+    const engine = createEngine();
+    assert.strictEqual(engine._raiderDisableTimers.size, 0);
+    // Should return immediately (no colonies scanned)
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 1000; i++) engine._processRaiderDisableTimers();
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(durationMs < 5, `1000 no-op disable timer calls took ${durationMs}ms, expected < 5ms`);
+  });
+
+  it('defense platform construction skips when nothing building', () => {
+    const engine = createEngine();
+    assert.strictEqual(engine._defensePlatformBuilding.size, 0);
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 1000; i++) engine._processDefensePlatformConstruction();
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(durationMs < 5, `1000 no-op construction calls took ${durationMs}ms, expected < 5ms`);
+  });
+
+  it('raider movement skips when no raiders exist', () => {
+    const engine = createEngine();
+    assert.strictEqual(engine._raiders.length, 0);
+    const start = process.hrtime.bigint();
+    for (let i = 0; i < 1000; i++) engine._processRaiderMovement();
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(durationMs < 5, `1000 no-op movement calls took ${durationMs}ms, expected < 5ms`);
+  });
+
+  it('raider serialization does not include path array', () => {
+    const engine = createEngine();
+    engine._raiders.push({
+      id: 'rp1', systemId: 3, targetSystemId: 0,
+      path: [2, 1, 0], hopProgress: 10, hp: 30,
+    });
+    const state = engine.getPlayerState('p1');
+    const raider = state.raiders[0];
+    assert.strictEqual(raider.path, undefined, 'path should not be in serialized state');
+    assert.strictEqual(raider.hopsRemaining, 3, 'hopsRemaining should reflect path length');
+  });
+
+  it('defense platform building set tracks construction lifecycle', () => {
+    const engine = createEngine();
+    const colony = getFirstColony(engine);
+    const state = engine.playerStates.get('p1');
+    state.resources.alloys = 200;
+
+    engine.handleCommand('p1', { type: 'buildDefensePlatform', colonyId: colony.id });
+    assert.ok(engine._defensePlatformBuilding.has(colony.id), 'colony should be in building set');
+
+    for (let i = 0; i < DEFENSE_PLATFORM_BUILD_TIME; i++) {
+      engine._processDefensePlatformConstruction();
+    }
+    assert.ok(!engine._defensePlatformBuilding.has(colony.id), 'colony should be removed from building set after completion');
   });
 });

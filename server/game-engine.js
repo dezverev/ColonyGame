@@ -331,6 +331,9 @@ class GameEngine {
     this._raiders = []; // { id, systemId, targetColonyId, path, hopProgress, hp }
     this._nextRaiderTick = this._randomRaiderInterval(); // first raider spawn
     this._raidersDestroyed = new Map(); // playerId -> count of raiders destroyed (lifetime)
+    this._cachedEdgeSystems = null; // cached galaxy-edge system IDs (topology never changes)
+    this._raiderDisableTimers = new Set(); // colony IDs with active raider disable timers
+    this._defensePlatformBuilding = new Set(); // colony IDs actively building a defense platform
 
     this._initPlayerStates();
 
@@ -847,19 +850,23 @@ class GameEngine {
   }
 
   // Find edge systems (systems with fewer connections — galactic rim)
+  // Cached because galaxy topology never changes after generation
   _getEdgeSystems() {
+    if (this._cachedEdgeSystems) return this._cachedEdgeSystems;
     const adj = this._adjacency;
     const edges = [];
     for (const sys of this.galaxy.systems) {
       const neighbors = adj.get(sys.id) || [];
       if (neighbors.length <= 2) edges.push(sys.id);
     }
-    // Fallback: if no edge systems found, pick any unowned systems
-    if (edges.length === 0) {
-      for (const sys of this.galaxy.systems) {
-        const isOwned = [...this.colonies.values()].some(c => c.systemId === sys.id);
-        if (!isOwned) edges.push(sys.id);
-      }
+    if (edges.length > 0) {
+      this._cachedEdgeSystems = edges; // topology never changes — safe to cache
+      return edges;
+    }
+    // Fallback: if no edge systems found, pick any unowned systems (not cached — ownership changes)
+    for (const sys of this.galaxy.systems) {
+      const isOwned = [...this.colonies.values()].some(c => c.systemId === sys.id);
+      if (!isOwned) edges.push(sys.id);
     }
     return edges;
   }
@@ -951,7 +958,9 @@ class GameEngine {
   }
 
   _processRaiderMovement() {
+    if (this._raiders.length === 0) return;
     const arrivals = [];
+    let anyHopped = false;
     for (const raider of this._raiders) {
       if (!raider.path || raider.path.length === 0) continue;
 
@@ -960,6 +969,7 @@ class GameEngine {
       if (raider.hopProgress >= RAIDER_HOP_TICKS) {
         raider.systemId = raider.path.shift();
         raider.hopProgress = 0;
+        anyHopped = true;
 
         if (raider.path.length === 0) {
           arrivals.push(raider);
@@ -967,8 +977,8 @@ class GameEngine {
       }
     }
 
-    // Mark all players dirty if raiders exist (position updates)
-    if (this._raiders.length > 0 && this.tickCount % 5 === 0) {
+    // Only dirty players when a raider actually moved to a new system
+    if (anyHopped) {
       for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
       this._invalidateStateCache();
     }
@@ -1068,6 +1078,7 @@ class GameEngine {
       d._raiderDisableTick = this.tickCount + RAIDER_DISABLE_TICKS;
       disabledIds.push(d.id);
     }
+    if (toDisable.length > 0) this._raiderDisableTimers.add(colony.id);
 
     // Steal 50 of each resource (don't go below 0)
     if (state) {
@@ -1098,16 +1109,26 @@ class GameEngine {
   }
 
   // Re-enable districts disabled by raiders after their timer expires
+  // Only checks colonies with active disable timers (tracked in _raiderDisableTimers set)
   _processRaiderDisableTimers() {
-    for (const [, colony] of this.colonies) {
+    if (this._raiderDisableTimers.size === 0) return;
+    for (const colonyId of this._raiderDisableTimers) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) { this._raiderDisableTimers.delete(colonyId); continue; }
       let changed = false;
+      let anyRemaining = false;
       for (const d of colony.districts) {
-        if (d._raiderDisableTick && this.tickCount >= d._raiderDisableTick) {
-          d.disabled = false;
-          delete d._raiderDisableTick;
-          changed = true;
+        if (d._raiderDisableTick) {
+          if (this.tickCount >= d._raiderDisableTick) {
+            d.disabled = false;
+            delete d._raiderDisableTick;
+            changed = true;
+          } else {
+            anyRemaining = true;
+          }
         }
       }
+      if (!anyRemaining) this._raiderDisableTimers.delete(colonyId);
       if (changed) {
         this._invalidateColonyCache(colony);
         this._emitEvent('districtEnabled', colony.ownerId, {
@@ -1134,15 +1155,21 @@ class GameEngine {
     }
   }
 
-  // Process defense platform construction (called from _processConstruction area)
+  // Process defense platform construction — only checks colonies actively building
   _processDefensePlatformConstruction() {
-    for (const [, colony] of this.colonies) {
-      if (!colony.defensePlatform || !colony.defensePlatform.building) continue;
+    if (this._defensePlatformBuilding.size === 0) return;
+    for (const colonyId of this._defensePlatformBuilding) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony || !colony.defensePlatform || !colony.defensePlatform.building) {
+        this._defensePlatformBuilding.delete(colonyId);
+        continue;
+      }
       colony.defensePlatform.buildTicksRemaining--;
       this._dirtyPlayers.add(colony.ownerId);
       if (colony.defensePlatform.buildTicksRemaining <= 0) {
         colony.defensePlatform.building = false;
         delete colony.defensePlatform.buildTicksRemaining;
+        this._defensePlatformBuilding.delete(colonyId);
         this._invalidateStateCache();
         this._emitEvent('constructionComplete', colony.ownerId, {
           colonyId: colony.id,
@@ -2940,6 +2967,7 @@ class GameEngine {
           building: true,
           buildTicksRemaining: DEFENSE_PLATFORM_BUILD_TIME,
         };
+        this._defensePlatformBuilding.add(colonyId);
         this._dirtyPlayers.add(playerId);
         this._invalidateStateCache();
         return { ok: true };
@@ -3029,7 +3057,7 @@ class GameEngine {
     // Include raider fleets
     state.raiders = this._raiders.map(r => ({
       id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
-      path: r.path || [], hopProgress: r.hopProgress, hp: r.hp,
+      hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
     }));
     this._cachedState = state;
     return state;
@@ -3116,7 +3144,7 @@ class GameEngine {
     // Include raider fleets (all players see all raiders)
     state.raiders = this._raiders.map(r => ({
       id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
-      path: r.path || [], hopProgress: r.hopProgress, hp: r.hp,
+      hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
     }));
 
     return state;
