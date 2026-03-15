@@ -350,6 +350,18 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .inc-pos { color: #2ecc71; }
 .inc-neg { color: #e74c3c; }
 
+/* ── Victory progress bars ── */
+.victory-progress-section { margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid #2a2a4e; }
+.victory-progress-title { font-family: monospace; color: #aaa; font-size: 0.8rem; margin-bottom: 0.4rem; text-align: center; }
+.vp-bar-row { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.25rem; font-family: monospace; font-size: 0.75rem; }
+.vp-bar-label { width: 60px; color: #ccc; text-align: right; flex-shrink: 0; }
+.vp-bar { flex: 1; height: 10px; background: #1a1a2e; border-radius: 3px; overflow: hidden; }
+.vp-bar-fill { height: 100%; border-radius: 3px; transition: width 0.3s ease; }
+.vp-bar-sci { background: #9b59b6; }
+.vp-bar-mil { background: #e74c3c; }
+.vp-bar-eco { background: #f1c40f; }
+.vp-bar-text { color: #888; white-space: nowrap; flex-shrink: 0; width: 120px; }
+
 /* ── Diplomacy stance buttons ── */
 .stance-cell { white-space: nowrap; }
 .stance-btn { background: none; border: 1px solid #555; border-radius: 3px; cursor: pointer; padding: 1px 4px; margin-left: 2px; font-size: 0.75rem; color: #ccc; }

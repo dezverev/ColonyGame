@@ -1431,7 +1431,7 @@ describe('GameEngine — Per-Player State Filtering', () => {
     // Check per-player payload size
     const json = engine.getPlayerStateJSON(1);
     const sizeKB = json.length / 1024;
-    assert.ok(sizeKB < 6, `Per-player payload is ${sizeKB.toFixed(1)}KB, limit is 6KB`);
+    assert.ok(sizeKB < 7, `Per-player payload is ${sizeKB.toFixed(1)}KB, limit is 7KB`);
   });
 
   it('per-player onTick sends filtered state to each player', () => {

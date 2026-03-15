@@ -46,7 +46,7 @@ function buildAndCompleteCorvette(engine, playerId = 'p1') {
 
 describe('Ship maintenance — constants', () => {
   it('corvette maintenance costs are 1 energy + 1 alloy per month', () => {
-    assert.deepStrictEqual(CORVETTE_MAINTENANCE, { energy: 1, alloys: 1 });
+    assert.deepStrictEqual(CORVETTE_MAINTENANCE, { energy: 2, alloys: 1 });
   });
 
   it('civilian ship maintenance is 1 energy per month', () => {
@@ -85,11 +85,11 @@ describe('Ship maintenance — corvette costs', () => {
       colonyAlloys += production.alloys - consumption.alloys;
     }
 
-    assert.strictEqual(state.resources.energy, 100 + colonyEnergy - 1);
+    assert.strictEqual(state.resources.energy, 100 + colonyEnergy - 2);
     assert.strictEqual(state.resources.alloys, 100 + colonyAlloys - 1);
   });
 
-  it('3 corvettes deduct 3 energy + 3 alloys on monthly tick', () => {
+  it('3 corvettes deduct 6 energy + 3 alloys on monthly tick', () => {
     const engine = createEngine();
     buildAndCompleteCorvette(engine);
     buildAndCompleteCorvette(engine);
@@ -110,7 +110,7 @@ describe('Ship maintenance — corvette costs', () => {
 
     engine._processMonthlyResources();
 
-    assert.strictEqual(state.resources.energy, 100 + colonyEnergy - 3);
+    assert.strictEqual(state.resources.energy, 100 + colonyEnergy - 6);
     assert.strictEqual(state.resources.alloys, 100 + colonyAlloys - 3);
   });
 

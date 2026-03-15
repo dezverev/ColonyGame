@@ -182,7 +182,7 @@ const MAX_CORVETTES = 10;           // max per player
 const FLEET_COMBAT_MAX_ROUNDS = 10; // max rounds per fleet battle
 const FLEET_BATTLE_WON_VP = 5;      // VP per fleet battle won
 const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
-const CORVETTE_MAINTENANCE = { energy: 1, alloys: 1 };  // per base corvette per month
+const CORVETTE_MAINTENANCE = { energy: 2, alloys: 1 };  // per base corvette per month
 const CIVILIAN_SHIP_MAINTENANCE = { energy: 1 };         // per idle colony/science ship per month
 
 // Corvette variants — unlocked by T2 techs, same build cost, 500-tick build time
@@ -299,6 +299,12 @@ const CATALYST_INCIDENT_WINDOW = 100;        // 100-tick response window (10 sec
 const CATALYST_INCIDENT_BOTH_DEESCALATE_VP = 5;  // +5 VP each
 const CATALYST_INCIDENT_ESCALATE_VP = 3;         // +3 VP for sole escalator
 const CATALYST_INCIDENT_HOP_RANGE = 3;           // colonies within 3 hops
+
+// Distinct victory conditions — instant-win checked monthly
+const TOTAL_TECHS = 9;                   // 3 tiers × 3 tracks (all techs in TECH_TREE)
+const MILITARY_VICTORY_OCCUPATIONS = 3;  // occupy 3+ enemy colonies simultaneously
+const ECONOMIC_VICTORY_ALLOYS = 500;     // stockpile 500+ alloys
+const ECONOMIC_VICTORY_TRAITS = 3;       // 3+ active colony personality traits
 
 // Resource gifting
 const GIFT_MIN_AMOUNT = 25;                      // minimum 25 per gift
@@ -4107,6 +4113,7 @@ class GameEngine {
       friendlyCount, mutualFriendlyCount, diplomacyVP,
       precursorVP, precursorOccupiedCount,
       catalystVP,
+      victoryProgress: this._calcVictoryProgress(playerId),
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -4120,6 +4127,71 @@ class GameEngine {
       return this._vpCache.get(playerId);
     }
     return this._calcVPBreakdown(playerId).vp;
+  }
+
+  // Check distinct victory conditions — called monthly
+  _checkVictoryConditions() {
+    if (this._gameOver) return;
+    for (const [playerId, state] of this.playerStates) {
+      // Scientific Victory: complete all 9 techs
+      const techCount = (state.completedTechs || []).length;
+      if (techCount >= TOTAL_TECHS) {
+        this._triggerGameOver({ type: 'scientific', playerId, playerName: state.name });
+        return;
+      }
+
+      // Military Victory: occupy 3+ enemy colonies
+      let occupying = 0;
+      for (const colony of this.colonies.values()) {
+        if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+          occupying++;
+        }
+      }
+      if (occupying >= MILITARY_VICTORY_OCCUPATIONS) {
+        this._triggerGameOver({ type: 'military', playerId, playerName: state.name });
+        return;
+      }
+
+      // Economic Victory: 500+ alloys AND 3+ colony traits
+      let traitCount = 0;
+      const colonyIds = this._playerColonies.get(playerId) || [];
+      for (const colonyId of colonyIds) {
+        const colony = this.colonies.get(colonyId);
+        if (colony && this._calcColonyTrait(colony)) traitCount++;
+      }
+      if (state.resources.alloys >= ECONOMIC_VICTORY_ALLOYS && traitCount >= ECONOMIC_VICTORY_TRAITS) {
+        this._triggerGameOver({ type: 'economic', playerId, playerName: state.name });
+        return;
+      }
+    }
+  }
+
+  // Calculate victory progress for all players (used in serialization)
+  _calcVictoryProgress(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return { scientific: { current: 0, target: TOTAL_TECHS }, military: { current: 0, target: MILITARY_VICTORY_OCCUPATIONS }, economic: { alloys: 0, alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: 0, traitsTarget: ECONOMIC_VICTORY_TRAITS } };
+
+    const techCount = (state.completedTechs || []).length;
+
+    let occupying = 0;
+    for (const colony of this.colonies.values()) {
+      if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+        occupying++;
+      }
+    }
+
+    let traitCount = 0;
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && this._calcColonyTrait(colony)) traitCount++;
+    }
+
+    return {
+      scientific: { current: techCount, target: TOTAL_TECHS },
+      military: { current: occupying, target: MILITARY_VICTORY_OCCUPATIONS },
+      economic: { alloys: Math.floor(state.resources.alloys), alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: traitCount, traitsTarget: ECONOMIC_VICTORY_TRAITS },
+    };
   }
 
   // Process match timer countdown
@@ -4154,7 +4226,8 @@ class GameEngine {
   }
 
   // End the game and determine winner
-  _triggerGameOver() {
+  // victoryInfo: optional { type: 'scientific'|'military'|'economic', playerId, playerName }
+  _triggerGameOver(victoryInfo) {
     if (this._gameOver) return;
     this._gameOver = true;
 
@@ -4172,7 +4245,15 @@ class GameEngine {
 
     // Sort by VP descending
     scores.sort((a, b) => b.vp - a.vp);
-    const winner = scores.length > 0 ? scores[0] : null;
+
+    // Determine winner: instant-win player OR highest VP
+    let winner;
+    if (victoryInfo) {
+      const score = scores.find(s => s.playerId === victoryInfo.playerId);
+      winner = score || scores[0] || null;
+    } else {
+      winner = scores.length > 0 ? scores[0] : null;
+    }
 
     // Compute match duration in seconds (wall clock)
     const matchDurationMs = Date.now() - this._matchStartTime;
@@ -4189,6 +4270,7 @@ class GameEngine {
 
     const gameOverData = {
       winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
+      victoryType: victoryInfo ? victoryInfo.type : 'vp',
       scores,
       finalTick: this.tickCount,
       matchDurationSec,
@@ -4368,6 +4450,7 @@ class GameEngine {
       this._processEdicts();
       this._processInfluenceIncome();
       this._processDefensePlatformRepair();
+      this._checkVictoryConditions();
     }
 
     // Flush events — send per-player event messages
@@ -5400,6 +5483,7 @@ class GameEngine {
       shipsLost: this._shipsLost.get(playerId) || 0,
       diplomacy: this._serializeDiplomacy(playerId),
       underdogBonus: this._calcUnderdogBonus(playerId),
+      victoryProgress: this._calcVictoryProgress(playerId),
       ...mySummary,
     };
 
@@ -5418,6 +5502,7 @@ class GameEngine {
         shipsLost: this._shipsLost.get(p.id) || 0,
         stanceTowardMe: this._getStance(p.id, playerId),
         doctrine: p.doctrine,
+        victoryProgress: this._calcVictoryProgress(p.id),
         ...summary,
       });
     }
@@ -5639,4 +5724,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

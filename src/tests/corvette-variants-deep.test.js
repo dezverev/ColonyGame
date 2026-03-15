@@ -124,7 +124,7 @@ describe('Corvette variants deep — maintenance deduction', () => {
     engine.handleCommand('p1', { type: 'buildCorvette', colonyId: colony.id });
     for (let i = 0; i < CORVETTE_BUILD_TIME; i++) engine.tick();
 
-    // Total military maintenance: 5E + 4A (but not including civilian ships)
+    // Total military maintenance: 6E + 4A (interceptor 1E+0A, gunboat 2E+1A, sentinel 1E+2A, base 2E+1A)
     // Get summary and verify it accounts for maintenance
     engine._summaryCache.delete('p1'); // clear cache
     const summaryWith = engine._getPlayerSummary('p1');
@@ -140,7 +140,7 @@ describe('Corvette variants deep — maintenance deduction', () => {
     const energyDiff = summaryWithout.income.energy - summaryWith.income.energy;
     const alloysDiff = summaryWithout.income.alloys - summaryWith.income.alloys;
 
-    assert.strictEqual(energyDiff, 5, 'energy maintenance should total 5 for mixed fleet');
+    assert.strictEqual(energyDiff, 6, 'energy maintenance should total 6 for mixed fleet');
     assert.strictEqual(alloysDiff, 4, 'alloy maintenance should total 4 for mixed fleet');
   });
 

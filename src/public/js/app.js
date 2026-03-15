@@ -803,7 +803,7 @@
       corvBtn.innerHTML =
         '<div class="build-option-swatch" style="background:#ff4444"></div>' +
         '<div class="build-option-name">Corvette</div>' +
-        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 1⚡ 1🔩/mo</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 2⚡ 1🔩/mo</div>' +
         `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
       corvBtn.addEventListener('click', () => {
         if (corvBtn.classList.contains('disabled')) return;
@@ -1727,6 +1727,21 @@
         `<td class="${(inc.alloys || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.alloys)}</td></tr>`;
     });
     html += '</table>';
+
+    // Victory progress bars (for local player)
+    const me = players.find(p => p.id === gameState.yourId);
+    const vp = me && me.victoryProgress;
+    if (vp) {
+      html += '<div class="victory-progress-section"><div class="victory-progress-title">Victory Paths</div>';
+      const sciPct = Math.min(100, Math.floor(vp.scientific.current / vp.scientific.target * 100));
+      const milPct = Math.min(100, Math.floor(vp.military.current / vp.military.target * 100));
+      const ecoAlloyPct = Math.min(100, Math.floor(vp.economic.alloys / vp.economic.alloysTarget * 100));
+      const ecoTraitPct = Math.min(100, Math.floor(vp.economic.traits / vp.economic.traitsTarget * 100));
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Scientific</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-sci" style="width:${sciPct}%"></div></div><span class="vp-bar-text">${vp.scientific.current}/${vp.scientific.target} techs</span></div>`;
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Military</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-mil" style="width:${milPct}%"></div></div><span class="vp-bar-text">${vp.military.current}/${vp.military.target} occupied</span></div>`;
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Economic</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-eco" style="width:${Math.floor((ecoAlloyPct + ecoTraitPct) / 2)}%"></div></div><span class="vp-bar-text">${vp.economic.alloys}/${vp.economic.alloysTarget} alloys + ${vp.economic.traits}/${vp.economic.traitsTarget} traits</span></div>`;
+      html += '</div>';
+    }
     scoreboardBody.innerHTML = html;
   }
 
@@ -1738,9 +1753,12 @@
     const winner = data.winner;
     const isMe = winner && winner.playerId === (gameState ? gameState.yourId : null);
 
+    const victoryLabels = { scientific: 'Scientific Victory', military: 'Military Victory', economic: 'Economic Victory', vp: 'Victory Points' };
+    const victoryType = data.victoryType || 'vp';
+    const victoryLabel = victoryLabels[victoryType] || 'Victory Points';
     gameOverTitle.textContent = isMe ? 'Victory!' : 'Game Over';
     gameOverWinner.innerHTML = winner
-      ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
+      ? `<div class="game-over-winner-name">${winner.name} wins — ${victoryLabel}${victoryType === 'vp' ? ` (${winner.vp} VP)` : ''}</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
     // Match duration

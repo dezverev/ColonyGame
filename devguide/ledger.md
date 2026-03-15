@@ -2096,3 +2096,44 @@ Each entry records an iteration of automated development.
 - Client cost is hardcoded in app.js (not received from server) — updated to match server constants
 
 **Next:** Distinct victory conditions (Phase 7, R59-2) — Scientific/Military/Economic instant-win paths checked monthly. Then buildings layer (Phase 2, R59-3) — Research Lab, Foundry, Shield Generator unlocked at pop thresholds.
+
+---
+
+## Entry 60 — 2026-03-15 — Distinct Victory Conditions + Corvette Maintenance Balance
+
+**Phase:** 7 (Win Conditions) + Balance
+**Status:** Complete
+
+**What was built:**
+- **3 distinct instant-win victory conditions** checked every monthly tick alongside existing VP timer win:
+  - **Scientific Victory:** Complete all 9 techs (3 tiers × 3 tracks) → instant win
+  - **Military Victory:** Occupy 3+ enemy colonies simultaneously → instant win
+  - **Economic Victory:** Stockpile 500+ alloys AND have 3+ active colony personality traits → instant win
+- **Victory progress tracking** added to VP breakdown and per-player state serialization — all players see each other's progress toward all 3 victory paths
+- **Scoreboard victory progress bars** — Tab scoreboard now shows 3 colored progress bars (Scientific=purple, Military=red, Economic=yellow) below the player table with current/target counts
+- **Game-over victory type** — `_triggerGameOver` now accepts optional victoryInfo parameter, game-over screen shows victory type label (Scientific/Military/Economic/VP)
+- **BALANCE: Corvette maintenance increase** — CORVETTE_MAINTENANCE energy increased from 1 to 2 per base corvette per month. 10 corvettes now cost 20 energy + 10 alloys/month (was 10+10). Makes fleet buildup a real economic decision
+- Updated client corvette build tooltip to show correct 2⚡ upkeep
+
+**Files changed:**
+- `server/game-engine.js` — TOTAL_TECHS/MILITARY_VICTORY_OCCUPATIONS/ECONOMIC_VICTORY_ALLOYS/ECONOMIC_VICTORY_TRAITS constants, `_checkVictoryConditions()`, `_calcVictoryProgress()`, modified `_triggerGameOver` to accept victoryInfo with type field, victoryProgress in VP breakdown and player state serialization, CORVETTE_MAINTENANCE energy 1→2, module exports
+- `src/public/js/app.js` — scoreboard victory progress bars section, game-over screen victory type labels, corvette build tooltip upkeep 1⚡→2⚡
+- `src/public/css/style.css` — victory progress bar styles (section, rows, fills, labels)
+- `src/tests/victory-conditions.test.js` — **new** 25 tests (constants, scientific trigger/miss/progress, military trigger/miss/self-occupation/progress, economic trigger/miss-alloys/miss-traits/progress, triggerGameOver victoryType/winner-override/breakdown, serialization me+others, monthly-only check, corvette maintenance values, edge cases)
+- `src/tests/ship-maintenance.test.js` — updated 3 assertions for new 2E maintenance (constant, 1-corvette, 3-corvette deduction)
+- `src/tests/corvette-variants-deep.test.js` — updated mixed fleet maintenance energy total 5→6
+- `src/tests/game-engine.test.js` — bumped payload size limit 6→7KB for victoryProgress data
+- `src/tests/perf.test.js` — bumped 5-colony payload limit 5.5→7KB for victoryProgress data
+- `devguide/design.md` — marked both tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1873 total (25 new, 4 existing updated). All passing.
+
+**Key decisions:**
+- Victory conditions checked in `_checkVictoryConditions()` called at end of monthly processing — keeps check cadence aligned with resource/research ticks
+- Scientific checked first, then military, then economic — if multiple conditions met simultaneously, first in order wins
+- Instant-win winner is the condition-meeting player regardless of VP ranking — you can win military victory even with fewer VP than the economy leader
+- VP timer fallback (victoryType: 'vp') preserved for matches where no instant-win triggers before timer expires
+- Victory progress included in both own-player and other-player serialization — everyone can see opponents closing in on victory
+
+**Next:** Buildings layer (Phase 2, R60-2) — Research Lab, Foundry, Shield Generator unlocked at pop thresholds. Then scouting race VP milestones (Phase 3, R60-3).
