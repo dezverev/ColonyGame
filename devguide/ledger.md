@@ -1927,3 +1927,38 @@ Each entry records an iteration of automated development.
 **Next:** Resource gifting (Phase 6, R54-2) — `giftResources` command, one-way gifts of 25+ units, 200-tick cooldown, makes friendly stance actionable.
 
 **Next:** Colony ship cost/time reduction (Phase 1, R53) or resource gifting (Phase 6, R53 PRIORITY)
+
+---
+
+## Entry 55 — 2026-03-15 — Resource Gifting + Balance Fixes (Catalyst Windows, T3 Tech Costs)
+
+**Phase:** 6 (Diplomacy & Interaction) + 7 (Events, Polish & Win Conditions)
+**Status:** Complete
+
+**What was built:**
+- **Resource Gifting (Phase 6):** New `giftResources` command: transfer energy, minerals, food, or alloys to another player. Minimum 25 per gift, 200-tick global cooldown per sender. Full validation (resource type, amount, balance, target player). Emits `resourceGift` events to both sender and receiver with direction indicator. Gift button in scoreboard next to each player's stance buttons. Client shows toast notification on send/receive and ticker event for all players.
+- **Catalyst Event Window Widening (Phase 7):** Increased `CATALYST_AUCTION_WINDOW` from 60→120 ticks (6s→12s) and `CATALYST_INCIDENT_WINDOW` from 60→100 ticks (6s→10s) for realistic multiplayer reaction times. Reduced `CATALYST_RUSH_INCOME` from 100→75/month (total reward 1350 vs 1800, still meaningful but not game-warping).
+- **T3 Tech Cost Reduction (Phase 7):** All three T3 techs (Fusion Reactors, Genetic Engineering, Automated Mining) reduced from 1000→800 research cost. At 12 base research/month, T3 now takes ~67 months (11.2 min) instead of 83 months (13.8 min), making Scientific Victory achievable in 20-minute matches with moderate research investment.
+
+**Files changed:**
+- `server/game-engine.js` — 3 new constants (GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES), `_giftCooldowns` tracking in constructor, `giftResources` case in handleCommand, updated CATALYST_AUCTION_WINDOW/CATALYST_INCIDENT_WINDOW/CATALYST_RUSH_INCOME, updated T3 TECH_TREE costs, module.exports updated
+- `server/server.js` — added `giftResources` to command routing
+- `src/public/js/app.js` — `window._giftResources` command helper, gift button in scoreboard, `resourceGift` event handler (toast + ticker), `_formatTickerEvent` case
+- `src/public/css/style.css` — `.stance-btn.stance-gift` styles
+- `src/tests/resource-gifting.test.js` — **new** 26 tests
+- `src/tests/catalyst-events.test.js` — updated 3 constant assertions (auction 120, incident 100, rush income 75)
+- `src/tests/t3-techs-crisis-scaling.test.js` — updated 3 T3 cost assertions (1000→800)
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1703 total (26 new: 3 constants, 5 happy path, 10 validation, 3 cooldown, 4 edge cases; 6 updated existing). All passing (1 pre-existing underdog-bonus flaky test unrelated).
+
+**Key decisions:**
+- Gift cooldown is global per-sender (not per-target) — prevents spamming multiple players rapidly while keeping it simple. 200 ticks = 20 seconds at normal speed.
+- No influence or research gifting — influence is a diplomacy/action currency, research is per-track. Allowing these would break game balance.
+- Integer amounts only — prevents floating-point weirdness in resource tracking.
+- Client uses browser `prompt()` for resource selection and amount — minimal UI investment, functional. Can upgrade to a proper modal later.
+- T3 cost 800 chosen because: at Scholar doctrine (+100% research), players get ~24 research/month, completing T3 in ~33 months (5.5 min). Without Scholar, ~67 months (11.2 min). Sweet spot for 20-min matches.
+- Catalyst windows widened per game-designer R55 feedback — 6s was too tight for multiplayer. 12s auction / 10s incident gives time to read, decide, and act.
+
+**Next:** In-game chat + diplomacy pings (Phase 6, R53-2 PRIORITY) — enable existing chat during gameplay, add ping system. Or science ship expeditions (Phase 3, R54-3) — re-exploration system for idle ships.
