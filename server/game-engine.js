@@ -4847,7 +4847,9 @@ class GameEngine {
     const { production, consumption } = this._calcProduction(c);
     const queueArr = [];
     for (const q of c.buildQueue) {
-      queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
+      const entry = { id: q.id, type: q.type, ticksRemaining: q.ticksRemaining };
+      if (q.variant) entry.variant = q.variant;
+      queueArr.push(entry);
     }
     const housing = this._calcHousing(c);
     const foodSurplus = production.food - (consumption.food || 0);
