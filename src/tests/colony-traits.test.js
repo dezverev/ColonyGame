@@ -273,7 +273,7 @@ describe('VP bonus for colony traits', () => {
 
     const breakdown = engine._calcVPBreakdown(1);
     assert.strictEqual(breakdown.traits, 1);
-    assert.strictEqual(breakdown.traitsVP, 5);
+    assert.strictEqual(breakdown.traitsVP, 10);
   });
 
   it('should return 0 traitsVP with no traits', () => {
@@ -301,8 +301,8 @@ describe('VP bonus for colony traits', () => {
     engine._invalidateStateCache();
 
     const breakdown = engine._calcVPBreakdown(1);
-    // VP = pops×2(0) + districts(4) + alloys/25(0) + research/50(0) + techVP(0) + traitsVP(5) = 9
-    assert.strictEqual(breakdown.vp, 9);
+    // VP = popVP(0) + districts(4) + alloys/25(0) + research/50(0) + techVP(0) + traitsVP(10) = 14
+    assert.strictEqual(breakdown.vp, 14);
   });
 
   it('should include traitsVP in gameOver breakdown', () => {
@@ -324,7 +324,7 @@ describe('VP bonus for colony traits', () => {
     assert.ok(gameOverData);
     const score = gameOverData.scores[0];
     assert.strictEqual(score.breakdown.traits, 1);
-    assert.strictEqual(score.breakdown.traitsVP, 5);
+    assert.strictEqual(score.breakdown.traitsVP, 10);
   });
 });
 
@@ -376,6 +376,7 @@ describe('Colony trait serialization', () => {
 describe('colonyTraitEarned event', () => {
   it('should emit event when district completion earns a trait', () => {
     const engine = makeEngine();
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = getFirstColony(engine, 1);
     colony.districts = [];
     colony.planet.type = 'barren';

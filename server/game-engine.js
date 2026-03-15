@@ -36,6 +36,16 @@ const PLANET_BONUSES = {
   arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
 };
 
+// Procedural colony names by planet type (8-10 per type)
+const COLONY_NAMES = {
+  continental: ['New Terra', 'Verdania', 'Haven Prime', 'Greenreach', 'Temperate Landing', 'Concordia', 'Meadowfall', 'Gaia Station', 'Heartland', 'Equinox'],
+  ocean:       ['Tidecrest', 'Pelagius', 'Deepreach', 'Aquara', 'Wavecrest', 'Marinus', 'Thalassa', 'Coral Haven', 'Riptide', 'Abyssal'],
+  tropical:    ['Verdant Isle', 'Canopy Prime', 'Emerald Haven', 'Monsoon Landing', 'Jungleheart', 'Tropica', 'Palmshade', 'Viridian', 'Fernfall', 'Lushwater'],
+  arctic:      ['New Helsinki', 'Frostheim', 'Boreas Station', 'Glacial Reach', 'Tundra Prime', 'Icefall', 'Crystalpeak', 'Winterhold', 'Snowbound', 'Polaris'],
+  desert:      ['Dusthaven', 'Sunward', 'Dune Prime', 'Sandreach', 'Scorchfield', 'Mirage Station', 'Aridus', 'Sunstone', 'Drywind', 'Oasis Landing'],
+  arid:        ['Dryhaven', 'Rustfield', 'Mesa Prime', 'Steppereach', 'Ashwind', 'Redstone Landing', 'Dustwalker', 'Thornfield', 'Crackland', 'Ironflat'],
+};
+
 // Colony personality traits: 4+ districts of same type earns a trait
 // Only one trait per colony (highest count wins, ties broken by order below)
 const COLONY_TRAITS = {
@@ -115,6 +125,169 @@ const CRISIS_TYPES = {
 
 const CRISIS_TYPE_KEYS = Object.keys(CRISIS_TYPES);
 
+// Edict definitions: empire-wide temporary bonuses that spend influence
+const EDICT_DEFS = {
+  mineralRush: {
+    name: 'Mineral Rush',
+    description: '+50% mining output for 5 months',
+    cost: 50,
+    duration: 5, // months
+    effect: { type: 'productionBonus', resource: 'minerals', multiplier: 1.5 },
+  },
+  populationDrive: {
+    name: 'Population Drive',
+    description: '+100% pop growth speed for 5 months',
+    cost: 75,
+    duration: 5,
+    effect: { type: 'growthBonus', multiplier: 0.5 }, // halves growth ticks = double speed
+  },
+  researchGrant: {
+    name: 'Research Grant',
+    description: '+50% research output for 5 months',
+    cost: 50,
+    duration: 5,
+    effect: { type: 'productionBonus', resource: 'research', multiplier: 1.5 },
+  },
+  emergencyReserves: {
+    name: 'Emergency Reserves',
+    description: 'Instantly grants +100 energy, +100 minerals, +100 food',
+    cost: 25,
+    duration: 0, // instant — no ongoing effect
+    effect: { type: 'instant', grants: { energy: 100, minerals: 100, food: 100 } },
+  },
+};
+
+const INFLUENCE_BASE_INCOME = 2;  // +2 influence/colony/month (capital building)
+const INFLUENCE_TRAIT_INCOME = 1; // +1 influence/month per colony with a personality trait
+const INFLUENCE_CAP = 200;        // Max influence stockpile
+
+// All production resource keys — hoisted to avoid per-colony Object.keys() allocation
+const PRODUCTION_RESOURCES = ['energy', 'minerals', 'food', 'alloys', 'physics', 'society', 'engineering'];
+
+// Scarcity season constants
+const SCARCITY_RESOURCES = ['energy', 'minerals', 'food']; // commodity resources only
+const SCARCITY_MIN_INTERVAL = 800;   // minimum ticks between scarcity seasons
+const SCARCITY_MAX_INTERVAL = 1200;  // maximum ticks between scarcity seasons
+const SCARCITY_DURATION = 300;       // 30 seconds at 10Hz
+const SCARCITY_WARNING_TICKS = 100;  // 10 seconds advance warning
+const SCARCITY_MULTIPLIER = 0.70;    // -30% production during scarcity
+
+// Corvette (military ship) constants
+const CORVETTE_COST = { minerals: 100, alloys: 50 };
+const CORVETTE_BUILD_TIME = 400;     // 40 seconds at 10Hz
+const CORVETTE_HOP_TICKS = 40;      // 4 seconds per hyperlane hop
+const CORVETTE_HP = 10;
+const CORVETTE_ATTACK = 3;
+const MAX_CORVETTES = 10;           // max per player
+const FLEET_COMBAT_MAX_ROUNDS = 10; // max rounds per fleet battle
+const FLEET_BATTLE_WON_VP = 5;      // VP per fleet battle won
+const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
+const CORVETTE_MAINTENANCE = { energy: 1, alloys: 1 };  // per base corvette per month
+const CIVILIAN_SHIP_MAINTENANCE = { energy: 1 };         // per idle colony/science ship per month
+
+// Corvette variants — unlocked by T2 techs, same build cost, 500-tick build time
+const CORVETTE_VARIANT_BUILD_TIME = 500; // 50 seconds at 10Hz (vs 400 for base)
+const CORVETTE_VARIANTS = {
+  interceptor: {
+    name: 'Interceptor',
+    hp: 8, attack: 5, hopTicks: 30, regen: 0,
+    requiredTech: 'advanced_reactors',  // Physics T2
+    maintenance: { energy: 1, alloys: 0 },
+    priority: 3, // attacks first in combat (highest priority)
+    counters: 'gunboat',   // targets gunboats first
+  },
+  gunboat: {
+    name: 'Gunboat',
+    hp: 15, attack: 3, hopTicks: 50, regen: 0,
+    requiredTech: 'deep_mining',        // Engineering T2
+    maintenance: { energy: 2, alloys: 1 },
+    priority: 1, // attacks last (lowest priority)
+    counters: 'sentinel',  // targets sentinels first
+  },
+  sentinel: {
+    name: 'Sentinel',
+    hp: 12, attack: 3, hopTicks: 40, regen: 2,
+    requiredTech: 'gene_crops',         // Society T2
+    maintenance: { energy: 1, alloys: 2 },
+    priority: 2, // attacks second
+    counters: 'interceptor', // targets interceptors first
+  },
+};
+const MAINTENANCE_DAMAGE = 2;       // HP lost per corvette when maintenance unpaid
+const OCCUPATION_TICKS = 300;       // 30 seconds to occupy a colony (with corvettes present)
+const OCCUPATION_PRODUCTION_MULT = 0.5; // occupied colonies produce at 50%
+const OCCUPATION_ATTACKER_VP = 3;   // VP per occupied colony for attacker
+const OCCUPATION_DEFENDER_VP = -5;  // VP penalty per occupied colony for defender
+
+// Doctrine choice at game start — 3 asymmetric starting doctrines
+const DOCTRINE_SELECTION_TICKS = 300; // 30 seconds at 10Hz
+const DOCTRINE_DEFS = {
+  industrialist: {
+    name: 'Industrialist',
+    description: '+25% Mining and Industrial output, +1 starting Mining district, -10% research output',
+    productionBonus: { mining: 0.25, industrial: 0.25 },
+    productionPenalty: { research: -0.10 },
+    startingBonus: { extraDistrict: 'mining' },
+  },
+  scholar: {
+    name: 'Scholar',
+    description: '+25% Research output, T1 research 33% complete, -10% mineral output',
+    productionBonus: { research: 0.25 },
+    productionPenalty: { mining: -0.10 },
+    startingBonus: { researchHead: 50 }, // set T1 research progress to 50 (33% of 150)
+  },
+  expansionist: {
+    name: 'Expansionist',
+    description: 'Colony ships -25% cost/time, +2 starting pops, -10% alloy output',
+    productionBonus: {},
+    productionPenalty: { industrial: -0.10 },
+    startingBonus: { extraPops: 2 },
+    colonyShipCostMult: 0.75,
+    colonyShipTimeMult: 0.75,
+  },
+};
+
+// Diplomatic stance constants
+const DIPLOMACY_STANCES = { NEUTRAL: 'neutral', HOSTILE: 'hostile', FRIENDLY: 'friendly' };
+const DIPLOMACY_INFLUENCE_COST = 25;   // influence cost to change stance
+const DIPLOMACY_COOLDOWN_TICKS = 600;  // 60 seconds cooldown between changes toward same player
+const FRIENDLY_PRODUCTION_BONUS = 0.10; // +10% production on colonies near friendly player
+const FRIENDLY_HOP_RANGE = 3;          // max BFS hops for friendly production bonus
+const FRIENDLY_VP = 5;                 // VP per friendly relationship at game end
+const MUTUAL_FRIENDLY_VP = 10;         // VP if both players are friendly (replaces single)
+
+// NPC raider fleet constants
+const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
+const RAIDER_MAX_INTERVAL = 3000;   // maximum ticks between raider spawns (~5 min)
+const RAIDER_HOP_TICKS = 40;        // 4 seconds per hyperlane hop
+const RAIDER_HP = 30;
+const RAIDER_ATTACK = 8;            // damage per combat tick
+const RAIDER_COMBAT_TICKS = 5;      // combat resolves over 5 ticks
+const DEFENSE_PLATFORM_COST = { alloys: 100 };
+const DEFENSE_PLATFORM_BUILD_TIME = 200; // 20 seconds
+const DEFENSE_PLATFORM_MAX_HP = 50;
+const DEFENSE_PLATFORM_ATTACK = 15;  // damage per combat tick
+const DEFENSE_PLATFORM_REPAIR_RATE = 10; // HP repaired per month
+const RAIDER_DISABLE_TICKS = 300;    // districts disabled for 30 seconds on raid
+const RAIDER_RESOURCE_STOLEN = 50;   // 50 of each resource stolen on raid
+const RAIDER_DESTROY_VP = 5;         // +5 VP per raider destroyed
+
+// Endgame crisis constants
+const ENDGAME_CRISIS_TRIGGER = 0.75;     // triggers at 75% of match timer elapsed
+const ENDGAME_CRISIS_WARNING_TICKS = 100; // 10-second advance warning
+const GALACTIC_STORM_MULTIPLIER = 0.75;  // -25% all production
+const PRECURSOR_HP = 60;
+const PRECURSOR_ATTACK = 15;
+const PRECURSOR_HOP_TICKS = 30;          // 3 seconds per hop (faster than raiders)
+const PRECURSOR_COMBAT_TICKS = 8;        // more combat rounds than raiders
+const PRECURSOR_DESTROY_VP = 15;         // +15 VP for destroying precursor fleet
+const PRECURSOR_OCCUPY_VP = -5;          // -5 VP if precursor occupies your colony
+
+// Underdog catch-up mechanics
+const UNDERDOG_BONUS_PER_COLONY = 0.15;   // +15% production per colony gap vs leader
+const UNDERDOG_BONUS_CAP = 0.45;          // max +45% (3 colony gap)
+const UNDERDOG_TECH_DISCOUNT = 0.15;      // -15% tech cost per player who already completed it
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -130,7 +303,7 @@ const SPEED_INTERVALS = {
 const SPEED_LABELS = { 1: '0.5x', 2: '1x', 3: '2x', 4: '3x', 5: '5x' };
 const DEFAULT_SPEED = 2;
 
-// Mini tech tree: 2 tiers × 3 tracks — research costs tuned for 20-minute matches
+// Mini tech tree: 3 tiers × 3 tracks — research costs tuned for 20-minute matches
 const TECH_TREE = {
   improved_power_plants: {
     track: 'physics', tier: 1,
@@ -180,6 +353,30 @@ const TECH_TREE = {
     effect: { type: 'districtBonus', district: 'mining', multiplier: 1.5 },
     requires: 'improved_mining',
   },
+  fusion_reactors: {
+    track: 'physics', tier: 3,
+    name: 'Fusion Reactors',
+    description: '+100% Generator output, generators produce +1 alloy',
+    cost: 1000,
+    effect: { type: 'districtBonus', district: 'generator', multiplier: 2.0, alloysBonus: 1 },
+    requires: 'advanced_reactors',
+  },
+  genetic_engineering: {
+    track: 'society', tier: 3,
+    name: 'Genetic Engineering',
+    description: '+100% Agriculture output, pop growth halved',
+    cost: 1000,
+    effect: { type: 'districtBonusAndGrowth', district: 'agriculture', multiplier: 2.0, growthMultiplier: 0.5 },
+    requires: 'gene_crops',
+  },
+  automated_mining: {
+    track: 'engineering', tier: 3,
+    name: 'Automated Mining',
+    description: '+100% Mining output, mining costs 0 jobs',
+    cost: 1000,
+    effect: { type: 'districtBonus', district: 'mining', multiplier: 2.0, jobOverride: 0 },
+    requires: 'deep_mining',
+  },
 };
 
 // Pop growth thresholds: food surplus -> ticks per new pop
@@ -194,11 +391,18 @@ class GameEngine {
     this.tickInterval = null;
     this.tickCount = 0;
     this._idCounter = 0;
+    this._usedColonyNames = new Set(); // track used procedural names to avoid duplicates
     this.playerStates = new Map();
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
+    this._colonyShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
     this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._scienceShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
+    this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
+    this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
+    this._militaryShipsById = new Map(); // shipId -> ship — O(1) find by ID
+    this._militaryShipsBySystem = new Map(); // systemId -> ship[] — O(1) combat/presence checks
     this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
@@ -214,6 +418,8 @@ class GameEngine {
     this._summaryCache = new Map(); // playerId -> summary, tick-scoped
     this._summaryCacheTick = -1;
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
+    this._traitBonusesCache = new Map(); // playerId -> bonuses — cleared on colony trait change
+    this._cachedShipData = null; // cached serialized ship arrays (shared across all players)
     this._gameOver = false; // true after game ends
 
     // Game speed & pause
@@ -224,6 +430,7 @@ class GameEngine {
     // Match timer: minutes from room settings, 0 = unlimited
     const matchMinutes = Number(room.matchTimer) || 0;
     this._matchTicksRemaining = matchMinutes > 0 ? matchMinutes * 60 * (options.tickRate || 10) : 0;
+    this._matchTicksTotal = this._matchTicksRemaining; // initial total for endgame crisis timing
     this._matchTimerEnabled = matchMinutes > 0;
     this._warned2min = false;
     this._warned30sec = false;
@@ -236,6 +443,39 @@ class GameEngine {
 
     // Colony crisis tracking — crisisState stored on colony objects, nextCrisisTick for scheduling
     this._crisisRng = 0; // simple counter for deterministic-ish crisis type picking
+
+    // Scarcity season tracking
+    this._activeScarcity = null; // { resource, ticksRemaining } when active
+    this._lastScarcityResource = null; // prevent same resource twice in a row
+    this._nextScarcityTick = this._randomScarcityInterval(); // first scarcity scheduled
+    this._scarcityWarned = false; // true after warning broadcast, before scarcity starts
+
+    // NPC raider fleet tracking
+    this._raiders = []; // { id, systemId, targetColonyId, path, hopProgress, hp }
+    this._nextRaiderTick = this._randomRaiderInterval(); // first raider spawn
+    this._raidersDestroyed = new Map(); // playerId -> count of raiders destroyed (lifetime)
+    this._cachedEdgeSystems = null; // cached galaxy-edge system IDs (topology never changes)
+    this._raiderDisableTimers = new Set(); // colony IDs with active raider disable timers
+    this._defensePlatformBuilding = new Set(); // colony IDs actively building a defense platform
+
+    // Doctrine selection phase — 30-second timer at game start
+    this._doctrinePhase = true;     // true while doctrine selection is active
+    this._doctrineDeadlineTick = DOCTRINE_SELECTION_TICKS; // auto-assign at this tick
+
+    // Fleet combat tracking
+    this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
+    this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
+
+    // Endgame crisis tracking
+    this._endgameCrisis = null;      // null | { type: 'galacticStorm' | 'precursorAwakening', triggered: true }
+    this._endgameCrisisWarned = false;
+    this._endgameCrisisTriggered = false;
+    // Pre-compute trigger threshold (constant after construction)
+    this._endgameCrisisTriggerTicks = this._matchTimerEnabled
+      ? Math.floor(this._matchTicksTotal * (1 - ENDGAME_CRISIS_TRIGGER)) : 0;
+    this._precursorFleet = null;     // { id, systemId, targetSystemId, path, hopProgress, hp, attack }
+    this._precursorDestroyedBy = null; // playerId who destroyed precursor fleet
+    this._precursorOccupiedColonies = new Set(); // colony IDs occupied by precursor
 
     this._initPlayerStates();
 
@@ -260,6 +500,22 @@ class GameEngine {
     return `e${++this._idCounter}`;
   }
 
+  _generateColonyName(planetType) {
+    const names = COLONY_NAMES[planetType] || COLONY_NAMES.continental;
+    for (let i = 0; i < names.length; i++) {
+      if (!this._usedColonyNames.has(names[i])) {
+        this._usedColonyNames.add(names[i]);
+        return names[i];
+      }
+    }
+    // All names used — fallback with numeric suffix
+    let n = 1;
+    while (this._usedColonyNames.has(`Colony ${planetType}-${n}`)) n++;
+    const fallback = `Colony ${planetType}-${n}`;
+    this._usedColonyNames.add(fallback);
+    return fallback;
+  }
+
   _initPlayerStates() {
     let colorIndex = 0;
     for (const [playerId, player] of this.room.players) {
@@ -278,8 +534,99 @@ class GameEngine {
         currentResearch: { physics: null, society: null, engineering: null },
         researchProgress: {},
         completedTechs: [],
+        doctrine: null,    // chosen doctrine type string or null (pending selection)
+        activeEdict: null, // { type, monthsRemaining } or null
+        diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
+        pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
       });
     }
+  }
+
+  // Get stance of player toward target (defaults to neutral)
+  _getStance(playerId, targetPlayerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || !state.diplomacy[targetPlayerId]) return DIPLOMACY_STANCES.NEUTRAL;
+    return state.diplomacy[targetPlayerId].stance;
+  }
+
+  // Check if two players are mutually hostile (either side declared hostile makes both hostile)
+  _areHostile(playerA, playerB) {
+    return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.HOSTILE ||
+           this._getStance(playerB, playerA) === DIPLOMACY_STANCES.HOSTILE;
+  }
+
+  // Check if two players are mutually friendly (both sides must be friendly)
+  _areMutuallyFriendly(playerA, playerB) {
+    return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.FRIENDLY &&
+           this._getStance(playerB, playerA) === DIPLOMACY_STANCES.FRIENDLY;
+  }
+
+  // Calculate underdog production bonus for a player based on colony gap vs leader
+  // Returns multiplier (e.g., 1.15 for +15%, 1.45 for +45% cap). Returns 1.0 if no bonus.
+  _calcUnderdogBonus(playerId) {
+    // Only active in 2+ player games
+    if (this.playerStates.size < 2) return 1.0;
+    let maxColonies = 0;
+    let playerColonies = 0;
+    for (const [pid] of this.playerStates) {
+      const count = (this._playerColonies.get(pid) || []).length;
+      if (count > maxColonies) maxColonies = count;
+      if (pid === playerId) playerColonies = count;
+    }
+    const gap = maxColonies - playerColonies;
+    if (gap <= 0) return 1.0;
+    const bonus = Math.min(gap * UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP);
+    return 1 + bonus;
+  }
+
+  // Calculate tech cost discount based on how many other players already completed a tech
+  _calcTechDiscount(techId) {
+    let completedCount = 0;
+    for (const [, state] of this.playerStates) {
+      if (state.completedTechs && state.completedTechs.includes(techId)) {
+        completedCount++;
+      }
+    }
+    return Math.max(0, 1 - completedCount * UNDERDOG_TECH_DISCOUNT);
+  }
+
+  // Check if colony has a friendly player's colony within N hops (BFS)
+  _hasFriendlyColonyNearby(colony) {
+    if (!this._adjacency) return false;
+    const ownerId = colony.ownerId;
+    // Build a set of systems where friendly players have colonies (O(friendColonies) total)
+    const friendlySystems = new Set();
+    for (const [pid] of this.playerStates) {
+      if (pid === ownerId) continue;
+      if (!this._areMutuallyFriendly(ownerId, pid)) continue;
+      const friendColonies = this._playerColonies.get(pid);
+      if (!friendColonies) continue;
+      for (const cId of friendColonies) {
+        const c = this.colonies.get(cId);
+        if (c) friendlySystems.add(c.systemId);
+      }
+    }
+    if (friendlySystems.size === 0) return false;
+
+    // BFS from colony's system up to FRIENDLY_HOP_RANGE hops — O(1) lookup per visited system
+    const visited = new Set();
+    let frontier = [colony.systemId];
+    visited.add(colony.systemId);
+    for (let hop = 0; hop < FRIENDLY_HOP_RANGE; hop++) {
+      const next = [];
+      for (const sysId of frontier) {
+        const neighbors = this._adjacency[sysId];
+        if (!neighbors) continue;
+        for (const nId of neighbors) {
+          if (visited.has(nId)) continue;
+          visited.add(nId);
+          next.push(nId);
+          if (friendlySystems.has(nId)) return true;
+        }
+      }
+      frontier = next;
+    }
+    return false;
   }
 
   _initStartingColonies() {
@@ -302,7 +649,8 @@ class GameEngine {
         }
       }
 
-      const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
+      const colonyName = this._generateColonyName(planet.type);
+      const colony = this._createColony(playerId, colonyName, planet, systemId);
       colony.isStartingColony = true;
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
@@ -310,6 +658,69 @@ class GameEngine {
       this._addBuiltDistrict(colony, 'agriculture');
       this._addBuiltDistrict(colony, 'agriculture');
     }
+  }
+
+  // Apply starting bonuses when a player selects (or is auto-assigned) a doctrine
+  _applyDoctrineStartingBonus(playerId, doctrineType) {
+    const def = DOCTRINE_DEFS[doctrineType];
+    if (!def || !def.startingBonus) return;
+
+    const bonus = def.startingBonus;
+
+    // Industrialist: +1 extra mining district on starting colony
+    if (bonus.extraDistrict) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (colonyIds && colonyIds.length > 0) {
+        const colony = this.colonies.get(colonyIds[0]);
+        if (colony && colony.districts.length < colony.planet.size) {
+          this._addBuiltDistrict(colony, bonus.extraDistrict);
+          this._invalidateColonyCache(colony);
+        }
+      }
+    }
+
+    // Scholar: T1 research 33% complete (progress = 50 out of 150 cost)
+    if (bonus.researchHead) {
+      const state = this.playerStates.get(playerId);
+      const t1Techs = ['improved_power_plants', 'frontier_medicine', 'improved_mining'];
+      for (const techId of t1Techs) {
+        if (!state.researchProgress[techId]) {
+          state.researchProgress[techId] = bonus.researchHead;
+        }
+      }
+    }
+
+    // Expansionist: +2 starting pops
+    if (bonus.extraPops) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (colonyIds && colonyIds.length > 0) {
+        const colony = this.colonies.get(colonyIds[0]);
+        if (colony) {
+          colony.pops += bonus.extraPops;
+          this._invalidateColonyCache(colony);
+        }
+      }
+    }
+  }
+
+  // Process doctrine selection phase — auto-assign random doctrine when timer expires
+  _processDoctrinePhase() {
+    if (!this._doctrinePhase) return;
+    if (this.tickCount < this._doctrineDeadlineTick) return;
+
+    // Timer expired — auto-assign random doctrine to players who haven't chosen
+    const doctrineTypes = Object.keys(DOCTRINE_DEFS);
+    for (const [playerId, state] of this.playerStates) {
+      if (state.doctrine !== null) continue;
+      const randomType = doctrineTypes[Math.floor(Math.random() * doctrineTypes.length)];
+      state.doctrine = randomType;
+      this._applyDoctrineStartingBonus(playerId, randomType);
+      this._emitEvent('doctrineAutoAssigned', playerId, { doctrine: randomType, name: DOCTRINE_DEFS[randomType].name });
+      this._dirtyPlayers.add(playerId);
+    }
+    this._doctrinePhase = false;
+    this._invalidateProductionCaches();
+    this._invalidateStateCache();
   }
 
   _createColony(ownerId, name, planet, systemId) {
@@ -332,6 +743,9 @@ class GameEngine {
       growthProgress: 0,           // ticks accumulated toward next pop
       crisisState: null,           // active crisis: { type, ticksRemaining, resolved, disabledIds, quarantineTicks, strikeTicks, energyBoostTicks }
       nextCrisisTick: 0,           // tick when next crisis can occur (set on colony creation)
+      defensePlatform: null,       // { hp, maxHp, building } — null until built, building=true while under construction
+      occupiedBy: null,            // playerId of occupying player, null if unoccupied
+      occupationProgress: 0,       // ticks progressed toward occupation (0 to OCCUPATION_TICKS)
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
@@ -372,6 +786,7 @@ class GameEngine {
     this._cachedState = null;
     this._cachedStateJSON = null;
     this._cachedPlayerJSON.clear();
+    this._cachedShipData = null;
   }
 
   _invalidateColonyCache(colony) {
@@ -379,6 +794,7 @@ class GameEngine {
     colony._cachedJobs = null;
     colony._cachedProduction = null;
     colony._cachedTrait = undefined; // undefined = not computed, null = no trait
+    this._traitBonusesCache.delete(colony.ownerId); // empire-wide trait bonuses depend on colony traits
     this._dirtyPlayers.add(colony.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
@@ -388,11 +804,21 @@ class GameEngine {
   // Invalidate production caches for ALL colonies of a player.
   // Needed when trait bonuses change — they're empire-wide and affect all colonies.
   _invalidatePlayerProductionCaches(playerId) {
+    this._traitBonusesCache.delete(playerId);
     const colonyIds = this._playerColonies.get(playerId) || [];
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (colony) colony._cachedProduction = null;
     }
+  }
+
+  // Invalidate production caches for ALL colonies across ALL players.
+  // Needed when diplomatic stance changes affect production bonuses.
+  _invalidateProductionCaches() {
+    for (const colony of this.colonies.values()) {
+      colony._cachedProduction = null;
+    }
+    this._summaryCacheTick = -1;
   }
 
   // Count total districts (built + in queue)
@@ -416,11 +842,16 @@ class GameEngine {
   // Calculate jobs provided by districts (cached)
   _calcJobs(colony) {
     if (colony._cachedJobs !== null) return colony._cachedJobs;
+    const playerState = this.playerStates.get(colony.ownerId);
+    const techMods = this._getTechModifiers(playerState);
     let jobs = 0;
     for (const d of colony.districts) {
       if (d.disabled) continue; // disabled districts provide no jobs
       const def = DISTRICT_DEFS[d.type];
-      if (def) jobs += def.jobs;
+      if (!def) continue;
+      // T3 Automated Mining: mining districts cost 0 jobs
+      const jobCount = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
+      jobs += jobCount;
     }
     colony._cachedJobs = jobs;
     return jobs;
@@ -456,7 +887,10 @@ class GameEngine {
 
   // Calculate empire-wide trait bonuses for a player (sum across all colonies)
   // Returns { resource: multiplier } e.g. { alloys: 0.20 } for 2 Forge Worlds
+  // Cached per player — invalidated when any colony's trait changes (_invalidateColonyCache)
   _calcTraitBonuses(playerId) {
+    const cached = this._traitBonusesCache.get(playerId);
+    if (cached) return cached;
     const colonyIds = this._playerColonies.get(playerId) || [];
     const bonuses = {};
     for (const colonyId of colonyIds) {
@@ -468,6 +902,7 @@ class GameEngine {
         bonuses[resource] = (bonuses[resource] || 0) + amount;
       }
     }
+    this._traitBonusesCache.set(playerId, bonuses);
     return bonuses;
   }
 
@@ -488,6 +923,7 @@ class GameEngine {
     const planetBonus = PLANET_BONUSES[colony.planet.type] || null;
 
     // Assign pops to districts in order — each working district needs 1 pop
+    // (unless tech overrides jobs to 0, e.g., Automated Mining)
     let assignedPops = 0;
     for (const d of colony.districts) {
       const def = DISTRICT_DEFS[d.type];
@@ -496,20 +932,33 @@ class GameEngine {
       // Disabled districts produce nothing, consume nothing, provide no jobs
       if (d.disabled) continue;
 
-      // Jobless districts (e.g., housing) still consume resources
-      if (def.jobs === 0) {
+      // Effective job cost (T3 Automated Mining makes mining districts cost 0 jobs)
+      const effectiveJobs = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
+
+      // Jobless districts (e.g., housing, or districts with tech job override) still consume resources
+      if (effectiveJobs === 0 && def.jobs === 0) {
+        // Naturally jobless (housing) — consume only, no production
         for (const [resource, amount] of Object.entries(def.consumes)) {
           consumption[resource] = (consumption[resource] || 0) + amount;
         }
         continue;
       }
 
-      if (assignedPops >= workingPops) break;
-      assignedPops++;
+      // Check if this district needs a pop to work
+      if (effectiveJobs > 0) {
+        if (assignedPops >= workingPops) break;
+        assignedPops++;
+      }
+      // effectiveJobs === 0 but def.jobs > 0 means tech override — produces without consuming a pop
 
       const districtMod = techMods.district[d.type] || 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
         production[resource] = (production[resource] || 0) + (amount * districtMod);
+      }
+      // T3 Fusion Reactors: generators produce bonus alloys per district
+      const alloysExtra = techMods.alloysBonus[d.type];
+      if (alloysExtra) {
+        production.alloys = (production.alloys || 0) + alloysExtra;
       }
       // Planet type signature bonuses (additive, after tech modifier)
       const districtBonus = planetBonus && planetBonus[d.type];
@@ -540,9 +989,110 @@ class GameEngine {
       }
     }
 
+    // Edict production bonuses (multiplicative, after trait bonuses)
+    const playerEdict = this.playerStates.get(colony.ownerId)?.activeEdict;
+    if (playerEdict) {
+      const edictDef = EDICT_DEFS[playerEdict.type];
+      if (edictDef && edictDef.effect.type === 'productionBonus') {
+        if (edictDef.effect.resource === 'minerals' && production.minerals > 0) {
+          production.minerals = Math.round(production.minerals * edictDef.effect.multiplier * 100) / 100;
+        } else if (edictDef.effect.resource === 'research') {
+          if (production.physics > 0) production.physics = Math.round(production.physics * edictDef.effect.multiplier * 100) / 100;
+          if (production.society > 0) production.society = Math.round(production.society * edictDef.effect.multiplier * 100) / 100;
+          if (production.engineering > 0) production.engineering = Math.round(production.engineering * edictDef.effect.multiplier * 100) / 100;
+        }
+      }
+    }
+
+    // Doctrine production modifiers (multiplicative, after edict bonuses)
+    if (playerState && playerState.doctrine) {
+      const docDef = DOCTRINE_DEFS[playerState.doctrine];
+      if (docDef) {
+        // Apply bonuses: +25% to matching district types
+        for (const [distType, bonus] of Object.entries(docDef.productionBonus)) {
+          if (distType === 'research') {
+            // Research bonus applies to all 3 research resources
+            if (production.physics > 0) production.physics = Math.round(production.physics * (1 + bonus) * 100) / 100;
+            if (production.society > 0) production.society = Math.round(production.society * (1 + bonus) * 100) / 100;
+            if (production.engineering > 0) production.engineering = Math.round(production.engineering * (1 + bonus) * 100) / 100;
+          } else if (distType === 'mining') {
+            if (production.minerals > 0) production.minerals = Math.round(production.minerals * (1 + bonus) * 100) / 100;
+          } else if (distType === 'industrial') {
+            if (production.alloys > 0) production.alloys = Math.round(production.alloys * (1 + bonus) * 100) / 100;
+          }
+        }
+        // Apply penalties: -10% to penalized resources
+        for (const [distType, penalty] of Object.entries(docDef.productionPenalty)) {
+          if (distType === 'research') {
+            if (production.physics > 0) production.physics = Math.round(production.physics * (1 + penalty) * 100) / 100;
+            if (production.society > 0) production.society = Math.round(production.society * (1 + penalty) * 100) / 100;
+            if (production.engineering > 0) production.engineering = Math.round(production.engineering * (1 + penalty) * 100) / 100;
+          } else if (distType === 'mining') {
+            if (production.minerals > 0) production.minerals = Math.round(production.minerals * (1 + penalty) * 100) / 100;
+          } else if (distType === 'industrial') {
+            if (production.alloys > 0) production.alloys = Math.round(production.alloys * (1 + penalty) * 100) / 100;
+          }
+        }
+      }
+    }
+
+    // Scarcity season: -30% production for the affected resource
+    if (this._activeScarcity) {
+      const sr = this._activeScarcity.resource;
+      if (production[sr] > 0) {
+        production[sr] = Math.round(production[sr] * SCARCITY_MULTIPLIER * 100) / 100;
+      }
+    }
+
+    // Galactic Storm: -25% all production for remainder of match
+    if (this._endgameCrisis && this._endgameCrisis.type === 'galacticStorm') {
+      for (const resource of PRODUCTION_RESOURCES) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * GALACTIC_STORM_MULTIPLIER * 100) / 100;
+        }
+      }
+    }
+
+    // Precursor occupation: production halved (same as player occupation)
+    if (this._precursorOccupiedColonies.has(colony.id)) {
+      for (const resource of PRODUCTION_RESOURCES) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
+        }
+      }
+    }
+
     // Power surge energy boost: +50% energy production during energyBoostTicks
     if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
       production.energy = Math.round(production.energy * 1.5 * 100) / 100;
+    }
+
+    // Occupation penalty: 50% production when occupied by another player
+    if (colony.occupiedBy) {
+      for (const resource of PRODUCTION_RESOURCES) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
+        }
+      }
+    }
+
+    // Friendly diplomatic bonus: +10% production if a mutual-friendly player's colony is within 3 hops
+    if (this._hasFriendlyColonyNearby(colony)) {
+      for (const resource of PRODUCTION_RESOURCES) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
+        }
+      }
+    }
+
+    // Underdog production bonus: +15% per colony gap vs leader, cap +45%
+    const underdogMult = this._calcUnderdogBonus(colony.ownerId);
+    if (underdogMult > 1.0) {
+      for (const resource of PRODUCTION_RESOURCES) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * underdogMult * 100) / 100;
+        }
+      }
     }
 
     const result = { production, consumption };
@@ -583,10 +1133,820 @@ class GameEngine {
           food: state.resources.food,
         });
       }
+
+      // Ship maintenance costs (per-variant costs)
+      const playerShipsForMaint = this._militaryShipsByPlayer.get(playerId) || [];
+      let shipEnergyMaint = 0;
+      let shipAlloyMaint = 0;
+      for (const ship of playerShipsForMaint) {
+        const maint = ship.variant ? CORVETTE_VARIANTS[ship.variant].maintenance : CORVETTE_MAINTENANCE;
+        shipEnergyMaint += maint.energy;
+        shipAlloyMaint += maint.alloys;
+      }
+      const idleColonyShips = this._countIdleCivilianShips(playerId, 'colony');
+      const idleScienceShips = this._countIdleCivilianShips(playerId, 'science');
+      const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
+
+      state.resources.energy -= shipEnergyMaint + civilianMaintenance;
+      state.resources.alloys -= shipAlloyMaint;
+
+      // If energy or alloys went negative from maintenance, degrade corvettes
+      const corvetteCount = playerShipsForMaint.length;
+      if ((corvetteCount > 0) && (state.resources.energy < 0 || state.resources.alloys < 0)) {
+        const playerShips = this._militaryShipsByPlayer.get(playerId) || [];
+        const toRemove = [];
+        for (const ship of playerShips) {
+          ship.hp -= MAINTENANCE_DAMAGE;
+          if (ship.hp <= 0) {
+            toRemove.push(ship);
+          }
+        }
+        for (const ship of toRemove) {
+          this._removeMilitaryShip(ship);
+          this._emitEvent('shipLostMaintenance', playerId, { shipId: ship.id, systemId: ship.systemId });
+        }
+        if (toRemove.length > 0) {
+          this._emitEvent('maintenanceAttrition', playerId, { shipsLost: toRemove.length }, true);
+        }
+      }
+
       this._dirtyPlayers.add(playerId);
     }
     this._invalidateStateCache();
     this._vpCacheTick = -1; // resources changed — VP depends on alloys/research
+  }
+
+  // Process edict duration countdown (called monthly)
+  _processEdicts() {
+    for (const [playerId, state] of this.playerStates) {
+      if (!state.activeEdict) continue;
+      state.activeEdict.monthsRemaining--;
+      if (state.activeEdict.monthsRemaining <= 0) {
+        const edictDef = EDICT_DEFS[state.activeEdict.type];
+        this._emitEvent('edictExpired', playerId, {
+          edictType: state.activeEdict.type,
+          edictName: edictDef ? edictDef.name : state.activeEdict.type,
+        });
+        state.activeEdict = null;
+        // Invalidate production caches — edict modifiers changed
+        this._invalidatePlayerProductionCaches(playerId);
+        this._invalidateStateCache();
+      }
+      this._dirtyPlayers.add(playerId);
+    }
+  }
+
+  // Process influence income from colonies (called monthly)
+  _processInfluenceIncome() {
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (!colonyIds || colonyIds.length === 0) continue;
+
+      // Base income: +2 per colony (capital building)
+      let income = colonyIds.length * INFLUENCE_BASE_INCOME;
+
+      // Trait bonus: +1 per colony with an active personality trait
+      for (const colonyId of colonyIds) {
+        const colony = this.colonies.get(colonyId);
+        if (!colony) continue;
+        if (this._calcColonyTrait(colony)) {
+          income += INFLUENCE_TRAIT_INCOME;
+        }
+      }
+
+      state.resources.influence += income;
+      // Cap at INFLUENCE_CAP
+      if (state.resources.influence > INFLUENCE_CAP) {
+        state.resources.influence = INFLUENCE_CAP;
+      }
+
+      this._dirtyPlayers.add(playerId);
+    }
+    this._invalidateStateCache();
+  }
+
+  // Generate a random interval for the next scarcity season
+  _randomScarcityInterval() {
+    return SCARCITY_MIN_INTERVAL + Math.floor(Math.random() * (SCARCITY_MAX_INTERVAL - SCARCITY_MIN_INTERVAL + 1));
+  }
+
+  // Pick a scarcity resource, avoiding the last one used
+  _pickScarcityResource() {
+    const candidates = SCARCITY_RESOURCES.filter(r => r !== this._lastScarcityResource);
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // Process scarcity seasons — called every tick
+  _processScarcitySeason() {
+    // Active scarcity: count down and end when done
+    if (this._activeScarcity) {
+      this._activeScarcity.ticksRemaining--;
+      if (this._activeScarcity.ticksRemaining <= 0) {
+        const endedResource = this._activeScarcity.resource;
+        this._activeScarcity = null;
+        // Invalidate all production caches — multiplier removed
+        this._invalidateAllProductionCaches();
+        this._invalidateStateCache();
+        // Broadcast scarcity ended
+        this._emitEvent('scarcityEnded', null, { resource: endedResource }, true);
+        // Schedule next scarcity
+        this._nextScarcityTick = this.tickCount + this._randomScarcityInterval();
+        this._scarcityWarned = false;
+      }
+      return;
+    }
+
+    // Warning phase: broadcast warning 100 ticks before start
+    if (!this._scarcityWarned && this.tickCount >= this._nextScarcityTick - SCARCITY_WARNING_TICKS) {
+      const resource = this._pickScarcityResource();
+      this._pendingScarcityResource = resource;
+      this._scarcityWarned = true;
+      this._emitEvent('scarcityWarning', null, { resource }, true);
+    }
+
+    // Start scarcity when scheduled tick arrives
+    if (this.tickCount >= this._nextScarcityTick) {
+      const resource = this._pendingScarcityResource || this._pickScarcityResource();
+      this._activeScarcity = { resource, ticksRemaining: SCARCITY_DURATION };
+      this._lastScarcityResource = resource;
+      this._pendingScarcityResource = null;
+      // Invalidate all production caches — multiplier now applies
+      this._invalidateAllProductionCaches();
+      this._invalidateStateCache();
+      // Broadcast scarcity started
+      this._emitEvent('scarcityStarted', null, { resource, duration: SCARCITY_DURATION }, true);
+    }
+  }
+
+  // Invalidate production caches for ALL colonies (scarcity affects everyone)
+  // Also marks all colony-owning players dirty so the next broadcast sends updated production.
+  _invalidateAllProductionCaches() {
+    for (const [, colony] of this.colonies) {
+      colony._cachedProduction = null;
+      this._dirtyPlayers.add(colony.ownerId);
+    }
+    this._summaryCacheTick = -1;
+  }
+
+  // ── Endgame Crisis System ──
+
+  _processEndgameCrisis() {
+    // Only activate with match timer enabled
+    if (!this._matchTimerEnabled || this._endgameCrisisTriggered) return;
+
+    // Use pre-computed trigger threshold
+    const triggerAtRemaining = this._endgameCrisisTriggerTicks;
+
+    // Warning: 100 ticks before trigger (when remaining drops below threshold + warning ticks)
+    if (!this._endgameCrisisWarned && this._matchTicksRemaining <= triggerAtRemaining + ENDGAME_CRISIS_WARNING_TICKS) {
+      this._endgameCrisisWarned = true;
+      this._emitEvent('endgameCrisisWarning', null, {
+        ticksUntilCrisis: this._matchTicksRemaining - triggerAtRemaining,
+      }, true);
+    }
+
+    // Trigger crisis when 75% of match time has elapsed
+    if (this._matchTicksRemaining <= triggerAtRemaining) {
+      this._endgameCrisisTriggered = true;
+
+      // Randomly select crisis type
+      const crisisType = Math.random() < 0.5 ? 'galacticStorm' : 'precursorAwakening';
+      this._endgameCrisis = { type: crisisType };
+
+      if (crisisType === 'galacticStorm') {
+        // Galactic Storm: -25% all production for remainder of match
+        this._invalidateAllProductionCaches();
+        this._invalidateStateCache();
+        this._emitEvent('endgameCrisis', null, {
+          crisisType: 'galacticStorm',
+          label: 'Galactic Storm',
+          description: 'A devastating galactic storm reduces all production by 25% for the remainder of the match!',
+        }, true);
+      } else {
+        // Precursor Awakening: spawn hostile fleet
+        this._spawnPrecursorFleet();
+        this._emitEvent('endgameCrisis', null, {
+          crisisType: 'precursorAwakening',
+          label: 'Precursor Awakening',
+          description: 'An ancient precursor fleet has awakened! A powerful warship approaches the nearest colony!',
+          precursorHp: PRECURSOR_HP,
+          precursorAttack: PRECURSOR_ATTACK,
+        }, true);
+      }
+    }
+  }
+
+  _spawnPrecursorFleet() {
+    // Spawn at galaxy center-ish system (system with most connections) or random far system
+    let spawnSystemId = null;
+    if (this.galaxy && this.galaxy.systems.length > 0) {
+      // Pick the system with the most hyperlane connections (center of galaxy)
+      let maxConnections = 0;
+      for (const sys of this.galaxy.systems) {
+        const connections = (this._adjacency.get(sys.id) || []).length;
+        if (connections > maxConnections) {
+          maxConnections = connections;
+          spawnSystemId = sys.id;
+        }
+      }
+    }
+
+    if (spawnSystemId === null) return;
+
+    // Find nearest colony to target
+    const targetSystemId = this._findNearestColonySystem(spawnSystemId);
+    if (!targetSystemId) return;
+
+    const path = this._findPath(spawnSystemId, targetSystemId);
+    if (!path || path.length === 0) return;
+
+    // Find which colony is at the target system
+    let targetColonyId = null;
+    for (const [, colony] of this.colonies) {
+      if (colony.systemId === targetSystemId) {
+        targetColonyId = colony.id;
+        break;
+      }
+    }
+
+    this._precursorFleet = {
+      id: this._nextId(),
+      systemId: spawnSystemId,
+      targetSystemId,
+      targetColonyId,
+      path,
+      hopProgress: 0,
+      hp: PRECURSOR_HP,
+      attack: PRECURSOR_ATTACK,
+    };
+
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+    this._invalidateStateCache();
+  }
+
+  _processPrecursorMovement() {
+    if (!this._precursorFleet) return;
+    const fleet = this._precursorFleet;
+
+    if (!fleet.path || fleet.path.length === 0) return;
+
+    fleet.hopProgress++;
+
+    if (fleet.hopProgress >= PRECURSOR_HOP_TICKS) {
+      fleet.systemId = fleet.path.shift();
+      fleet.hopProgress = 0;
+
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+
+      // Check if player military ships are at this system — they can intercept
+      const shipsHere = this._militaryShipsBySystem.get(fleet.systemId);
+      if (shipsHere && shipsHere.length > 0) {
+        this._resolvePrecursorCombat(fleet, shipsHere);
+        if (!this._precursorFleet) return; // fleet destroyed
+      }
+
+      // Arrived at target
+      if (fleet.path.length === 0) {
+        this._resolvePrecursorArrival(fleet);
+      }
+    }
+  }
+
+  _resolvePrecursorCombat(fleet, playerShips) {
+    // Filter to idle ships only
+    const idleShips = playerShips.filter(s => !s.path || s.path.length === 0);
+    if (idleShips.length === 0) return;
+
+    const systemName = (this.galaxy && this.galaxy.systems[fleet.systemId])
+      ? this.galaxy.systems[fleet.systemId].name : `System ${fleet.systemId}`;
+
+    // Track owners involved for VP/events
+    const ownerShips = new Map();
+    for (const ship of idleShips) {
+      let arr = ownerShips.get(ship.ownerId);
+      if (!arr) { arr = []; ownerShips.set(ship.ownerId, arr); }
+      arr.push(ship);
+    }
+
+    // Broadcast combat started
+    for (const [playerId] of this.playerStates) {
+      this._emitEvent('precursorCombat', playerId, {
+        systemId: fleet.systemId,
+        systemName,
+        precursorHp: fleet.hp,
+        playerShips: idleShips.length,
+      });
+    }
+
+    // Combat rounds
+    for (let round = 0; round < PRECURSOR_COMBAT_TICKS; round++) {
+      // Precursor attacks: target weakest player ship
+      if (fleet.hp > 0) {
+        let target = null;
+        for (const ship of idleShips) {
+          if (ship.hp <= 0) continue;
+          if (!target || ship.hp < target.hp) target = ship;
+        }
+        if (target) {
+          target.hp -= fleet.attack;
+        }
+      }
+
+      // Player ships attack precursor
+      for (const ship of idleShips) {
+        if (ship.hp <= 0) continue;
+        fleet.hp -= ship.attack;
+        if (fleet.hp <= 0) break;
+      }
+
+      if (fleet.hp <= 0) break;
+    }
+
+    // Process ship losses
+    const destroyed = [];
+    for (const ship of idleShips) {
+      if (ship.hp <= 0) {
+        destroyed.push(ship);
+        const lossCount = (this._shipsLost.get(ship.ownerId) || 0) + 1;
+        this._shipsLost.set(ship.ownerId, lossCount);
+      }
+    }
+    for (const ship of destroyed) {
+      this._removeMilitaryShip(ship);
+    }
+
+    // Check if precursor destroyed
+    if (fleet.hp <= 0) {
+      // Find the owner with the most ships involved — they get the VP
+      let bestOwner = null;
+      let bestCount = 0;
+      for (const [ownerId, ships] of ownerShips) {
+        if (ships.length > bestCount) {
+          bestCount = ships.length;
+          bestOwner = ownerId;
+        }
+      }
+      this._precursorDestroyedBy = bestOwner;
+      this._precursorFleet = null;
+      this._vpCacheTick = -1;
+
+      this._emitEvent('precursorDestroyed', null, {
+        systemId: fleet.systemId,
+        systemName,
+        destroyedBy: bestOwner,
+        destroyerName: bestOwner ? (this.playerStates.get(bestOwner) || {}).name : 'Unknown',
+        vpReward: PRECURSOR_DESTROY_VP,
+      }, true);
+
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+  }
+
+  _resolvePrecursorArrival(fleet) {
+    // Find colony at target system
+    let targetColony = null;
+    if (fleet.targetColonyId) {
+      targetColony = this.colonies.get(fleet.targetColonyId);
+    }
+    if (!targetColony) {
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === fleet.systemId) {
+          targetColony = colony;
+          break;
+        }
+      }
+    }
+
+    if (!targetColony) {
+      // No colony here — precursor dissipates
+      this._precursorFleet = null;
+      this._invalidateStateCache();
+      return;
+    }
+
+    const ownerId = targetColony.ownerId;
+
+    // Check for defense platform
+    if (targetColony.defensePlatform && !targetColony.defensePlatform.building && targetColony.defensePlatform.hp > 0) {
+      const platform = targetColony.defensePlatform;
+      let precursorHp = fleet.hp;
+      let platformHp = platform.hp;
+
+      for (let t = 0; t < PRECURSOR_COMBAT_TICKS; t++) {
+        platformHp -= fleet.attack;
+        if (platformHp <= 0) break;
+        precursorHp -= DEFENSE_PLATFORM_ATTACK;
+        if (precursorHp <= 0) break;
+      }
+
+      platform.hp = Math.max(0, platformHp);
+
+      if (precursorHp <= 0) {
+        // Defense platform destroyed the precursor
+        this._precursorDestroyedBy = ownerId;
+        this._precursorFleet = null;
+        this._vpCacheTick = -1;
+
+        this._emitEvent('precursorDestroyed', null, {
+          systemId: fleet.systemId,
+          systemName: targetColony.name,
+          destroyedBy: ownerId,
+          destroyerName: (this.playerStates.get(ownerId) || {}).name || 'Unknown',
+          vpReward: PRECURSOR_DESTROY_VP,
+          byPlatform: true,
+        }, true);
+
+        for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+        this._invalidateColonyCache(targetColony);
+        this._invalidateStateCache();
+        return;
+      }
+
+      fleet.hp = precursorHp;
+    }
+
+    // Check for military ships in system
+    const shipsHere = this._militaryShipsBySystem.get(fleet.systemId);
+    if (shipsHere && shipsHere.length > 0) {
+      this._resolvePrecursorCombat(fleet, shipsHere);
+      if (!this._precursorFleet) return; // destroyed by ships
+    }
+
+    // Precursor occupies the colony — production halved, VP penalty
+    this._precursorOccupiedColonies.add(targetColony.id);
+    this._vpCacheTick = -1;
+
+    this._emitEvent('precursorOccupied', null, {
+      colonyId: targetColony.id,
+      colonyName: targetColony.name,
+      systemId: fleet.systemId,
+      ownerId,
+      ownerName: (this.playerStates.get(ownerId) || {}).name || 'Unknown',
+    }, true);
+
+    // Precursor stays at colony — it's done moving
+    this._invalidateColonyCache(targetColony);
+    this._invalidateAllProductionCaches();
+    this._invalidateStateCache();
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+
+    // After occupying, retarget next nearest colony
+    const nextTarget = this._findNearestColonySystem(fleet.systemId);
+    if (nextTarget && nextTarget !== fleet.systemId) {
+      const path = this._findPath(fleet.systemId, nextTarget);
+      if (path && path.length > 0) {
+        fleet.targetSystemId = nextTarget;
+        fleet.path = path;
+        fleet.hopProgress = 0;
+        // Find colony at next target
+        for (const [, colony] of this.colonies) {
+          if (colony.systemId === nextTarget) {
+            fleet.targetColonyId = colony.id;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // ── NPC Raider Fleet System ──
+
+  _randomRaiderInterval() {
+    return RAIDER_MIN_INTERVAL + Math.floor(Math.random() * (RAIDER_MAX_INTERVAL - RAIDER_MIN_INTERVAL));
+  }
+
+  // Find edge systems (systems with fewer connections — galactic rim)
+  // Cached because galaxy topology never changes after generation
+  _getEdgeSystems() {
+    if (this._cachedEdgeSystems) return this._cachedEdgeSystems;
+    const adj = this._adjacency;
+    const edges = [];
+    for (const sys of this.galaxy.systems) {
+      const neighbors = adj.get(sys.id) || [];
+      if (neighbors.length <= 2) edges.push(sys.id);
+    }
+    if (edges.length > 0) {
+      this._cachedEdgeSystems = edges; // topology never changes — safe to cache
+      return edges;
+    }
+    // Fallback: if no edge systems found, pick any unowned systems (not cached — ownership changes)
+    for (const sys of this.galaxy.systems) {
+      const isOwned = [...this.colonies.values()].some(c => c.systemId === sys.id);
+      if (!isOwned) edges.push(sys.id);
+    }
+    return edges;
+  }
+
+  // Find nearest player colony to a system via BFS
+  _findNearestColonySystem(fromSystemId) {
+    const adj = this._adjacency;
+    const visited = new Set([fromSystemId]);
+    const queue = [fromSystemId];
+    const colonySystems = new Set();
+    for (const [, colony] of this.colonies) {
+      colonySystems.add(colony.systemId);
+    }
+
+    let qi = 0;
+    while (qi < queue.length) {
+      const current = queue[qi++];
+      if (colonySystems.has(current) && current !== fromSystemId) {
+        return current;
+      }
+      const neighbors = adj.get(current) || [];
+      for (const neighbor of neighbors) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    return null;
+  }
+
+  _processRaiderSpawning() {
+    if (this.colonies.size === 0) return; // no colonies to raid
+
+    if (this.tickCount >= this._nextRaiderTick) {
+      const edgeSystems = this._getEdgeSystems();
+      if (edgeSystems.length === 0) return;
+
+      // Pick random edge system for spawn
+      const spawnSystemId = edgeSystems[Math.floor(Math.random() * edgeSystems.length)];
+
+      // Find nearest colony to target
+      const targetSystemId = this._findNearestColonySystem(spawnSystemId);
+      if (!targetSystemId) {
+        // No reachable colony — try again later
+        this._nextRaiderTick = this.tickCount + 100;
+        return;
+      }
+
+      // Find path to target
+      const path = this._findPath(spawnSystemId, targetSystemId);
+      if (!path || path.length === 0) {
+        this._nextRaiderTick = this.tickCount + 100;
+        return;
+      }
+
+      // Find which colony is at the target system
+      let targetColonyId = null;
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === targetSystemId) {
+          targetColonyId = colony.id;
+          break;
+        }
+      }
+
+      const raider = {
+        id: this._nextId(),
+        systemId: spawnSystemId,
+        targetSystemId,
+        targetColonyId,
+        path,
+        hopProgress: 0,
+        hp: RAIDER_HP,
+      };
+      this._raiders.push(raider);
+
+      // Schedule next raider
+      this._nextRaiderTick = this.tickCount + this._randomRaiderInterval();
+
+      // Broadcast raider spawned to all players
+      this._emitEvent('raiderSpawned', null, {
+        raiderId: raider.id,
+        systemId: spawnSystemId,
+        targetSystemId,
+      }, true);
+
+      // Mark all players dirty for state broadcast
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+  }
+
+  _processRaiderMovement() {
+    if (this._raiders.length === 0) return;
+    const arrivals = [];
+    let anyHopped = false;
+    for (const raider of this._raiders) {
+      if (!raider.path || raider.path.length === 0) continue;
+
+      raider.hopProgress++;
+
+      if (raider.hopProgress >= RAIDER_HOP_TICKS) {
+        raider.systemId = raider.path.shift();
+        raider.hopProgress = 0;
+        anyHopped = true;
+
+        if (raider.path.length === 0) {
+          arrivals.push(raider);
+        }
+      }
+    }
+
+    // Only dirty players when a raider actually moved to a new system
+    if (anyHopped) {
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+
+    // Process arrivals at target systems
+    for (const raider of arrivals) {
+      this._resolveRaiderArrival(raider);
+    }
+  }
+
+  _resolveRaiderArrival(raider) {
+    // Find colony at target system
+    let targetColony = null;
+    if (raider.targetColonyId) {
+      targetColony = this.colonies.get(raider.targetColonyId);
+    }
+    if (!targetColony) {
+      // Colony may have been lost; find any colony at this system
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === raider.systemId) {
+          targetColony = colony;
+          break;
+        }
+      }
+    }
+
+    if (!targetColony) {
+      // No colony here anymore — raider dissipates
+      this._removeRaider(raider);
+      return;
+    }
+
+    const ownerId = targetColony.ownerId;
+
+    // Check for defense platform
+    if (targetColony.defensePlatform && !targetColony.defensePlatform.building && targetColony.defensePlatform.hp > 0) {
+      // Combat: platform vs raider over RAIDER_COMBAT_TICKS
+      const platform = targetColony.defensePlatform;
+      let raiderHp = raider.hp;
+      let platformHp = platform.hp;
+
+      for (let t = 0; t < RAIDER_COMBAT_TICKS; t++) {
+        // Platform attacks raider
+        raiderHp -= DEFENSE_PLATFORM_ATTACK;
+        if (raiderHp <= 0) break;
+        // Raider attacks platform
+        platformHp -= RAIDER_ATTACK;
+        if (platformHp <= 0) break;
+      }
+
+      platform.hp = Math.max(0, platformHp);
+
+      if (raiderHp <= 0) {
+        // Raider destroyed — player gets VP credit
+        const count = (this._raidersDestroyed.get(ownerId) || 0) + 1;
+        this._raidersDestroyed.set(ownerId, count);
+        this._vpCacheTick = -1; // VP changed
+
+        this._emitEvent('raiderDefeated', ownerId, {
+          colonyId: targetColony.id,
+          colonyName: targetColony.name,
+          systemId: raider.systemId,
+          platformHpRemaining: platform.hp,
+        }, true);
+
+        this._removeRaider(raider);
+      } else {
+        // Platform destroyed, raider raids the colony
+        raider.hp = raiderHp;
+        this._raidColony(raider, targetColony);
+      }
+    } else {
+      // No defense — raid the colony
+      this._raidColony(raider, targetColony);
+    }
+
+    this._dirtyPlayers.add(ownerId);
+    this._invalidateColonyCache(targetColony);
+    this._invalidateStateCache();
+  }
+
+  _raidColony(raider, colony) {
+    const ownerId = colony.ownerId;
+    const state = this.playerStates.get(ownerId);
+
+    // Disable 2 random non-disabled districts for RAIDER_DISABLE_TICKS
+    const enabledDistricts = colony.districts.filter(d => !d.disabled);
+    // Shuffle and pick up to 2
+    for (let i = enabledDistricts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [enabledDistricts[i], enabledDistricts[j]] = [enabledDistricts[j], enabledDistricts[i]];
+    }
+    const toDisable = enabledDistricts.slice(0, 2);
+    const disabledIds = [];
+    for (const d of toDisable) {
+      d.disabled = true;
+      d._raiderDisableTick = this.tickCount + RAIDER_DISABLE_TICKS;
+      disabledIds.push(d.id);
+    }
+    if (toDisable.length > 0) this._raiderDisableTimers.add(colony.id);
+
+    // Steal 50 of each resource (don't go below 0)
+    if (state) {
+      const stolen = {};
+      for (const res of ['energy', 'minerals', 'food']) {
+        const amount = Math.min(state.resources[res], RAIDER_RESOURCE_STOLEN);
+        state.resources[res] -= amount;
+        stolen[res] = amount;
+      }
+
+      this._emitEvent('colonyRaided', ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        systemId: colony.systemId,
+        districtsDisabled: disabledIds.length,
+        resourcesStolen: stolen,
+      }, true);
+    }
+
+    this._removeRaider(raider);
+  }
+
+  _removeRaider(raider) {
+    const idx = this._raiders.indexOf(raider);
+    if (idx !== -1) this._raiders.splice(idx, 1);
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+    this._invalidateStateCache();
+  }
+
+  // Re-enable districts disabled by raiders after their timer expires
+  // Only checks colonies with active disable timers (tracked in _raiderDisableTimers set)
+  _processRaiderDisableTimers() {
+    if (this._raiderDisableTimers.size === 0) return;
+    for (const colonyId of this._raiderDisableTimers) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony) { this._raiderDisableTimers.delete(colonyId); continue; }
+      let changed = false;
+      let anyRemaining = false;
+      for (const d of colony.districts) {
+        if (d._raiderDisableTick) {
+          if (this.tickCount >= d._raiderDisableTick) {
+            d.disabled = false;
+            delete d._raiderDisableTick;
+            changed = true;
+          } else {
+            anyRemaining = true;
+          }
+        }
+      }
+      if (!anyRemaining) this._raiderDisableTimers.delete(colonyId);
+      if (changed) {
+        this._invalidateColonyCache(colony);
+        this._emitEvent('districtEnabled', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: 'raider-disabled',
+        });
+      }
+    }
+  }
+
+  // Repair defense platforms passively each month
+  _processDefensePlatformRepair() {
+    for (const [, colony] of this.colonies) {
+      if (!colony.defensePlatform || colony.defensePlatform.building) continue;
+      if (colony.defensePlatform.hp < colony.defensePlatform.maxHp) {
+        colony.defensePlatform.hp = Math.min(
+          colony.defensePlatform.maxHp,
+          colony.defensePlatform.hp + DEFENSE_PLATFORM_REPAIR_RATE
+        );
+        this._dirtyPlayers.add(colony.ownerId);
+        this._invalidateStateCache();
+      }
+    }
+  }
+
+  // Process defense platform construction — only checks colonies actively building
+  _processDefensePlatformConstruction() {
+    if (this._defensePlatformBuilding.size === 0) return;
+    for (const colonyId of this._defensePlatformBuilding) {
+      const colony = this.colonies.get(colonyId);
+      if (!colony || !colony.defensePlatform || !colony.defensePlatform.building) {
+        this._defensePlatformBuilding.delete(colonyId);
+        continue;
+      }
+      colony.defensePlatform.buildTicksRemaining--;
+      this._dirtyPlayers.add(colony.ownerId);
+      if (colony.defensePlatform.buildTicksRemaining <= 0) {
+        colony.defensePlatform.building = false;
+        delete colony.defensePlatform.buildTicksRemaining;
+        this._defensePlatformBuilding.delete(colonyId);
+        this._invalidateStateCache();
+        this._emitEvent('constructionComplete', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: 'defensePlatform',
+        });
+      }
+    }
   }
 
   // Process construction queues
@@ -603,14 +1963,18 @@ class GameEngine {
         if (item.type === 'colonyShip') {
           // Spawn colony ship at colony's system
           const shipId = this._nextId();
-          this._colonyShips.push({
+          const colonyShip = {
             id: shipId,
             ownerId: colony.ownerId,
             systemId: colony.systemId,
             targetSystemId: null,
             path: [],
             hopProgress: 0,
-          });
+          };
+          this._colonyShips.push(colonyShip);
+          let cArr = this._colonyShipsByPlayer.get(colony.ownerId);
+          if (!cArr) { cArr = []; this._colonyShipsByPlayer.set(colony.ownerId, cArr); }
+          cArr.push(colonyShip);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
@@ -622,7 +1986,7 @@ class GameEngine {
         } else if (item.type === 'scienceShip') {
           // Spawn science ship at colony's system
           const shipId = this._nextId();
-          this._scienceShips.push({
+          const sciShip = {
             id: shipId,
             ownerId: colony.ownerId,
             systemId: colony.systemId,
@@ -631,12 +1995,42 @@ class GameEngine {
             hopProgress: 0,
             surveying: false,
             surveyProgress: 0,
-          });
+          };
+          this._scienceShips.push(sciShip);
+          let sArr = this._scienceShipsByPlayer.get(colony.ownerId);
+          if (!sArr) { sArr = []; this._scienceShipsByPlayer.set(colony.ownerId, sArr); }
+          sArr.push(sciShip);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
             districtType: 'scienceShip',
+            shipId,
+            playerName: ownerName,
+          }, true);
+        } else if (item.type === 'corvette') {
+          // Spawn corvette at colony's system — use variant stats if specified
+          const shipId = this._nextId();
+          const vDef = item.variant ? CORVETTE_VARIANTS[item.variant] : null;
+          this._addMilitaryShip({
+            id: shipId,
+            ownerId: colony.ownerId,
+            systemId: colony.systemId,
+            targetSystemId: null,
+            path: [],
+            hopProgress: 0,
+            hp: vDef ? vDef.hp : CORVETTE_HP,
+            attack: vDef ? vDef.attack : CORVETTE_ATTACK,
+            variant: item.variant || null,
+            regen: vDef ? vDef.regen : 0,
+            maxHp: vDef ? vDef.hp : CORVETTE_HP,
+          });
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+          const variantLabel = item.variant ? CORVETTE_VARIANTS[item.variant].name : 'Corvette';
+          this._emitEvent('constructionComplete', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            districtType: item.variant ? `corvette-${item.variant}` : 'corvette',
             shipId,
             playerName: ownerName,
           }, true);
@@ -719,6 +2113,14 @@ class GameEngine {
       const techMods = this._getTechModifiers(playerState);
       if (techMods.growth !== 1) {
         growthTarget = Math.floor(growthTarget * techMods.growth);
+      }
+
+      // Apply edict growth bonus (Population Drive: halves growth ticks)
+      if (playerState.activeEdict) {
+        const edictDef = EDICT_DEFS[playerState.activeEdict.type];
+        if (edictDef && edictDef.effect.type === 'growthBonus') {
+          growthTarget = Math.floor(growthTarget * edictDef.effect.multiplier);
+        }
       }
 
       colony.growthProgress++;
@@ -850,7 +2252,11 @@ class GameEngine {
 
   // Schedule next crisis for a colony (after resolution or initial)
   _scheduleCrisis(colony) {
-    colony.nextCrisisTick = this.tickCount + CRISIS_IMMUNITY_TICKS + CRISIS_MIN_TICKS +
+    // Scale crisis interval by colony count: +100 ticks per colony beyond 3
+    // Prevents late-game micro fatigue with many colonies
+    const colonyCount = (this._playerColonies.get(colony.ownerId) || []).length;
+    const extraDelay = Math.max(0, colonyCount - 3) * 100;
+    colony.nextCrisisTick = this.tickCount + CRISIS_IMMUNITY_TICKS + CRISIS_MIN_TICKS + extraDelay +
       Math.floor(Math.random() * (CRISIS_MAX_TICKS - CRISIS_MIN_TICKS));
   }
 
@@ -1315,8 +2721,9 @@ class GameEngine {
     const queue = [fromSystemId];
     let found = false;
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    let qi = 0;
+    while (qi < queue.length) {
+      const current = queue[qi++];
       const neighbors = adj.get(current) || [];
       for (const neighbor of neighbors) {
         if (visited.has(neighbor)) continue;
@@ -1375,10 +2782,397 @@ class GameEngine {
     if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
+  // Process military ship (corvette) movement each tick
+  _processMilitaryShipMovement() {
+    for (const ship of this._militaryShips) {
+      if (!ship.path || ship.path.length === 0) continue;
+
+      ship.hopProgress++;
+      // Throttle dirty marking to every 5 ticks for ship movement animation
+      if (this.tickCount % 5 === 0) {
+        this._dirtyPlayers.add(ship.ownerId);
+      }
+
+      const shipHopTicks = ship.variant ? CORVETTE_VARIANTS[ship.variant].hopTicks : CORVETTE_HOP_TICKS;
+      if (ship.hopProgress >= shipHopTicks) {
+        // Update system index before changing systemId
+        const oldSysArr = this._militaryShipsBySystem.get(ship.systemId);
+        if (oldSysArr) {
+          const si = oldSysArr.indexOf(ship);
+          if (si !== -1) oldSysArr.splice(si, 1);
+        }
+        // Arrived at next system in path
+        ship.systemId = ship.path.shift();
+        ship.hopProgress = 0;
+        // Add to new system index
+        let newSysArr = this._militaryShipsBySystem.get(ship.systemId);
+        if (!newSysArr) { newSysArr = []; this._militaryShipsBySystem.set(ship.systemId, newSysArr); }
+        newSysArr.push(ship);
+        this._dirtyPlayers.add(ship.ownerId);
+
+        if (ship.path.length === 0) {
+          // Arrived at final destination — clear target
+          ship.targetSystemId = null;
+        }
+      }
+    }
+
+    // Ship state was mutated — clear cached JSON for fresh broadcasts
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+  }
+
+  // Check all systems for fleet combat after movement processing
+  _checkFleetCombat() {
+    // Use system index — only check systems that have ships
+    for (const [systemId, ships] of this._militaryShipsBySystem) {
+      if (ships.length < 2) continue;
+      // Collect unique idle owners inline (no Set allocation — max 8 players)
+      let ownerCount = 0;
+      const owners = this._combatOwnersBuf || (this._combatOwnersBuf = []);
+      owners.length = 0;
+      for (const ship of ships) {
+        if (ship.path && ship.path.length > 0) continue; // in transit
+        let found = false;
+        for (let k = 0; k < ownerCount; k++) {
+          if (owners[k] === ship.ownerId) { found = true; break; }
+        }
+        if (!found) owners[ownerCount++] = ship.ownerId;
+      }
+      if (ownerCount < 2) continue;
+      // Check if any pair of owners is hostile
+      let hasHostilePair = false;
+      for (let i = 0; i < ownerCount && !hasHostilePair; i++) {
+        for (let j = i + 1; j < ownerCount; j++) {
+          if (this._areHostile(owners[i], owners[j])) {
+            hasHostilePair = true;
+            break;
+          }
+        }
+      }
+      if (hasHostilePair) {
+        this._resolveFleetCombat(systemId, ships);
+      }
+    }
+  }
+
+  // Resolve combat in a system between hostile players' ships
+  _resolveFleetCombat(systemId, shipsInSystem) {
+    // Gather idle ships at this system, grouped by owner — only include owners in hostile relationships
+    const allByOwner = new Map();
+    for (const ship of shipsInSystem) {
+      if (ship.path && ship.path.length > 0) continue;
+      let arr = allByOwner.get(ship.ownerId);
+      if (!arr) { arr = []; allByOwner.set(ship.ownerId, arr); }
+      arr.push(ship);
+    }
+
+    // Filter to only owners involved in at least one hostile relationship with another present owner
+    const allOwners = [...allByOwner.keys()];
+    const hostileOwners = new Set();
+    for (let i = 0; i < allOwners.length; i++) {
+      for (let j = i + 1; j < allOwners.length; j++) {
+        if (this._areHostile(allOwners[i], allOwners[j])) {
+          hostileOwners.add(allOwners[i]);
+          hostileOwners.add(allOwners[j]);
+        }
+      }
+    }
+
+    const shipsByOwner = new Map();
+    for (const ownerId of hostileOwners) {
+      const ships = allByOwner.get(ownerId);
+      if (ships && ships.length > 0) shipsByOwner.set(ownerId, ships);
+    }
+
+    const ownerIds = [...shipsByOwner.keys()];
+    if (ownerIds.length < 2) return;
+
+    // Record starting counts for event
+    const startCounts = new Map();
+    for (const [ownerId, ships] of shipsByOwner) {
+      startCounts.set(ownerId, ships.length);
+    }
+
+    // Emit combatStarted event to all involved players
+    const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+    const combatants = ownerIds.map(id => ({ playerId: id, ships: startCounts.get(id) }));
+    for (const ownerId of ownerIds) {
+      this._emitEvent('combatStarted', ownerId, { systemId, systemName, combatants });
+    }
+    // Broadcast to non-combatant players too
+    for (const [pid] of this.playerStates) {
+      if (!shipsByOwner.has(pid)) {
+        this._emitEvent('combatStarted', pid, { systemId, systemName, combatants });
+      }
+    }
+
+    // Combat rounds: up to FLEET_COMBAT_MAX_ROUNDS
+    // Ships attack in priority order: interceptors first (3), sentinels (2), gunboats/base (1)
+    for (let round = 0; round < FLEET_COMBAT_MAX_ROUNDS; round++) {
+      // Collect all living ships with their attack priority
+      const allLiving = [];
+      for (const [ownerId, ships] of shipsByOwner) {
+        for (const ship of ships) {
+          if (ship.hp <= 0) continue;
+          const priority = ship.variant ? CORVETTE_VARIANTS[ship.variant].priority : 1;
+          allLiving.push({ ship, ownerId, priority });
+        }
+      }
+      // Sort by priority descending (highest attacks first — interceptor speed advantage)
+      allLiving.sort((a, b) => b.priority - a.priority);
+
+      const damageMap = new Map(); // ship -> accumulated damage this round
+
+      for (const { ship, ownerId } of allLiving) {
+        if (ship.hp <= 0) continue; // may have been killed earlier this round
+        // Counter-targeting: prioritize the variant this ship counters
+        const counterTarget = ship.variant ? CORVETTE_VARIANTS[ship.variant].counters : null;
+        let target = null;
+        for (const [enemyId, enemyShips] of shipsByOwner) {
+          if (enemyId === ownerId) continue;
+          for (const es of enemyShips) {
+            if (es.hp <= 0) continue;
+            if (!target) { target = es; continue; }
+            // Prefer counter-target variant
+            const esIsCounter = es.variant === counterTarget;
+            const tgIsCounter = target.variant === counterTarget;
+            if (esIsCounter && !tgIsCounter) { target = es; }
+            else if (esIsCounter === tgIsCounter) {
+              // Same counter status — focus fire lowest HP
+              if (es.hp < target.hp) target = es;
+            }
+          }
+        }
+        if (target) {
+          damageMap.set(target, (damageMap.get(target) || 0) + ship.attack);
+        }
+      }
+
+      // Apply damage simultaneously
+      for (const [ship, dmg] of damageMap) {
+        ship.hp -= dmg;
+      }
+
+      // Sentinel regen: heal after damage resolution
+      for (const { ship } of allLiving) {
+        if (ship.hp > 0 && ship.regen && ship.regen > 0) {
+          ship.hp = Math.min(ship.hp + ship.regen, ship.maxHp || ship.hp);
+        }
+      }
+
+      // Remove destroyed ships and count losses
+      for (const [ownerId, ships] of shipsByOwner) {
+        for (let i = ships.length - 1; i >= 0; i--) {
+          if (ships[i].hp <= 0) {
+            this._removeMilitaryShip(ships[i]);
+            ships.splice(i, 1);
+            const lost = (this._shipsLost.get(ownerId) || 0) + 1;
+            this._shipsLost.set(ownerId, lost);
+          }
+        }
+      }
+
+      // Check if combat is over (only one side or zero remaining)
+      let sidesAlive = 0;
+      for (const [, ships] of shipsByOwner) {
+        if (ships.length > 0) sidesAlive++;
+      }
+      if (sidesAlive <= 1) break;
+    }
+
+    // Determine winner (side with surviving ships)
+    let winnerId = null;
+    const losses = {};
+    for (const ownerId of ownerIds) {
+      const remaining = (shipsByOwner.get(ownerId) || []).length;
+      const started = startCounts.get(ownerId);
+      losses[ownerId] = started - remaining;
+      if (remaining > 0) winnerId = ownerId;
+    }
+
+    // Award VP for battle won
+    if (winnerId) {
+      const won = (this._battlesWon.get(winnerId) || 0) + 1;
+      this._battlesWon.set(winnerId, won);
+    }
+
+    // Invalidate VP cache
+    this._vpCacheTick = -1;
+
+    // Emit combatResult to all players (result is not mutated, no need to spread-copy)
+    const result = {
+      systemId, systemName, winnerId, losses,
+      survivors: {},
+    };
+    for (const ownerId of ownerIds) {
+      result.survivors[ownerId] = (shipsByOwner.get(ownerId) || []).length;
+    }
+    for (const [pid] of this.playerStates) {
+      this._emitEvent('combatResult', pid, result);
+    }
+
+    // Mark all combatants dirty
+    for (const ownerId of ownerIds) {
+      this._dirtyPlayers.add(ownerId);
+    }
+    this._invalidateStateCache();
+  }
+
+  // Process colony occupation progress each tick
+  _processOccupation() {
+    let changed = false;
+    for (const colony of this.colonies.values()) {
+      const systemId = colony.systemId;
+      if (systemId == null) continue;
+
+      const shipsHere = this._militaryShipsBySystem.get(systemId);
+
+      // Fast path: no military ships in system at all
+      if (!shipsHere || shipsHere.length === 0) {
+        if (colony.occupiedBy) continue; // occupied but no ships — status quo
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Scan idle ships — track defender/attacker presence inline (no Set allocation)
+      let defenderPresent = false;
+      let occupierPresent = false;
+      let attackerId = null;
+      for (const ship of shipsHere) {
+        if (ship.path && ship.path.length > 0) continue; // in transit
+        if (ship.ownerId === colony.ownerId) {
+          defenderPresent = true;
+        } else {
+          if (colony.occupiedBy && ship.ownerId === colony.occupiedBy) occupierPresent = true;
+          if (!attackerId) attackerId = ship.ownerId;
+        }
+      }
+
+      // Check if colony is already occupied — handle liberation
+      if (colony.occupiedBy) {
+        // Liberation: defender has ships, occupier does not
+        if (defenderPresent && !occupierPresent) {
+          const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+          const prevOccupier = colony.occupiedBy;
+          colony.occupiedBy = null;
+          colony.occupationProgress = 0;
+          colony._cachedProduction = null; // invalidate production cache
+          this._emitEvent('colonyLiberated', colony.ownerId, { colonyId: colony.id, colonyName: colony.name, systemId, systemName, liberatedFrom: prevOccupier }, true);
+          this._dirtyPlayers.add(colony.ownerId);
+          this._dirtyPlayers.add(prevOccupier);
+          this._vpCacheTick = -1;
+          changed = true;
+        }
+        continue; // already occupied, skip occupation progress
+      }
+
+      if (defenderPresent) {
+        // Defender has ships — reset any occupation progress
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      if (!attackerId) {
+        // Only defender's in-transit ships here — reset progress
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Occupation requires hostile stance — neutral/friendly ships don't occupy
+      if (!this._areHostile(attackerId, colony.ownerId)) {
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Increment occupation progress
+      colony.occupationProgress++;
+      changed = true;
+
+      // Check if occupation is complete
+      if (colony.occupationProgress >= OCCUPATION_TICKS) {
+        colony.occupiedBy = attackerId;
+        colony._cachedProduction = null; // invalidate production cache
+        const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+        const attackerState = this.playerStates.get(attackerId);
+        const attackerName = attackerState ? attackerState.name : 'Unknown';
+        this._emitEvent('colonyOccupied', colony.ownerId, { colonyId: colony.id, colonyName: colony.name, systemId, systemName, occupantId: attackerId, occupantName: attackerName }, true);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._dirtyPlayers.add(attackerId);
+        this._vpCacheTick = -1;
+      }
+    }
+    if (changed) this._invalidateStateCache();
+  }
+
+  // Add a military ship and update indices
+  _addMilitaryShip(ship) {
+    this._militaryShips.push(ship);
+    this._militaryShipsById.set(ship.id, ship);
+    let arr = this._militaryShipsByPlayer.get(ship.ownerId);
+    if (!arr) { arr = []; this._militaryShipsByPlayer.set(ship.ownerId, arr); }
+    arr.push(ship);
+    let sysArr = this._militaryShipsBySystem.get(ship.systemId);
+    if (!sysArr) { sysArr = []; this._militaryShipsBySystem.set(ship.systemId, sysArr); }
+    sysArr.push(ship);
+  }
+
+  // Remove a military ship by reference and update indices
+  _removeMilitaryShip(ship) {
+    const idx = this._militaryShips.indexOf(ship);
+    if (idx !== -1) this._militaryShips.splice(idx, 1);
+    this._militaryShipsById.delete(ship.id);
+    const arr = this._militaryShipsByPlayer.get(ship.ownerId);
+    if (arr) {
+      const pi = arr.indexOf(ship);
+      if (pi !== -1) arr.splice(pi, 1);
+    }
+    const sysArr = this._militaryShipsBySystem.get(ship.systemId);
+    if (sysArr) {
+      const si = sysArr.indexOf(ship);
+      if (si !== -1) sysArr.splice(si, 1);
+    }
+    this._vpCacheTick = -1; // VP depends on corvette count
+  }
+
+  // Get corvette count for a player — O(1)
+  _playerCorvetteCount(playerId) {
+    const arr = this._militaryShipsByPlayer.get(playerId);
+    return arr ? arr.length : 0;
+  }
+
+  // Count idle civilian ships for a player using per-player index — O(ships_owned) not O(all_ships)
+  _countIdleCivilianShips(playerId, type) {
+    const ships = type === 'colony'
+      ? this._colonyShipsByPlayer.get(playerId)
+      : this._scienceShipsByPlayer.get(playerId);
+    if (!ships) return 0;
+    let count = 0;
+    for (const s of ships) {
+      if (s.path && s.path.length > 0) continue;
+      if (type === 'science' && s.surveying) continue;
+      count++;
+    }
+    return count;
+  }
+
   // Remove a colony ship by reference (in-place splice, no new array)
   _removeColonyShip(ship) {
     const idx = this._colonyShips.indexOf(ship);
     if (idx !== -1) this._colonyShips.splice(idx, 1);
+    const pArr = this._colonyShipsByPlayer.get(ship.ownerId);
+    if (pArr) { const pi = pArr.indexOf(ship); if (pi !== -1) pArr.splice(pi, 1); }
   }
 
   // Found a new colony when colony ship arrives
@@ -1402,6 +3196,21 @@ class GameEngine {
       return;
     }
 
+    // Check system control — enemy corvettes block colonization (use system index)
+    const sysShips = this._militaryShipsBySystem.get(ship.targetSystemId) || [];
+    const enemyMilitary = sysShips.some(s =>
+      s.ownerId !== ship.ownerId && (!s.path || s.path.length === 0)
+    );
+    if (enemyMilitary) {
+      this._emitEvent('colonyShipFailed', ship.ownerId, {
+        systemName: system.name,
+        reason: 'Enemy fleet controls system',
+      });
+      this._removeColonyShip(ship);
+      this._dirtyPlayers.add(ship.ownerId);
+      return;
+    }
+
     // Check planet not already colonized
     if (planet.colonized) {
       this._emitEvent('colonyShipFailed', ship.ownerId, {
@@ -1419,7 +3228,8 @@ class GameEngine {
     system.owner = ship.ownerId;
 
     // Create colony with reduced starting pops (2 instead of 8)
-    const colony = this._createColony(ship.ownerId, system.name + ' Colony', {
+    const colonyName = this._generateColonyName(planet.type);
+    const colony = this._createColony(ship.ownerId, colonyName, {
       size: planet.size,
       type: planet.type,
       habitability: planet.habitability,
@@ -1440,6 +3250,8 @@ class GameEngine {
       playerName: playerState ? playerState.name : 'Unknown',
     }, true);
 
+    // Underdog bonus changes when colony count changes — invalidate all production caches
+    this._invalidateAllProductionCaches();
     this._invalidateStateCache();
     this._vpCacheTick = -1;
   }
@@ -1606,11 +3418,13 @@ class GameEngine {
   _removeScienceShip(ship) {
     const idx = this._scienceShips.indexOf(ship);
     if (idx !== -1) this._scienceShips.splice(idx, 1);
+    const pArr = this._scienceShipsByPlayer.get(ship.ownerId);
+    if (pArr) { const pi = pArr.indexOf(ship); if (pi !== -1) pArr.splice(pi, 1); }
   }
 
   // Get district output multipliers from completed techs (cached per player)
   _getTechModifiers(playerState) {
-    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1 };
+    if (!playerState || !playerState.completedTechs) return { district: {}, growth: 1, alloysBonus: {}, jobOverride: {} };
 
     // Return cached value if available and tech count unchanged
     const cached = this._techModCache.get(playerState.id);
@@ -1618,41 +3432,62 @@ class GameEngine {
 
     const modifiers = {}; // districtType -> multiplier
     let growthMultiplier = 1;
+    const alloysBonus = {}; // districtType -> bonus alloys per working district
+    const jobOverride = {}; // districtType -> overridden job count
 
     for (const techId of playerState.completedTechs) {
       const tech = TECH_TREE[techId];
       if (!tech) continue;
 
-      if (tech.effect.type === 'districtBonus') {
+      if (tech.effect.type === 'districtBonus' || tech.effect.type === 'districtBonusAndGrowth') {
         const current = modifiers[tech.effect.district] || 1;
-        // Use the highest multiplier (T2 supersedes T1 for same district)
+        // Use the highest multiplier (T3 supersedes T2 supersedes T1 for same district)
         if (tech.effect.multiplier > current) {
           modifiers[tech.effect.district] = tech.effect.multiplier;
         }
-      } else if (tech.effect.type === 'growthBonus') {
-        // Stack growth bonuses multiplicatively
+        // T3 bonus: generators produce extra alloys
+        if (tech.effect.alloysBonus) {
+          alloysBonus[tech.effect.district] = tech.effect.alloysBonus;
+        }
+        // T3 bonus: mining districts cost 0 jobs
+        if (tech.effect.jobOverride !== undefined) {
+          jobOverride[tech.effect.district] = tech.effect.jobOverride;
+        }
+      }
+      if (tech.effect.type === 'growthBonus') {
         growthMultiplier *= tech.effect.multiplier;
+      }
+      // districtBonusAndGrowth: both district bonus (handled above) and growth bonus
+      if (tech.effect.type === 'districtBonusAndGrowth' && tech.effect.growthMultiplier) {
+        growthMultiplier *= tech.effect.growthMultiplier;
       }
     }
 
-    const result = { district: modifiers, growth: growthMultiplier, _techCount: playerState.completedTechs.length };
+    const result = { district: modifiers, growth: growthMultiplier, alloysBonus, jobOverride, _techCount: playerState.completedTechs.length };
     this._techModCache.set(playerState.id, result);
     return result;
   }
 
+  // Diminishing pop VP: first 20 pops ×2, pops 21-40 ×1.5 (rounded), pops 41+ ×1
+  static _calcPopVP(totalPops) {
+    if (totalPops <= 20) return totalPops * 2;
+    if (totalPops <= 40) return 40 + Math.round((totalPops - 20) * 1.5);
+    return 40 + 30 + (totalPops - 40);
+  }
+
   // Full VP breakdown for a player — single source of truth for the VP formula.
-  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP }
+  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP, surveyed, surveyedVP }
   _calcVPBreakdown(playerId) {
     const cached = this._vpBreakdownCache.get(playerId);
     if (cached && this._vpCacheTick === this.tickCount) return cached;
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
       return empty;
     }
 
-    // Pops × 2 + Districts × 1 (single pass) + count traits
+    // Diminishing pop VP + Districts × 1 (single pass) + count traits
     let totalPops = 0;
     let totalDistricts = 0;
     let traitCount = 0;
@@ -1666,8 +3501,10 @@ class GameEngine {
       }
     }
 
-    // Colony personality traits: +5 VP per active trait
-    const traitsVP = traitCount * 5;
+    const popsVP = GameEngine._calcPopVP(totalPops);
+
+    // Colony personality traits: +10 VP per active trait
+    const traitsVP = traitCount * 10;
 
     // Alloys stockpiled / 25
     const alloysVP = Math.floor(state.resources.alloys / 25);
@@ -1678,25 +3515,105 @@ class GameEngine {
       + (state.resources.research.engineering || 0);
     const researchVP = Math.floor(totalResearch / 50);
 
-    // Per-tech VP bonuses: +5 per T1 tech, +10 per T2 tech, +20 per T3 tech
+    // Per-tech VP bonuses: +5 per T1 tech, +10 per T2 tech, +30 per T3 tech
     let techVP = 0;
     for (const techId of (state.completedTechs || [])) {
       const tech = TECH_TREE[techId];
       if (tech) {
         if (tech.tier === 1) techVP += 5;
         else if (tech.tier === 2) techVP += 10;
-        else if (tech.tier === 3) techVP += 20;
+        else if (tech.tier === 3) techVP += 30;
       }
     }
 
-    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP + traitsVP;
+    // Exploration VP: +1 per 5 systems surveyed
+    const surveyedSet = this._surveyedSystems.get(playerId);
+    const surveyed = surveyedSet ? surveyedSet.size : 0;
+    const surveyedVP = Math.floor(surveyed / 5);
+
+    // Raider VP: +5 per raider destroyed
+    const raidersDestroyed = this._raidersDestroyed.get(playerId) || 0;
+    const raidersVP = raidersDestroyed * RAIDER_DESTROY_VP;
+
+    // Military VP: +1 per corvette owned
+    const corvettes = this._playerCorvetteCount(playerId);
+    const militaryVP = corvettes;
+
+    // Fleet combat VP: +5 per battle won, -2 per own ship lost
+    const battlesWon = this._battlesWon.get(playerId) || 0;
+    const battlesWonVP = battlesWon * FLEET_BATTLE_WON_VP;
+    const shipsLost = this._shipsLost.get(playerId) || 0;
+    const shipsLostVP = shipsLost > 0 ? shipsLost * FLEET_SHIP_LOST_VP : 0;
+
+    // Occupation VP: attacker gains VP for colonies they occupy, defender loses VP for colonies occupied by others
+    let occupiedAttackerVP = 0;
+    let occupiedDefenderVP = 0;
+    let coloniesOccupying = 0;
+    let coloniesOccupied = 0;
+    // Count colonies this player is occupying (attacker VP)
+    for (const colony of this.colonies.values()) {
+      if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+        coloniesOccupying++;
+      }
+    }
+    occupiedAttackerVP = coloniesOccupying * OCCUPATION_ATTACKER_VP;
+    // Count own colonies that are occupied by someone else (defender VP penalty)
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && colony.occupiedBy && colony.occupiedBy !== colony.ownerId) {
+        coloniesOccupied++;
+      }
+    }
+    occupiedDefenderVP = coloniesOccupied * OCCUPATION_DEFENDER_VP;
+
+    // Diplomacy VP: +5 per friendly relationship, +10 if mutual
+    let friendlyCount = 0;
+    let mutualFriendlyCount = 0;
+    let diplomacyVP = 0;
+    for (const [otherId] of this.playerStates) {
+      if (otherId === playerId) continue;
+      const myStance = this._getStance(playerId, otherId);
+      const theirStance = this._getStance(otherId, playerId);
+      if (myStance === DIPLOMACY_STANCES.FRIENDLY && theirStance === DIPLOMACY_STANCES.FRIENDLY) {
+        mutualFriendlyCount++;
+        diplomacyVP += MUTUAL_FRIENDLY_VP;
+      } else if (myStance === DIPLOMACY_STANCES.FRIENDLY) {
+        friendlyCount++;
+        diplomacyVP += FRIENDLY_VP;
+      }
+    }
+
+    // Endgame crisis VP: +15 for destroying precursor, -5 per colony occupied by precursor
+    let precursorVP = 0;
+    if (this._precursorDestroyedBy === playerId) {
+      precursorVP += PRECURSOR_DESTROY_VP;
+    }
+    let precursorOccupiedCount = 0;
+    for (const colonyId of this._precursorOccupiedColonies) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && colony.ownerId === playerId) {
+        precursorOccupiedCount++;
+      }
+    }
+    precursorVP += precursorOccupiedCount * PRECURSOR_OCCUPY_VP;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP;
     const breakdown = {
-      vp, pops: totalPops, popsVP: totalPops * 2,
+      vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
       alloys: state.resources.alloys, alloysVP,
       totalResearch, researchVP,
       techs: (state.completedTechs || []).length, techVP,
       traits: traitCount, traitsVP,
+      surveyed, surveyedVP,
+      raidersDestroyed, raidersVP,
+      corvettes, militaryVP,
+      battlesWon, battlesWonVP,
+      shipsLost, shipsLostVP,
+      coloniesOccupying, occupiedAttackerVP,
+      coloniesOccupied, occupiedDefenderVP,
+      friendlyCount, mutualFriendlyCount, diplomacyVP,
+      precursorVP, precursorOccupiedCount,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -1796,8 +3713,9 @@ class GameEngine {
         state.researchProgress[techId] = (state.researchProgress[techId] || 0) + available;
         state.resources.research[track] = 0;
 
-        // Check completion
-        if (state.researchProgress[techId] >= tech.cost) {
+        // Check completion (tech discount: -15% cost per player who already completed it)
+        const effectiveCost = Math.round(tech.cost * this._calcTechDiscount(techId));
+        if (state.researchProgress[techId] >= effectiveCost) {
           state.completedTechs.push(techId);
           state.currentResearch[track] = null;
           delete state.researchProgress[techId];
@@ -1889,11 +3807,26 @@ class GameEngine {
       if (this._gameOver) return; // game ended this tick
     }
 
+    // Process doctrine selection phase (auto-assign after 30 seconds)
+    this._processDoctrinePhase();
+
     // Process construction every tick
     this._processConstruction();
 
+    // Process defense platform construction every tick
+    this._processDefensePlatformConstruction();
+
     // Process colony ship movement every tick
     this._processColonyShipMovement();
+
+    // Process military ship (corvette) movement every tick
+    this._processMilitaryShipMovement();
+
+    // Check for fleet combat after movement
+    this._checkFleetCombat();
+
+    // Process colony occupation progress
+    this._processOccupation();
 
     // Process science ship movement and surveying every tick
     this._processScienceShipMovement();
@@ -1904,12 +3837,27 @@ class GameEngine {
     // Pop growth every tick
     this._processPopGrowth();
 
+    // Scarcity season processing every tick
+    this._processScarcitySeason();
+
+    // Endgame crisis processing
+    this._processEndgameCrisis();
+    this._processPrecursorMovement();
+
+    // NPC raider fleet processing every tick
+    this._processRaiderSpawning();
+    this._processRaiderMovement();
+    this._processRaiderDisableTimers();
+
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
       this._processEnergyDeficit();
       this._processResearch();
       this._processPopStarvation();
+      this._processEdicts();
+      this._processInfluenceIncome();
+      this._processDefensePlatformRepair();
     }
 
     // Flush events — send per-player event messages
@@ -2023,7 +3971,7 @@ class GameEngine {
         const qIdx = colony.buildQueue.findIndex(q => q.id === districtId);
         if (qIdx !== -1) {
           const qItem = colony.buildQueue[qIdx];
-          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : qItem.type === 'scienceShip' ? SCIENCE_SHIP_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
+          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : qItem.type === 'scienceShip' ? SCIENCE_SHIP_COST : qItem.type === 'corvette' ? CORVETTE_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
           if (costTable) {
             const player = this.playerStates.get(playerId);
             for (const [resource, amount] of Object.entries(costTable)) {
@@ -2032,8 +3980,7 @@ class GameEngine {
           }
           colony.buildQueue.splice(qIdx, 1);
           this._dirtyPlayers.add(playerId);
-          this._cachedState = null;
-          this._cachedStateJSON = null;
+          this._invalidateStateCache();
           return { ok: true };
         }
 
@@ -2049,7 +3996,7 @@ class GameEngine {
 
         // Check colony cap
         const playerColonyCount = (this._playerColonies.get(playerId) || []).length;
-        const inFlightShips = this._colonyShips.filter(s => s.ownerId === playerId).length;
+        const inFlightShips = (this._colonyShipsByPlayer.get(playerId) || []).length;
         if (playerColonyCount + inFlightShips >= MAX_COLONIES) {
           return { error: `Colony cap reached (max ${MAX_COLONIES})` };
         }
@@ -2059,21 +4006,26 @@ class GameEngine {
           return { error: 'Build queue full (max 3)' };
         }
 
-        // Check resources
+        // Check resources (Expansionist doctrine: -25% cost)
         const state = this.playerStates.get(playerId);
+        const docCostMult = (state.doctrine && DOCTRINE_DEFS[state.doctrine] && DOCTRINE_DEFS[state.doctrine].colonyShipCostMult) || 1;
         for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
-          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+          const effectiveCost = Math.ceil(amount * docCostMult);
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < effectiveCost) {
             return { error: `Not enough ${resource}` };
           }
         }
 
         // Deduct resources
         for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
-          state.resources[resource] -= amount;
+          state.resources[resource] -= Math.ceil(amount * docCostMult);
         }
 
+        // Expansionist doctrine: -25% build time
+        const docTimeMult = (state.doctrine && DOCTRINE_DEFS[state.doctrine] && DOCTRINE_DEFS[state.doctrine].colonyShipTimeMult) || 1;
+        const buildTime = Math.ceil(COLONY_SHIP_BUILD_TIME * docTimeMult);
         const id = this._nextId();
-        colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: COLONY_SHIP_BUILD_TIME });
+        colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: buildTime });
         this._dirtyPlayers.add(playerId);
         this._invalidateStateCache();
         return { ok: true, id };
@@ -2085,7 +4037,7 @@ class GameEngine {
         if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
 
         const targetSysId = Number(targetSystemId);
-        const ship = this._colonyShips.find(s => s.id === shipId && s.ownerId === playerId);
+        const ship = (this._colonyShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
         if (!ship) return { error: 'Colony ship not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
 
@@ -2103,7 +4055,7 @@ class GameEngine {
 
         // Check colony cap (including in-flight ships)
         const colCount = (this._playerColonies.get(playerId) || []).length;
-        const flyingShips = this._colonyShips.filter(s => s.ownerId === playerId && s.id !== shipId && s.path && s.path.length > 0).length;
+        const flyingShips = (this._colonyShipsByPlayer.get(playerId) || []).filter(s => s.id !== shipId && s.path && s.path.length > 0).length;
         if (colCount + flyingShips + 1 > MAX_COLONIES) {
           return { error: `Colony cap reached (max ${MAX_COLONIES})` };
         }
@@ -2128,7 +4080,7 @@ class GameEngine {
         if (colony.ownerId !== playerId) return { error: 'Not your colony' };
 
         // Check science ship cap
-        const ownedScienceShips = this._scienceShips.filter(s => s.ownerId === playerId).length;
+        const ownedScienceShips = (this._scienceShipsByPlayer.get(playerId) || []).length;
         const buildingShips = [];
         for (const [, c] of this.colonies) {
           if (c.ownerId === playerId) {
@@ -2172,7 +4124,7 @@ class GameEngine {
         if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
 
         const targetSysId = Number(targetSystemId);
-        const ship = this._scienceShips.find(s => s.id === shipId && s.ownerId === playerId);
+        const ship = (this._scienceShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
         if (!ship) return { error: 'Science ship not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
         if (ship.surveying) return { error: 'Ship is currently surveying' };
@@ -2198,6 +4150,159 @@ class GameEngine {
         this._dirtyPlayers.add(playerId);
         this._invalidateStateCache();
         return { ok: true };
+      }
+
+      case 'buildCorvette': {
+        const { colonyId, variant } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Validate variant if specified
+        let variantDef = null;
+        if (variant) {
+          variantDef = CORVETTE_VARIANTS[variant];
+          if (!variantDef) return { error: `Unknown variant: ${variant}` };
+          // Check T2 tech is completed
+          const corvPlayer = this.playerStates.get(playerId);
+          if (!corvPlayer.completedTechs.includes(variantDef.requiredTech)) {
+            return { error: `Requires ${TECH_TREE[variantDef.requiredTech].name}` };
+          }
+        }
+
+        // Check corvette cap (owned + building)
+        const ownedCorvettes = this._playerCorvetteCount(playerId);
+        let buildingCorvettes = 0;
+        for (const [, c] of this.colonies) {
+          if (c.ownerId === playerId) {
+            for (const q of c.buildQueue) {
+              if (q.type === 'corvette') buildingCorvettes++;
+            }
+          }
+        }
+        if (ownedCorvettes + buildingCorvettes >= MAX_CORVETTES) {
+          return { error: `Corvette cap reached (max ${MAX_CORVETTES})` };
+        }
+
+        // Check build queue
+        if (colony.buildQueue.length >= 3) {
+          return { error: 'Build queue full (max 3)' };
+        }
+
+        // Check resources (same cost for all variants)
+        const corvState = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(CORVETTE_COST)) {
+          if (!Number.isFinite(corvState.resources[resource]) || corvState.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(CORVETTE_COST)) {
+          corvState.resources[resource] -= amount;
+        }
+
+        const buildTime = variant ? CORVETTE_VARIANT_BUILD_TIME : CORVETTE_BUILD_TIME;
+        const corvId = this._nextId();
+        colony.buildQueue.push({ id: corvId, type: 'corvette', ticksRemaining: buildTime, variant: variant || null });
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true, id: corvId };
+      }
+
+      case 'sendFleet': {
+        const { shipId, targetSystemId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
+
+        const targetSysId = Number(targetSystemId);
+        const ship = this._militaryShipsById.get(shipId);
+        if (!ship || ship.ownerId !== playerId) return { error: 'Corvette not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+
+        // Validate target system exists
+        if (!this.galaxy || !this.galaxy.systems[targetSysId]) {
+          return { error: 'Invalid target system' };
+        }
+
+        // Cannot send to current system
+        if (ship.systemId === targetSysId) {
+          return { error: 'Already at target system' };
+        }
+
+        // Find path via BFS
+        const path = this._findPath(ship.systemId, targetSysId);
+        if (!path) return { error: 'No path to target system' };
+
+        ship.targetSystemId = targetSysId;
+        ship.path = path;
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'retreatFleet': {
+        const { shipId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+
+        const ship = this._militaryShipsById.get(shipId);
+        if (!ship || ship.ownerId !== playerId) return { error: 'Corvette not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+
+        // Must be in a system with enemy ships (use system index)
+        const shipsHere = this._militaryShipsBySystem.get(ship.systemId) || [];
+        const enemyShips = [];
+        for (const s of shipsHere) {
+          if (s.ownerId !== playerId && (!s.path || s.path.length === 0)) {
+            enemyShips.push(s);
+          }
+        }
+        if (enemyShips.length === 0) return { error: 'No enemies to retreat from' };
+
+        // Find adjacent system via cached adjacency list
+        const adjacentSystems = this._adjacency.get(ship.systemId) || [];
+        if (adjacentSystems.length === 0) return { error: 'No adjacent system to retreat to' };
+
+        // Pick first adjacent system (prefer one without enemy ships)
+        let retreatTarget = adjacentSystems[0];
+        for (const sysId of adjacentSystems) {
+          const sysShips = this._militaryShipsBySystem.get(sysId) || [];
+          const hasEnemyShips = sysShips.some(s =>
+            s.ownerId !== playerId && (!s.path || s.path.length === 0)
+          );
+          if (!hasEnemyShips) { retreatTarget = sysId; break; }
+        }
+        let retreatDamage = 0;
+        for (const es of enemyShips) {
+          retreatDamage += es.attack;
+        }
+        ship.hp -= retreatDamage;
+
+        if (ship.hp <= 0) {
+          // Ship destroyed during retreat
+          const lost = (this._shipsLost.get(playerId) || 0) + 1;
+          this._shipsLost.set(playerId, lost);
+          this._removeMilitaryShip(ship);
+          this._vpCacheTick = -1;
+          this._invalidateStateCache();
+          this._emitEvent('combatResult', playerId, {
+            systemId: ship.systemId,
+            systemName: (this.galaxy.systems[ship.systemId] || {}).name || `System ${ship.systemId}`,
+            retreatFailed: true, shipId,
+            retreatDamage,
+          });
+          return { ok: true, destroyed: true };
+        }
+
+        // Set path to retreat target
+        ship.targetSystemId = retreatTarget;
+        ship.path = [retreatTarget];
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true, retreatTarget, retreatDamage, hpRemaining: ship.hp };
       }
 
       case 'setResearch': {
@@ -2239,6 +4344,262 @@ class GameEngine {
         return this.resolveCrisis(playerId, colonyId, choiceId);
       }
 
+      case 'activateEdict': {
+        const { edictType } = cmd;
+        if (!edictType || typeof edictType !== 'string') return { error: 'Missing edictType' };
+
+        const edictDef = EDICT_DEFS[edictType];
+        if (!edictDef) return { error: 'Unknown edict type' };
+
+        const state = this.playerStates.get(playerId);
+        if (!state) return { error: 'Player not found' };
+
+        // Only one active edict at a time
+        if (state.activeEdict) return { error: 'An edict is already active' };
+
+        // Check influence cost
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < edictDef.cost) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence
+        state.resources.influence -= edictDef.cost;
+
+        if (edictDef.duration === 0) {
+          // Instant edict (Emergency Reserves) — apply grants immediately
+          for (const [resource, amount] of Object.entries(edictDef.effect.grants)) {
+            state.resources[resource] = (state.resources[resource] || 0) + amount;
+          }
+          this._emitEvent('edictActivated', playerId, {
+            edictType,
+            edictName: edictDef.name,
+            instant: true,
+          });
+        } else {
+          // Duration edict — set active
+          state.activeEdict = { type: edictType, monthsRemaining: edictDef.duration };
+          // Invalidate production caches since edict modifiers affect production
+          this._invalidatePlayerProductionCaches(playerId);
+          this._emitEvent('edictActivated', playerId, {
+            edictType,
+            edictName: edictDef.name,
+            duration: edictDef.duration,
+          });
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'buildDefensePlatform': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Check if colony already has a defense platform
+        if (colony.defensePlatform) return { error: 'Colony already has a defense platform' };
+
+        // Check resource cost
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(DEFENSE_PLATFORM_COST)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(DEFENSE_PLATFORM_COST)) {
+          state.resources[resource] -= amount;
+        }
+
+        // Start construction
+        colony.defensePlatform = {
+          hp: DEFENSE_PLATFORM_MAX_HP,
+          maxHp: DEFENSE_PLATFORM_MAX_HP,
+          building: true,
+          buildTicksRemaining: DEFENSE_PLATFORM_BUILD_TIME,
+        };
+        this._defensePlatformBuilding.add(colonyId);
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'setDiplomacy': {
+        const { targetPlayerId, stance } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (!stance || !Object.values(DIPLOMACY_STANCES).includes(stance)) return { error: 'Invalid stance' };
+        if (targetPlayerId === playerId) return { error: 'Cannot set diplomacy with yourself' };
+
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+        const state = this.playerStates.get(playerId);
+
+        // Check cooldown
+        const existing = state.diplomacy[targetPlayerId];
+        if (existing && existing.cooldownTick > this.tickCount) {
+          return { error: 'Diplomacy on cooldown' };
+        }
+
+        // Check if already at this stance
+        const currentStance = existing ? existing.stance : DIPLOMACY_STANCES.NEUTRAL;
+        if (currentStance === stance) return { error: 'Already at this stance' };
+
+        // Check influence cost
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < DIPLOMACY_INFLUENCE_COST) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence
+        state.resources.influence -= DIPLOMACY_INFLUENCE_COST;
+
+        // Set stance with cooldown
+        state.diplomacy[targetPlayerId] = {
+          stance,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+
+        // Handle stance-specific logic
+        if (stance === DIPLOMACY_STANCES.HOSTILE) {
+          // Hostile is mutual — auto-set target's stance to hostile toward this player
+          targetState.diplomacy[playerId] = {
+            stance: DIPLOMACY_STANCES.HOSTILE,
+            cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+          };
+          // Clear any pending friendly requests
+          state.pendingFriendly.delete(targetPlayerId);
+          targetState.pendingFriendly.delete(playerId);
+          // Breaking a friendly alliance affects production bonuses
+          this._invalidateProductionCaches();
+          // Broadcast war declared
+          for (const [pid] of this.playerStates) {
+            this._emitEvent('warDeclared', pid, {
+              aggressorId: playerId,
+              aggressorName: state.name,
+              targetId: targetPlayerId,
+              targetName: targetState.name,
+            });
+          }
+        } else if (stance === DIPLOMACY_STANCES.FRIENDLY) {
+          // Friendly requires acceptance — add pending request
+          state.pendingFriendly.add(targetPlayerId);
+          // Notify target player
+          this._emitEvent('friendlyProposed', targetPlayerId, {
+            fromId: playerId,
+            fromName: state.name,
+          });
+          // Don't set to friendly yet — wait for acceptance
+          // Revert to the actual pending state
+          state.diplomacy[targetPlayerId].stance = currentStance === DIPLOMACY_STANCES.HOSTILE ? DIPLOMACY_STANCES.NEUTRAL : currentStance;
+          // If target already has a pending request toward us, auto-accept
+          if (targetState.pendingFriendly.has(playerId)) {
+            state.diplomacy[targetPlayerId].stance = DIPLOMACY_STANCES.FRIENDLY;
+            targetState.diplomacy[playerId] = {
+              stance: DIPLOMACY_STANCES.FRIENDLY,
+              cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+            };
+            state.pendingFriendly.delete(targetPlayerId);
+            targetState.pendingFriendly.delete(playerId);
+            // Broadcast alliance formed
+            for (const [pid] of this.playerStates) {
+              this._emitEvent('allianceFormed', pid, {
+                player1Id: playerId,
+                player1Name: state.name,
+                player2Id: targetPlayerId,
+                player2Name: targetState.name,
+              });
+            }
+            this._invalidateProductionCaches();
+          }
+        } else {
+          // Neutral — clear any pending friendly requests
+          state.pendingFriendly.delete(targetPlayerId);
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._vpCacheTick = -1;
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'acceptDiplomacy': {
+        const { targetPlayerId } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot accept diplomacy with yourself' };
+
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+        const state = this.playerStates.get(playerId);
+
+        // Check if target has a pending friendly request toward us
+        if (!targetState.pendingFriendly.has(playerId)) {
+          return { error: 'No pending friendly proposal' };
+        }
+
+        // Accept — set both sides to friendly
+        state.diplomacy[targetPlayerId] = {
+          stance: DIPLOMACY_STANCES.FRIENDLY,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+        targetState.diplomacy[playerId] = {
+          stance: DIPLOMACY_STANCES.FRIENDLY,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+        targetState.pendingFriendly.delete(playerId);
+        state.pendingFriendly.delete(targetPlayerId);
+
+        // Broadcast alliance formed
+        for (const [pid] of this.playerStates) {
+          this._emitEvent('allianceFormed', pid, {
+            player1Id: playerId,
+            player1Name: state.name,
+            player2Id: targetPlayerId,
+            player2Name: targetState.name,
+          });
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._vpCacheTick = -1;
+        this._invalidateProductionCaches();
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'selectDoctrine': {
+        const { doctrineType } = cmd;
+        if (!doctrineType) return { error: 'Missing doctrineType' };
+        if (!Object.prototype.hasOwnProperty.call(DOCTRINE_DEFS, doctrineType)) return { error: 'Invalid doctrine type' };
+
+        const state = this.playerStates.get(playerId);
+        if (!state) return { error: 'Player not found' };
+        if (state.doctrine !== null) return { error: 'Doctrine already chosen' };
+        if (!this._doctrinePhase) return { error: 'Doctrine selection phase ended' };
+
+        state.doctrine = doctrineType;
+        this._applyDoctrineStartingBonus(playerId, doctrineType);
+        this._emitEvent('doctrineChosen', playerId, {
+          doctrine: doctrineType,
+          name: DOCTRINE_DEFS[doctrineType].name,
+        }, true); // broadcast to all
+        this._invalidateProductionCaches();
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+
+        // If all players have chosen, end doctrine phase early
+        let allChosen = true;
+        for (const [, ps] of this.playerStates) {
+          if (ps.doctrine === null) { allChosen = false; break; }
+        }
+        if (allChosen) this._doctrinePhase = false;
+
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -2257,6 +4618,7 @@ class GameEngine {
     const colonyIds = this._playerColonies.get(playerId) || [];
     let totalPops = 0;
     const income = { energy: 0, minerals: 0, food: 0, alloys: 0 };
+    let traitCount = 0;
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (!colony) continue;
@@ -2266,7 +4628,24 @@ class GameEngine {
       income.minerals += production.minerals - consumption.minerals;
       income.food += production.food - consumption.food;
       income.alloys += production.alloys - consumption.alloys;
+      if (this._calcColonyTrait(colony)) traitCount++;
     }
+    income.influence = colonyIds.length * INFLUENCE_BASE_INCOME + traitCount * INFLUENCE_TRAIT_INCOME;
+
+    // Subtract ship maintenance from income display (per-variant costs)
+    const playerMilShips = this._militaryShipsByPlayer.get(playerId) || [];
+    let maintEnergy = 0, maintAlloys = 0;
+    for (const ship of playerMilShips) {
+      const maint = ship.variant ? CORVETTE_VARIANTS[ship.variant].maintenance : CORVETTE_MAINTENANCE;
+      maintEnergy += maint.energy;
+      maintAlloys += maint.alloys;
+    }
+    const idleColonyShips = this._countIdleCivilianShips(playerId, 'colony');
+    const idleScienceShips = this._countIdleCivilianShips(playerId, 'science');
+    const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
+    income.energy -= maintEnergy + civilianMaintenance;
+    income.alloys -= maintAlloys;
+
     const summary = { colonyCount: colonyIds.length, totalPops, income };
     this._summaryCache.set(playerId, summary);
     return summary;
@@ -2281,6 +4660,7 @@ class GameEngine {
         currentResearch: p.currentResearch, researchProgress: p.researchProgress,
         completedTechs: p.completedTechs,
         vp: this._calcVictoryPoints(p.id),
+        diplomacy: this._serializeDiplomacy(p.id),
       });
     }
     const coloniesArr = [];
@@ -2303,6 +4683,14 @@ class GameEngine {
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
     }));
+    // Include military ships (corvettes)
+    state.militaryShips = this._militaryShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path || [],
+      hopProgress: s.hopProgress,
+      hp: s.hp, attack: s.attack,
+    }));
     // Surveyed systems per player
     state.surveyedSystems = {};
     for (const [pid, sysSet] of this._surveyedSystems) {
@@ -2314,6 +4702,28 @@ class GameEngine {
     }
     state.gameSpeed = this._gameSpeed;
     state.paused = this._paused;
+    if (this._activeScarcity) {
+      state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    }
+    // Include raider fleets
+    state.raiders = this._raiders.map(r => ({
+      id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
+      hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
+    }));
+    // Endgame crisis state
+    if (this._endgameCrisis) {
+      state.endgameCrisis = { type: this._endgameCrisis.type };
+      if (this._precursorFleet) {
+        state.precursorFleet = {
+          id: this._precursorFleet.id,
+          systemId: this._precursorFleet.systemId,
+          targetSystemId: this._precursorFleet.targetSystemId,
+          hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+          hopProgress: this._precursorFleet.hopProgress,
+          hp: this._precursorFleet.hp,
+        };
+      }
+    }
     this._cachedState = state;
     return state;
   }
@@ -2327,6 +4737,49 @@ class GameEngine {
     return this._cachedStateJSON;
   }
 
+  // Cached serialized ship arrays — shared across all players per broadcast cycle.
+  // Client only needs path[0] (next hop) for interpolation, not the full remaining path.
+  _getSerializedShipData() {
+    if (this._cachedShipData) return this._cachedShipData;
+    this._cachedShipData = {
+      colonyShips: this._colonyShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+      })),
+      scienceShips: this._scienceShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+        surveying: s.surveying || false,
+        surveyProgress: s.surveyProgress || 0,
+      })),
+      militaryShips: this._militaryShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+        hp: s.hp, attack: s.attack,
+        variant: s.variant || null, maxHp: s.maxHp || CORVETTE_HP,
+      })),
+      raiders: this._raiders.map(r => ({
+        id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
+        hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
+      })),
+      precursorFleet: this._precursorFleet ? {
+        id: this._precursorFleet.id,
+        systemId: this._precursorFleet.systemId,
+        targetSystemId: this._precursorFleet.targetSystemId,
+        hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+        hopProgress: this._precursorFleet.hopProgress,
+        hp: this._precursorFleet.hp,
+      } : null,
+    };
+    return this._cachedShipData;
+  }
+
   // Per-player state: only this player's resources and colonies + minimal other-player summary
   getPlayerState(playerId) {
     const player = this.playerStates.get(playerId);
@@ -2338,16 +4791,36 @@ class GameEngine {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
+      activeEdict: player.activeEdict,
+      doctrine: player.doctrine,
       vp: this._calcVictoryPoints(playerId),
+      techs: (player.completedTechs || []).length,
+      raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
+      corvettes: this._playerCorvetteCount(playerId),
+      battlesWon: this._battlesWon.get(playerId) || 0,
+      shipsLost: this._shipsLost.get(playerId) || 0,
+      diplomacy: this._serializeDiplomacy(playerId),
+      underdogBonus: this._calcUnderdogBonus(playerId),
       ...mySummary,
     };
 
-    // Other players: name/color + VP for scoreboard (no resources)
+    // Other players: name/color + VP + summary + techs/raiders/corvettes for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
       const summary = this._getPlayerSummary(p.id);
-      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id), ...summary });
+      others.push({
+        id: p.id, name: p.name, color: p.color,
+        vp: this._calcVictoryPoints(p.id),
+        techs: (p.completedTechs || []).length,
+        raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
+        corvettes: this._playerCorvetteCount(p.id),
+        battlesWon: this._battlesWon.get(p.id) || 0,
+        shipsLost: this._shipsLost.get(p.id) || 0,
+        stanceTowardMe: this._getStance(p.id, playerId),
+        doctrine: p.doctrine,
+        ...summary,
+      });
     }
 
     // Own colonies (full detail)
@@ -2361,23 +4834,11 @@ class GameEngine {
 
     const state = { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
 
-    // Include colony ships (own + visible others)
-    state.colonyShips = this._colonyShips.map(s => ({
-      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
-      targetSystemId: s.targetSystemId,
-      path: s.path || [],
-      hopProgress: s.hopProgress,
-    }));
-
-    // Include science ships
-    state.scienceShips = this._scienceShips.map(s => ({
-      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
-      targetSystemId: s.targetSystemId,
-      path: s.path || [],
-      hopProgress: s.hopProgress,
-      surveying: s.surveying || false,
-      surveyProgress: s.surveyProgress || 0,
-    }));
+    // Ship data is identical for all players — cache serialized arrays
+    const shipData = this._getSerializedShipData();
+    state.colonyShips = shipData.colonyShips;
+    state.scienceShips = shipData.scienceShips;
+    state.militaryShips = shipData.militaryShips;
     // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
     state.surveyedSystems = {};
     const mySurveyed = this._surveyedSystems.get(playerId);
@@ -2392,6 +4853,31 @@ class GameEngine {
     }
     state.gameSpeed = this._gameSpeed;
     state.paused = this._paused;
+    if (this._activeScarcity) {
+      state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    }
+    state.raiders = shipData.raiders;
+
+    // Endgame crisis state
+    if (this._endgameCrisis) {
+      state.endgameCrisis = { type: this._endgameCrisis.type };
+      if (this._precursorFleet) {
+        state.precursorFleet = {
+          id: this._precursorFleet.id,
+          systemId: this._precursorFleet.systemId,
+          targetSystemId: this._precursorFleet.targetSystemId,
+          hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+          hopProgress: this._precursorFleet.hopProgress,
+          hp: this._precursorFleet.hp,
+        };
+      }
+    }
+
+    // Doctrine selection phase info
+    if (this._doctrinePhase) {
+      state.doctrinePhase = true;
+      state.doctrineDeadlineTick = this._doctrineDeadlineTick;
+    }
 
     return state;
   }
@@ -2412,7 +4898,9 @@ class GameEngine {
     const { production, consumption } = this._calcProduction(c);
     const queueArr = [];
     for (const q of c.buildQueue) {
-      queueArr.push({ id: q.id, type: q.type, ticksRemaining: q.ticksRemaining });
+      const entry = { id: q.id, type: q.type, ticksRemaining: q.ticksRemaining };
+      if (q.variant) entry.variant = q.variant;
+      queueArr.push(entry);
     }
     const housing = this._calcHousing(c);
     const foodSurplus = production.food - (consumption.food || 0);
@@ -2448,9 +4936,9 @@ class GameEngine {
         shutdownTicks: c.crisisState.shutdownTicks || 0,
       };
     }
-    return {
-      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
-      isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
+    const result = {
+      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
+      planet: { size: c.planet.size, type: c.planet.type },
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
@@ -2463,6 +4951,40 @@ class GameEngine {
         alloys: production.alloys - (consumption.alloys || 0),
         physics: production.physics, society: production.society, engineering: production.engineering,
       },
+    };
+    // Include occupation state when active
+    if (c.occupiedBy) {
+      result.occupiedBy = c.occupiedBy;
+      result.occupationProgress = c.occupationProgress;
+    } else if (c.occupationProgress > 0) {
+      result.occupationProgress = c.occupationProgress;
+    }
+    // Only include defensePlatform when present (saves ~700 bytes at 40 colonies)
+    if (c.defensePlatform) {
+      result.defensePlatform = {
+        hp: c.defensePlatform.hp,
+        maxHp: c.defensePlatform.maxHp,
+        building: c.defensePlatform.building || false,
+        buildTicksRemaining: c.defensePlatform.buildTicksRemaining || 0,
+      };
+    }
+    return result;
+  }
+
+  // Serialize diplomacy state for a player (stances, pending requests)
+  _serializeDiplomacy(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return {};
+    const result = {};
+    for (const [targetId, entry] of Object.entries(state.diplomacy)) {
+      result[targetId] = {
+        stance: entry.stance,
+        cooldownTick: entry.cooldownTick,
+      };
+    }
+    return {
+      stances: result,
+      pendingFriendly: [...state.pendingFriendly],
     };
   }
 
@@ -2489,4 +5011,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, generateGalaxy, assignStartingSystems };

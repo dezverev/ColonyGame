@@ -133,6 +133,8 @@
           galaxy: msg.galaxy || null,
           gameSpeed: msg.gameSpeed || 2,
           paused: msg.paused || false,
+          doctrinePhase: msg.doctrinePhase || false,
+          doctrineDeadlineTick: msg.doctrineDeadlineTick || 0,
         };
         _refreshPlayerCache();
         // Reset game-over state
@@ -153,6 +155,9 @@
         if (_uiInterval) clearInterval(_uiInterval);
         _uiInterval = setInterval(_updateHUD, 500);
         _updateHUD();
+        // Show doctrine selection overlay at game start
+        doctrineChosen = false;
+        _showDoctrineSelection();
         break;
 
       case 'gameState':
@@ -167,6 +172,8 @@
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
           if (msg.paused !== undefined) gameState.paused = msg.paused;
+          gameState.doctrinePhase = msg.doctrinePhase || false;
+          gameState.doctrineDeadlineTick = msg.doctrineDeadlineTick || 0;
           _refreshPlayerCache();
           // Update Three.js colony view
           if (currentView === 'colony' && window.ColonyRenderer) {
@@ -178,6 +185,12 @@
             window.GalaxyView.updateColonyShips(gameState.colonyShips);
             if (window.GalaxyView.updateScienceShips) {
               window.GalaxyView.updateScienceShips(gameState.scienceShips);
+            }
+            if (window.GalaxyView.updateRaiders) {
+              window.GalaxyView.updateRaiders(gameState.raiders);
+            }
+            if (window.GalaxyView.updateCorvettes) {
+              window.GalaxyView.updateCorvettes(gameState.militaryShips);
             }
             // Refresh open system panel so survey results appear
             if (systemPanel && !systemPanel.classList.contains('hidden')) {
@@ -196,10 +209,23 @@
           if (researchPanel && !researchPanel.classList.contains('hidden')) {
             _renderResearchPanel();
           }
+        } else if (msg.eventType === 'combatStarted') {
+          // Trigger combat flash on galaxy map
+          if (window.GalaxyView && msg.systemId != null) {
+            window.GalaxyView.showCombatFlash(msg.systemId);
+          }
         } else if (msg.eventType === 'matchWarning') {
           _showMatchWarning('2 minutes remaining!');
         } else if (msg.eventType === 'finalCountdown') {
           _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
+        } else if (msg.eventType === 'endgameCrisisWarning') {
+          _showMatchWarning('ENDGAME CRISIS APPROACHING...');
+        } else if (msg.eventType === 'endgameCrisis') {
+          _showEndgameCrisisAlert(msg);
+        } else if (msg.eventType === 'precursorDestroyed') {
+          _showMatchWarning('PRECURSOR FLEET DESTROYED by ' + (msg.destroyerName || 'Unknown') + '!');
+        } else if (msg.eventType === 'precursorOccupied') {
+          _showMatchWarning('PRECURSOR occupies ' + (msg.colonyName || 'colony') + '!');
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -208,8 +234,8 @@
             _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
           }
         }
-        // Show event ticker for broadcast events (all players)
-        if (msg.broadcast) {
+        // Show event ticker for broadcast events (all players) and combat events
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -298,6 +324,9 @@
     advanced_reactors:     { track: 'physics', tier: 2, name: 'Advanced Reactors', desc: '+50% Generator output', cost: 500, requires: 'improved_power_plants' },
     gene_crops:            { track: 'society', tier: 2, name: 'Gene Crops', desc: '+50% Agriculture output', cost: 500, requires: 'frontier_medicine' },
     deep_mining:           { track: 'engineering', tier: 2, name: 'Deep Mining', desc: '+50% Mining output', cost: 500, requires: 'improved_mining' },
+    fusion_reactors:       { track: 'physics', tier: 3, name: 'Fusion Reactors', desc: '+100% Generator output, +1 Alloy/generator', cost: 1000, requires: 'advanced_reactors' },
+    genetic_engineering:   { track: 'society', tier: 3, name: 'Genetic Engineering', desc: '+100% Agri output, growth halved', cost: 1000, requires: 'gene_crops' },
+    automated_mining:      { track: 'engineering', tier: 3, name: 'Automated Mining', desc: '+100% Mining output, 0 jobs', cost: 1000, requires: 'deep_mining' },
   };
 
   // ── HUD elements ──
@@ -313,9 +342,17 @@
     research: document.getElementById('res-research'),
     researchNet: document.getElementById('res-research-net'),
     influence: document.getElementById('res-influence'),
+    influenceNet: document.getElementById('res-influence-net'),
   };
   const statusSpeed = document.getElementById('status-speed');
   const pauseOverlay = document.getElementById('pause-overlay');
+  const doctrineOverlay = document.getElementById('doctrine-overlay');
+  const doctrineOptions = document.getElementById('doctrine-options');
+  const doctrineTimer = document.getElementById('doctrine-timer');
+  let doctrineChosen = false;
+  const crisisIndicator = document.getElementById('endgame-crisis-indicator');
+  const underdogEl = document.getElementById('underdog-indicator');
+  const fleetEl = document.getElementById('fleet-indicator');
   const statusMonth = document.getElementById('status-month');
   const statusPops = document.getElementById('status-pops');
   const statusGrowth = document.getElementById('status-growth');
@@ -352,6 +389,12 @@
   const researchPanel = document.getElementById('research-panel');
   const researchTracks = document.getElementById('research-tracks');
   const researchPanelClose = document.getElementById('research-panel-close');
+
+  // ── Edict panel refs ──
+  const edictPanel = document.getElementById('edict-panel');
+  const edictActive = document.getElementById('edict-active');
+  const edictOptions = document.getElementById('edict-options');
+  const edictPanelClose = document.getElementById('edict-panel-close');
 
   // ── Scoreboard refs ──
   const scoreboard = document.getElementById('scoreboard');
@@ -425,6 +468,53 @@
         return `<span style="color:#e74c3c">⚠ ${msg.crisisLabel || 'Crisis'}</span> on ${player}'s ${msg.colonyName || 'colony'}!`;
       case 'crisisResolved':
         return `${player}'s ${msg.colonyName || 'colony'}: ${msg.outcome || 'crisis resolved'}`;
+      case 'scarcityWarning': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#f39c12">\u26A0 ${rn} scarcity approaching — brace for -30% production!</span>`;
+      }
+      case 'scarcityStarted': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#e74c3c">\u26A0 ${rn} SCARCITY — production reduced 30% galaxy-wide!</span>`;
+      }
+      case 'scarcityEnded': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#2ecc71">${rn} scarcity ended — production restored.</span>`;
+      }
+      case 'raiderSpawned':
+        return `<span style="color:#e74c3c">\u26A0 Raider fleet detected on the galactic rim!</span>`;
+      case 'raiderDefeated':
+        return `<span style="color:#2ecc71">Defense platform destroyed raider at ${msg.colonyName || 'colony'}! +5 VP</span>`;
+      case 'colonyRaided':
+        return `<span style="color:#e74c3c">\u26A0 ${msg.colonyName || 'Colony'} was raided! ${msg.districtsDisabled || 0} districts disabled.</span>`;
+      case 'maintenanceAttrition':
+        return `<span style="color:#e74c3c">⚠ ${player} lost ${msg.shipsLost} corvette${msg.shipsLost > 1 ? 's' : ''} — cannot afford fleet maintenance!</span>`;
+      case 'combatStarted': {
+        const _pn = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        const sides = (msg.combatants || []).map(c => `${_pn(c.playerId)}(${c.ships})`).join(' vs ');
+        return `<span style="color:#ff6b6b">\u2694 Fleet combat at ${msg.systemName || 'system'}! ${sides}</span>`;
+      }
+      case 'combatResult': {
+        if (msg.retreatFailed) {
+          return `<span style="color:#e74c3c">Ship destroyed during retreat at ${msg.systemName || 'system'}!</span>`;
+        }
+        const _pn2 = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        const winner = msg.winnerId ? _pn2(msg.winnerId) : 'Draw';
+        const lossStr = Object.entries(msg.losses || {}).map(([pid, n]) => `${_pn2(pid)} lost ${n}`).join(', ');
+        return `<span style="color:#f39c12">\u2694 Battle at ${msg.systemName || 'system'}: ${winner} wins! ${lossStr}</span>`;
+      }
+      case 'colonyOccupied': {
+        return `<span style="color:#e74c3c">\u2694 ${msg.occupantName || 'Unknown'} has occupied ${msg.colonyName || 'colony'} in ${msg.systemName || 'system'}!</span>`;
+      }
+      case 'colonyLiberated': {
+        const _pn3 = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        return `<span style="color:#2ecc71">\u2694 ${msg.colonyName || 'Colony'} has been liberated from ${_pn3(msg.liberatedFrom)}!</span>`;
+      }
+      case 'warDeclared':
+        return `<span style="color:#e74c3c">\u2694 WAR DECLARED: ${msg.aggressorName || 'Unknown'} declares war on ${msg.targetName || 'Unknown'}!</span>`;
+      case 'allianceFormed':
+        return `<span style="color:#3498db">\u2726 ALLIANCE FORMED: ${msg.player1Name || 'Unknown'} and ${msg.player2Name || 'Unknown'} are now allies!</span>`;
+      case 'friendlyProposed':
+        return `<span style="color:#3498db">\u2726 ${msg.fromName || 'Unknown'} proposes an alliance! <button class="stance-btn stance-friendly" onclick="window._acceptDiplomacy('${msg.fromId}')">Accept</button></span>`;
       default:
         return null;
     }
@@ -619,6 +709,78 @@
       buildMenuOptions.appendChild(sciBtn);
     }
 
+    // Corvette (military ship) build options — base + variants
+    {
+      const corvCost = { minerals: 100, alloys: 50 };
+      let canAffordCorv = true;
+      const corvCostParts = [];
+      for (const [res, amt] of Object.entries(corvCost)) {
+        corvCostParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordCorv = false;
+      }
+      // Check corvette cap (10 max, including building)
+      const myCorvettes = gameState && gameState.militaryShips ? gameState.militaryShips.filter(s => s.ownerId === gameState.yourId) : [];
+      let corvBuildingCount = 0;
+      if (gameState) {
+        const myCols = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        for (const c of myCols) {
+          for (const q of (c.buildQueue || [])) {
+            if (q.type === 'corvette') corvBuildingCount++;
+          }
+        }
+      }
+      const atCorvCap = myCorvettes.length + corvBuildingCount >= 10;
+      const completedTechs = myPlayer ? (myPlayer.completedTechs || []) : [];
+
+      // Base corvette
+      const corvBtn = document.createElement('div');
+      corvBtn.className = 'build-option build-option-ship';
+      if (!canAffordCorv || queueFull || atCorvCap) corvBtn.classList.add('disabled');
+      corvBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#ff4444"></div>' +
+        '<div class="build-option-name">Corvette</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 1⚡ 1🔩/mo</div>' +
+        `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
+      corvBtn.addEventListener('click', () => {
+        if (corvBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildCorvette', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+      buildMenuOptions.appendChild(corvBtn);
+
+      // Corvette variants — shown only when required T2 tech is completed
+      const variants = [
+        { key: 'interceptor', name: 'Interceptor', tech: 'advanced_reactors', color: '#4488ff',
+          desc: 'Fast striker (8 HP, 5 ATK, 3s/hop) | Upkeep: 1⚡/mo', techName: 'Advanced Reactors' },
+        { key: 'gunboat', name: 'Gunboat', tech: 'deep_mining', color: '#ff8844',
+          desc: 'Heavy tank (15 HP, 4 ATK, 5s/hop) | Upkeep: 2⚡ 1🔩/mo', techName: 'Deep Mining' },
+        { key: 'sentinel', name: 'Sentinel', tech: 'gene_crops', color: '#44ff88',
+          desc: 'Sustain fighter (12 HP, 3 ATK +2 regen, 4s/hop) | Upkeep: 1⚡ 2🔩/mo', techName: 'Gene Crops' },
+      ];
+      for (const v of variants) {
+        const hasTech = completedTechs.includes(v.tech);
+        const vBtn = document.createElement('div');
+        vBtn.className = 'build-option build-option-ship';
+        if (!hasTech || !canAffordCorv || queueFull || atCorvCap) vBtn.classList.add('disabled');
+        const lockLabel = hasTech ? '' : ` [Requires ${v.techName}]`;
+        vBtn.innerHTML =
+          `<div class="build-option-swatch" style="background:${v.color}"></div>` +
+          `<div class="build-option-name">${v.name}${lockLabel}</div>` +
+          `<div class="build-option-prod">${v.desc}</div>` +
+          `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
+        vBtn.addEventListener('click', () => {
+          if (vBtn.classList.contains('disabled')) return;
+          if (!myColony) return;
+          send({ type: 'buildCorvette', colonyId: myColony.id, variant: v.key });
+          _hideAllPanels();
+          if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+        });
+        buildMenuOptions.appendChild(vBtn);
+      }
+    }
+
     buildMenu.classList.remove('hidden');
   }
 
@@ -771,6 +933,7 @@
 
   function _updateHUD() {
     if (!gameState) return;
+    _updateDoctrineTimer();
     const player = _getMyPlayer();
     const colony = _getMyColony();
 
@@ -809,6 +972,11 @@
       _setNet(resBar.researchNet, totalResNet);
     }
 
+    // Influence income (empire-wide, from player summary)
+    if (player && player.income && player.income.influence != null) {
+      _setNet(resBar.influenceNet, player.income.influence);
+    }
+
     // Match timer
     if (gameState.matchTimerEnabled && statusTimer) {
       const ticksLeft = gameState.matchTicksRemaining || 0;
@@ -827,6 +995,67 @@
     // VP display
     if (player && statusVP) {
       statusVP.textContent = 'VP: ' + (player.vp || 0);
+    }
+
+    // Scarcity indicator
+    const scarcityEl = document.getElementById('scarcity-indicator');
+    if (scarcityEl) {
+      if (gameState.activeScarcity) {
+        const sr = gameState.activeScarcity.resource;
+        const rName = sr.charAt(0).toUpperCase() + sr.slice(1);
+        const secsLeft = Math.max(0, Math.ceil(gameState.activeScarcity.ticksRemaining / 10));
+        scarcityEl.textContent = rName + ' Scarcity (' + secsLeft + 's)';
+        scarcityEl.classList.remove('hidden');
+      } else {
+        scarcityEl.classList.add('hidden');
+      }
+    }
+    // Raider alert indicator
+    const raiderEl = document.getElementById('raider-indicator');
+    if (raiderEl) {
+      const raiderCount = (gameState.raiders || []).length;
+      if (raiderCount > 0) {
+        raiderEl.textContent = '\u26A0 ' + raiderCount + ' Raider' + (raiderCount > 1 ? 's' : '') + ' Inbound';
+        raiderEl.classList.remove('hidden');
+      } else {
+        raiderEl.classList.add('hidden');
+      }
+    }
+
+    // Endgame crisis indicator
+    if (crisisIndicator) {
+      if (gameState.endgameCrisis) {
+        if (gameState.endgameCrisis.type === 'galacticStorm') {
+          crisisIndicator.textContent = '\u26A1 Galactic Storm — All production -25%';
+          crisisIndicator.style.color = '#e74c3c';
+        } else if (gameState.endgameCrisis.type === 'precursorAwakening') {
+          const pf = gameState.precursorFleet;
+          const hpText = pf ? ' (HP: ' + pf.hp + ')' : ' (Destroyed)';
+          crisisIndicator.textContent = '\uD83D\uDC7E Precursor Fleet' + hpText;
+          crisisIndicator.style.color = '#9b59b6';
+        }
+        crisisIndicator.classList.remove('hidden');
+      } else {
+        crisisIndicator.classList.add('hidden');
+      }
+    }
+
+    // Underdog bonus indicator
+    if (underdogEl && player) {
+      const bonus = player.underdogBonus;
+      if (bonus && bonus > 1.0) {
+        const pct = Math.round((bonus - 1) * 100);
+        underdogEl.textContent = '\u2B06 Underdog Bonus: +' + pct + '%';
+        underdogEl.classList.remove('hidden');
+      } else {
+        underdogEl.classList.add('hidden');
+      }
+    }
+
+    // Fleet indicator
+    if (fleetEl && gameState.militaryShips) {
+      const myFleet = gameState.militaryShips.filter(s => s.ownerId === gameState.yourId);
+      fleetEl.textContent = myFleet.length > 0 ? ('\u2694 Fleet: ' + myFleet.length) : '';
     }
 
     // Status bar
@@ -1000,7 +1229,7 @@
     const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
-    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ',';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ':' + (col.occupiedBy || '') + ',';
     key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
@@ -1011,9 +1240,10 @@
       const entry = document.createElement('div');
       entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
       const traitBadge = col.trait ? `<span class="colony-list-trait">${col.trait.name}</span>` : '';
+      const occupiedBadge = col.occupiedBy ? `<span class="colony-list-occupied">OCCUPIED</span>` : '';
       entry.innerHTML =
         `<span class="colony-list-name">${col.name}</span>` +
-        traitBadge +
+        traitBadge + occupiedBadge +
         `<span class="colony-list-pops">${col.pops} pop</span>`;
       entry.addEventListener('click', () => {
         _viewingColonyIndex = idx;
@@ -1284,6 +1514,67 @@
     return times[type] || 300;
   }
 
+  // ── Edict panel ──
+  const EDICT_UI = {
+    mineralRush: { name: 'Mineral Rush', description: '+50% mining output for 5 months', cost: 50 },
+    populationDrive: { name: 'Population Drive', description: '+100% pop growth for 5 months', cost: 75 },
+    researchGrant: { name: 'Research Grant', description: '+50% research output for 5 months', cost: 50 },
+    emergencyReserves: { name: 'Emergency Reserves', description: '+100 energy, minerals, food (instant)', cost: 25 },
+  };
+
+  function _toggleEdictPanel() {
+    if (!edictPanel) return;
+    if (edictPanel.classList.contains('hidden')) {
+      _renderEdictPanel();
+      edictPanel.classList.remove('hidden');
+    } else {
+      edictPanel.classList.add('hidden');
+    }
+  }
+
+  function _renderEdictPanel() {
+    const player = _getMyPlayer();
+    if (!player) return;
+
+    const influence = Math.floor(player.resources.influence);
+
+    // Active edict display
+    if (player.activeEdict) {
+      const def = EDICT_UI[player.activeEdict.type];
+      edictActive.innerHTML = '<div class="edict-active-label">Active: <strong>' +
+        (def ? def.name : player.activeEdict.type) + '</strong> (' +
+        player.activeEdict.monthsRemaining + ' months left)</div>';
+      edictActive.classList.remove('hidden');
+    } else {
+      edictActive.classList.add('hidden');
+    }
+
+    // Edict options
+    edictOptions.innerHTML = '';
+    for (const [type, def] of Object.entries(EDICT_UI)) {
+      const opt = document.createElement('div');
+      opt.className = 'edict-option';
+      const canAfford = influence >= def.cost;
+      const hasActive = !!player.activeEdict;
+      const disabled = !canAfford || (hasActive && type !== 'emergencyReserves');
+      // Emergency Reserves is instant — blocked only if another edict is active
+      const blocked = hasActive;
+      if (disabled || blocked) opt.classList.add('disabled');
+
+      opt.innerHTML = '<div class="edict-name">' + def.name + '</div>' +
+        '<div class="edict-desc">' + def.description + '</div>' +
+        '<div class="edict-cost">Cost: ' + def.cost + ' influence</div>';
+
+      if (!disabled && !blocked) {
+        opt.addEventListener('click', () => {
+          send({ type: 'activateEdict', edictType: type });
+          edictPanel.classList.add('hidden');
+        });
+      }
+      edictOptions.appendChild(opt);
+    }
+  }
+
   // ── Scoreboard ──
   function _toggleScoreboard() {
     if (!scoreboard) return;
@@ -1303,17 +1594,50 @@
 
     const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
     let html = `<div class="scoreboard-month">Month ${month}</div>`;
-    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>Stance</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Battles</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    const myPlayer = players.find(p => p.id === gameState.yourId);
+    const myDiplomacy = myPlayer && myPlayer.diplomacy ? myPlayer.diplomacy.stances || {} : {};
+    const myPending = myPlayer && myPlayer.diplomacy ? myPlayer.diplomacy.pendingFriendly || [] : [];
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
       const inc = p.income || {};
       const fmtInc = (v) => { const n = v || 0; return n >= 0 ? `+${n}` : `${n}`; };
+      // Stance column: show icon + buttons for non-self players
+      let stanceCell = '';
+      if (isMe) {
+        stanceCell = '-';
+      } else {
+        const myStance = myDiplomacy[p.id] ? myDiplomacy[p.id].stance : 'neutral';
+        const theirStance = p.stanceTowardMe || 'neutral';
+        const icon = myStance === 'hostile' ? '<span style="color:#e74c3c" title="At War">&#x2694;</span>' :
+                     myStance === 'friendly' ? '<span style="color:#3498db" title="Allied">&#x2726;</span>' :
+                     '<span style="color:#888" title="Neutral">&#x25CB;</span>';
+        const theirIcon = theirStance === 'hostile' ? '&#x2694;' : theirStance === 'friendly' ? '&#x2726;' : '';
+        // Check if they have a pending proposal toward us
+        const hasPending = (gameState.players || []).some(pp => pp.id !== gameState.yourId && pp.diplomacy && pp.diplomacy.pendingFriendly && pp.diplomacy.pendingFriendly.includes(gameState.yourId) && pp.id === p.id);
+        // Actually we can't see their pending — check if they sent us a friendlyProposed. Use stanceTowardMe approach
+        // Show accept button if their stance toward me is checked via pending — we track via server events instead
+        // For now show stance icons and action buttons
+        const pendingToThem = myPending.includes(p.id);
+        let btns = '';
+        if (myStance !== 'hostile') btns += `<button class="stance-btn stance-hostile" onclick="window._setDiplomacy('${p.id}','hostile')" title="Declare War">&#x2694;</button>`;
+        if (myStance !== 'friendly' && !pendingToThem) btns += `<button class="stance-btn stance-friendly" onclick="window._setDiplomacy('${p.id}','friendly')" title="Propose Alliance">&#x2726;</button>`;
+        if (pendingToThem) btns += '<span class="stance-pending">pending...</span>';
+        if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
+        stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
+      }
+      const docBadge = p.doctrine ? ` <span class="doctrine-badge" title="${(DOCTRINE_INFO[p.doctrine] || {}).name || p.doctrine}">${p.doctrine === 'industrialist' ? '⚒' : p.doctrine === 'scholar' ? '📚' : p.doctrine === 'expansionist' ? '🚀' : ''}</span>` : '';
       html += `<tr${cls}><td>${i + 1}</td>` +
-        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td>` +
+        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}${docBadge}</td>` +
+        `<td class="stance-cell">${stanceCell}</td>` +
         `<td><strong>${p.vp || 0}</strong></td>` +
         `<td>${p.colonyCount || 0}</td>` +
         `<td>${p.totalPops || 0}</td>` +
+        `<td>${p.techs || 0}</td>` +
+        `<td>${p.corvettes || 0}</td>` +
+        `<td>${p.battlesWon || 0}</td>` +
+        `<td>${p.raidersDestroyed || 0}</td>` +
         `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
         `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
         `<td class="${(inc.food || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.food)}</td>` +
@@ -1336,7 +1660,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th><th>Crisis</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1345,7 +1669,14 @@
         `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
         `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
         `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
-        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td></tr>`;
+        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
+        `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
+        `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
+        `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
+        `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
+        `<td>${(s.breakdown.friendlyCount || 0) + (s.breakdown.mutualFriendlyCount || 0)} (${s.breakdown.diplomacyVP || 0})</td>` +
+        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td>` +
+        `<td>${s.breakdown.precursorVP || 0}</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
@@ -1403,6 +1734,25 @@
     _warningTimeout = setTimeout(() => matchWarning.classList.add('hidden'), 5000);
   }
 
+  // ── Endgame Crisis Alert ──
+  function _showEndgameCrisisAlert(msg) {
+    // Show dramatic banner for 8 seconds
+    if (!matchWarning) return;
+    if (msg.crisisType === 'galacticStorm') {
+      matchWarning.textContent = 'GALACTIC STORM — All production -25%!';
+      matchWarning.style.borderColor = '#e74c3c';
+    } else if (msg.crisisType === 'precursorAwakening') {
+      matchWarning.textContent = 'PRECURSOR AWAKENING — Ancient warship approaches!';
+      matchWarning.style.borderColor = '#9b59b6';
+    }
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => {
+      matchWarning.classList.add('hidden');
+      matchWarning.style.borderColor = '';
+    }, 8000);
+  }
+
   // Panel close buttons
   if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
     _hideAllPanels();
@@ -1414,6 +1764,9 @@
   });
   if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
     researchPanel.classList.add('hidden');
+  });
+  if (edictPanelClose) edictPanelClose.addEventListener('click', () => {
+    edictPanel.classList.add('hidden');
   });
   if (scoreboardClose) scoreboardClose.addEventListener('click', () => {
     scoreboard.classList.add('hidden');
@@ -1434,6 +1787,9 @@
     if (e.key === 'r' || e.key === 'R') {
       _toggleResearchPanel();
     }
+    if (e.key === 'e' || e.key === 'E') {
+      _toggleEdictPanel();
+    }
     if (e.key === 'Tab') {
       e.preventDefault();
       _toggleScoreboard();
@@ -1441,6 +1797,9 @@
     if (e.key === 'Escape') {
       if (researchPanel && !researchPanel.classList.contains('hidden')) {
         researchPanel.classList.add('hidden');
+      }
+      if (edictPanel && !edictPanel.classList.contains('hidden')) {
+        edictPanel.classList.add('hidden');
       }
       if (scoreboard && !scoreboard.classList.contains('hidden')) {
         scoreboard.classList.add('hidden');
@@ -1567,6 +1926,70 @@
         }
       }, 300);
     });
+  }
+
+  // Doctrine selection overlay
+  const DOCTRINE_INFO = {
+    industrialist: {
+      name: 'Industrialist',
+      bonuses: ['+25% Mining output', '+25% Industrial output', '+1 starting Mining district'],
+      penalties: ['-10% Research output'],
+    },
+    scholar: {
+      name: 'Scholar',
+      bonuses: ['+25% Research output', 'T1 research 33% complete'],
+      penalties: ['-10% Mineral output'],
+    },
+    expansionist: {
+      name: 'Expansionist',
+      bonuses: ['Colony ships -25% cost & time', '+2 starting pops'],
+      penalties: ['-10% Alloy output'],
+    },
+  };
+
+  function _showDoctrineSelection() {
+    if (!doctrineOverlay || !doctrineOptions) return;
+    doctrineOptions.innerHTML = '';
+    for (const [type, info] of Object.entries(DOCTRINE_INFO)) {
+      const card = document.createElement('div');
+      card.className = 'doctrine-card';
+      card.innerHTML = `<h3>${info.name}</h3>` +
+        info.bonuses.map(b => `<div class="doctrine-bonus">+ ${b}</div>`).join('') +
+        info.penalties.map(p => `<div class="doctrine-penalty">${p}</div>`).join('');
+      card.onclick = function() {
+        send({ type: 'selectDoctrine', doctrineType: type });
+        doctrineChosen = true;
+        doctrineOverlay.classList.add('hidden');
+      };
+      doctrineOptions.appendChild(card);
+    }
+    doctrineOverlay.classList.remove('hidden');
+  }
+
+  function _updateDoctrineTimer() {
+    if (!doctrineOverlay || doctrineChosen) return;
+    if (!gameState) return;
+    const me = _getMyPlayer();
+    // Hide if player has chosen or phase is over
+    if ((me && me.doctrine) || !gameState.doctrinePhase) {
+      doctrineOverlay.classList.add('hidden');
+      return;
+    }
+    if (gameState.doctrineDeadlineTick && doctrineTimer) {
+      const ticksLeft = Math.max(0, gameState.doctrineDeadlineTick - gameState.tick);
+      const secsLeft = Math.ceil(ticksLeft / 10);
+      doctrineTimer.textContent = `Auto-assign in ${secsLeft}s`;
+    }
+  }
+
+  // Diplomacy command helpers
+  if (typeof window !== 'undefined') {
+    window._setDiplomacy = function(targetPlayerId, stance) {
+      send({ type: 'setDiplomacy', targetPlayerId, stance });
+    };
+    window._acceptDiplomacy = function(targetPlayerId) {
+      send({ type: 'acceptDiplomacy', targetPlayerId });
+    };
   }
 
   // Expose send and gameState for future modules (renderer, UI)

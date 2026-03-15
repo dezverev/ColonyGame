@@ -85,7 +85,7 @@
         <div class="res-item" data-res="food"><span class="res-icon" style="color:#2ecc71">🌾</span><span class="res-name">Food</span><span class="res-val" id="res-food">0</span><span class="res-net" id="res-food-net"></span></div>
         <div class="res-item" data-res="alloys"><span class="res-icon" style="color:#e67e22">⚙</span><span class="res-name">Alloys</span><span class="res-val" id="res-alloys">0</span><span class="res-net" id="res-alloys-net"></span></div>
         <div class="res-item" data-res="research"><span class="res-icon" style="color:#3498db">🔬</span><span class="res-name">Research</span><span class="res-val" id="res-research">0</span><span class="res-net" id="res-research-net"></span></div>
-        <div class="res-item" data-res="influence"><span class="res-icon" style="color:#9b59b6">★</span><span class="res-name">Influence</span><span class="res-val" id="res-influence">0</span></div>
+        <div class="res-item" data-res="influence"><span class="res-icon" style="color:#9b59b6">★</span><span class="res-name">Influence</span><span class="res-val" id="res-influence">0</span><span class="res-net" id="res-influence-net"></span></div>
       </div>
 
       <!-- Status bar (below resource bar) -->
@@ -102,9 +102,24 @@
         <div id="growth-bar-wrap"><div id="growth-bar-fill"></div></div>
         <span class="status-sep">|</span>
         <span id="status-vp">VP: 0</span>
+        <span class="status-sep">|</span>
+        <span id="scarcity-indicator" class="hidden" style="color:#e74c3c;font-weight:bold"></span>
+        <span id="raider-indicator" class="hidden" style="color:#ff4444;font-weight:bold"></span>
+        <span id="endgame-crisis-indicator" class="hidden" style="font-weight:bold;margin-left:8px"></span>
+        <span id="underdog-indicator" class="hidden" style="color:#2ecc71;font-weight:bold;margin-left:8px"></span>
+        <span id="fleet-indicator" style="color:#ff6666;margin-left:8px"></span>
       </div>
       <!-- Pause overlay -->
       <div id="pause-overlay" class="hidden">PAUSED</div>
+
+      <!-- Doctrine selection overlay -->
+      <div id="doctrine-overlay" class="hidden">
+        <div id="doctrine-content">
+          <h2>Choose Your Doctrine</h2>
+          <div id="doctrine-timer"></div>
+          <div id="doctrine-options"></div>
+        </div>
+      </div>
 
       <!-- Colony info panel (right side) -->
       <div id="colony-panel" class="game-panel">
@@ -132,6 +147,13 @@
       <div id="research-panel" class="game-panel hidden">
         <div class="panel-header">Research<button id="research-panel-close" class="panel-close">&times;</button></div>
         <div id="research-tracks"></div>
+      </div>
+
+      <!-- Edict panel — toggled with E key -->
+      <div id="edict-panel" class="game-panel hidden">
+        <div class="panel-header">Edicts<button id="edict-panel-close" class="panel-close">&times;</button></div>
+        <div id="edict-active" class="hidden"></div>
+        <div id="edict-options"></div>
       </div>
 
       <!-- Scoreboard overlay — toggled with Tab key -->

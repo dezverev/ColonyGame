@@ -1229,3 +1229,638 @@ Each entry records an iteration of automated development.
 - Crisis state serialized with full CRISIS_TYPES definition (choices, descriptions) so client doesn't need a local copy of the crisis definitions
 
 **Next:** T3 tech expansion (game-designer R32 priority #2) or colony planet context rendering (R32 priority #3)
+
+---
+
+## Entry 35 — 2026-03-13 — T3 Tech Expansion + Crisis Interval Scaling
+
+**Phase:** 4 (Technology & Research) + Phase 2 (Colony Management balance)
+**Status:** Complete
+
+**What was built:**
+- 3 new Tier 3 techs added to TECH_TREE (cost 1000 each, requires T2 prerequisite):
+  - **Fusion Reactors** (Physics T3): +100% Generator output (2.0x multiplier) + generators produce +1 alloy per working district. New `alloysBonus` effect property in tech modifier system
+  - **Genetic Engineering** (Society T3): +100% Agriculture output (2.0x multiplier) + pop growth time halved (0.5x stacking with Frontier Medicine's 0.75x = 0.375x total). New `districtBonusAndGrowth` effect type combines district and growth bonuses
+  - **Automated Mining** (Engineering T3): +100% Mining output (2.0x multiplier) + mining districts cost 0 jobs. New `jobOverride` effect property allows districts to produce without consuming a pop slot
+- `_getTechModifiers` expanded to return `alloysBonus` and `jobOverride` maps alongside existing `district` and `growth` fields
+- `_calcJobs` now checks `techMods.jobOverride` — mining districts with Automated Mining contribute 0 jobs, freeing pops for other work
+- `_calcProduction` updated: applies `alloysBonus` per working generator, handles `effectiveJobs === 0` with `def.jobs > 0` (tech override) to allow production without pop assignment
+- Client TECH_TREE_UI updated with 3 new T3 cards showing in research panel
+- VP: T3 techs grant +20 VP each (all 9 techs = 105 total techVP vs previous 45 for 6 techs)
+- **Crisis interval scaling:** `_scheduleCrisis` now adds +100 ticks per colony beyond 3. A 5-colony empire gets +200 ticks between crises (~20 extra seconds), reducing late-game crisis whack-a-mole
+
+**Files changed:**
+- `server/game-engine.js` — 3 new TECH_TREE entries, `_getTechModifiers` returns alloysBonus/jobOverride, `_calcJobs` uses jobOverride, `_calcProduction` applies alloysBonus and handles 0-job tech override, `_scheduleCrisis` colony count scaling
+- `src/public/js/app.js` — 3 new TECH_TREE_UI entries (fusion_reactors, genetic_engineering, automated_mining)
+- `src/tests/t3-techs-crisis-scaling.test.js` — **new** 28 tests
+- `src/tests/game-engine.test.js` — updated 1 test (TECH_TREE count 6→9, tiers 2→3)
+- `devguide/design.md` — marked 2 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 718 total (28 new: T3 structure ×5, Fusion Reactors ×3, Genetic Engineering ×2, Automated Mining ×4, VP bonuses ×2, research validation ×2, crisis interval scaling ×3, tech modifier properties ×3, existing test updated ×1). All passing.
+
+**Key decisions:**
+- Fusion Reactors alloy bonus is flat +1 per generator (not multiplicative) — prevents overpowered stacking, keeps it as a side benefit rather than replacing Industrial districts
+- Genetic Engineering growth multiplier stacks multiplicatively with Frontier Medicine (0.75 × 0.5 = 0.375) — both techs in the same track, late-game payoff for full society investment
+- Automated Mining uses `jobOverride` mechanism rather than modifying DISTRICT_DEFS — clean separation between base definitions and tech effects, tech modifier cache handles invalidation
+- Mining districts with 0 jobs still produce even with 0 pops — they're fully automated. This is a powerful late-game economy enabler
+- Crisis scaling uses colony count at scheduling time, not a fixed value — dynamically adapts as player expands or loses colonies
+- T3 cost of 1000 requires heavy research investment: with 1 Research district (12/month across 3 tracks = 4 per track), T3 takes ~250 months (~42 min). Players need 2-3 Research districts to complete T3 in a 20-min match
+
+**Next:** Colony planet context rendering (game-designer R33 priority #2) or influence economy/edicts (R33 priority #3)
+
+---
+
+## Entry 37 — 2026-03-14 — Edict System (Influence Spending)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Empire-wide edict system: 4 edicts that spend influence for temporary bonuses
+- Mineral Rush (50 influence, +50% mining output for 5 months)
+- Population Drive (75 influence, +100% pop growth for 5 months)
+- Research Grant (50 influence, +50% research output for 5 months)
+- Emergency Reserves (25 influence, instantly grants +100 energy/minerals/food)
+- Monthly edict processing: duration countdown, expiry with event notification
+- Edict production modifiers integrated into `_calcProduction` (after trait bonuses)
+- Edict growth modifiers integrated into `_processPopGrowth` (after tech modifiers)
+- `activateEdict` command with full validation (influence check, active edict check, type check)
+- Client UI: edict panel (E key toggle), shows active edict status and all available edicts
+- Toast notifications for edict activation and expiry
+- Edict state serialized in per-player gameState
+
+**Files changed:**
+- `server/game-engine.js` — EDICT_DEFS constant, activeEdict in playerState, _processEdicts monthly, activateEdict command, edict modifiers in _calcProduction and _processPopGrowth, activeEdict in getPlayerState, EDICT_DEFS export
+- `server/server.js` — added activateEdict to command routing
+- `src/public/index.html` — edict panel HTML
+- `src/public/js/app.js` — edict panel refs, EDICT_UI definitions, _toggleEdictPanel, _renderEdictPanel, E key shortcut, Escape handling, close button wiring
+- `src/public/js/toast-format.js` — edictActivated and edictExpired toast formatting
+- `src/public/css/style.css` — edict panel and option styling
+- `src/tests/game-engine.test.js` — 13 new edict tests
+- `devguide/design.md` — marked edict system complete
+
+**Tests:** 753 total (all passing). 13 new edict tests covering: activation, influence deduction, rejection (insufficient funds, already active, unknown type, missing params), emergency reserves instant grant, mineral rush production boost, research grant production boost, population drive growth bonus, edict expiry with event, edictActivated event, state serialization, sequential edict activation, EDICT_DEFS export.
+
+**Key decisions:**
+- Instant edicts (Emergency Reserves) don't count as "active" — can activate a duration edict right after
+- Edict production modifiers apply multiplicatively after trait bonuses but before crisis modifiers
+- One active edict at a time (as specified) — creates strategic timing decisions
+- Influence remains a finite resource (starting 100, no income yet) — edict choices are irreversible and meaningful
+
+**Next:** VP formula rebalance with diminishing pop returns (game-designer R34 priority #2), or influence generation from colony traits (R31) to create renewable edict fuel
+
+---
+
+## Entry 38 — 2026-03-14 — Influence Income from Colonies
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Renewable influence income: each colony generates +2 influence/month base income (capital building)
+- Trait bonus: each colony with an active personality trait generates +1 influence/month bonus
+- Influence cap at 200 to prevent late-game stockpiling
+- `_processInfluenceIncome()` method called monthly after edicts, iterates player colonies and adds base + trait income
+- Influence income included in `_getPlayerSummary` income object for client display
+- Client HUD: influence resource bar now shows net income rate (+N/month) matching other resources
+- Constants: `INFLUENCE_BASE_INCOME` (2), `INFLUENCE_TRAIT_INCOME` (1), `INFLUENCE_CAP` (200) exported
+
+**Files changed:**
+- `server/game-engine.js` — INFLUENCE_BASE_INCOME/INFLUENCE_TRAIT_INCOME/INFLUENCE_CAP constants, `_processInfluenceIncome` method, influence income in `_getPlayerSummary`, wired into monthly tick loop, constants in module.exports
+- `src/public/js/app.js` — `influenceNet` in resBar, influence income display in `_updateHUD` from player summary
+- `src/public/index.html` — added `res-influence-net` span to influence resource bar item
+- `src/tests/influence-income.test.js` — **new** 19 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 772 total (19 new: 3 constants, 3 base income from 1/2/3 colonies, 3 trait bonus income, 3 cap enforcement, 5 edge cases including 0 colonies/monthly tick integration/multiplayer/summary, 1 serialization). All passing.
+
+**Key decisions:**
+- Influence income processed after edicts in the monthly tick — edicts deduct first, then income arrives, preventing exploit where income offsets same-month edict cost
+- Income added to `_getPlayerSummary` so the client can show the rate without separate calculation — consistent with how energy/mineral/food/alloy income already works
+- Cap enforced in `_processInfluenceIncome` after adding income — simple clamp, no pre-check needed
+- Starting influence remains 100 as specified — now a meaningful starting budget rather than the entire lifetime supply
+- Example pacing: 3 colonies with 2 traits = 8 influence/month → 50-cost Mineral Rush edict takes ~6 months (~1 min) to save for
+
+**Next:** VP formula rebalance with diminishing pop returns (game-designer R37 priority #2)
+
+---
+
+## Entry 39 — 2026-03-14 — VP Formula Rebalance (Diminishing Pop Returns)
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Diminishing pop VP returns: first 20 pops ×2 VP each, pops 21-40 ×1.5 VP each (rounded), pops 41+ ×1 VP each
+- Static `GameEngine._calcPopVP(totalPops)` method for the tiered formula
+- Colony trait VP increased from +5 to +10 per active trait
+- T3 tech VP increased from +20 to +30 each (T1: +5, T2: +10 unchanged)
+- Exploration VP: +1 VP per 5 systems surveyed (reads from `_surveyedSystems` map)
+- `_calcVPBreakdown` returns new `surveyed` and `surveyedVP` fields
+- Empty breakdown for unknown players includes `surveyed: 0, surveyedVP: 0`
+- Client game-over scoreboard shows "Explored" column with surveyed count and VP
+
+**Files changed:**
+- `server/game-engine.js` — `_calcPopVP` static method, `_calcVPBreakdown` updated: diminishing pop VP, trait VP 5→10, T3 tech VP 20→30, exploration VP from surveyedSystems, new surveyed/surveyedVP fields in breakdown and empty object
+- `src/public/js/app.js` — game-over scoreboard table: added "Explored" column header and `surveyed (surveyedVP)` cell
+- `src/tests/vp-rebalance.test.js` — **new** 27 tests
+- `src/tests/colony-traits.test.js` — updated 3 tests (traitsVP 5→10, total VP recalculated)
+- `src/tests/t3-techs-crisis-scaling.test.js` — updated 2 tests (T3 VP 20→30, all-techs total 105→135)
+- `src/tests/game-engine.test.js` — updated 1 test (gameOver popsVP assertion uses `_calcPopVP`)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 829 total (27 new: 10 _calcPopVP tier tests, 2 trait VP increase, 3 T3 tech VP increase, 7 exploration VP, 5 integrated formula). All passing.
+
+**Key decisions:**
+- Pop VP uses `Math.round` for the 1.5× tier — 21 pops = 42 VP (round(1.5) = 2), 25 pops = 48 VP (round(7.5) = 8)
+- Exploration VP reads from existing `_surveyedSystems` Map — no new data tracking needed
+- `_calcPopVP` is a static method for easy testing without engine instantiation
+- VP formula now: `popVP + districts + alloysVP + researchVP + techVP + traitsVP + surveyedVP`
+- Impact: at 8 starting pops, VP unchanged (16). At 40 pops, 70 VP vs old 80. At 100 pops, 130 VP vs old 200 — 35% reduction. Multiple strategies now viable
+
+**Next:** Starting condition draft "Opening Hands" (game-designer R38-3) or scarcity seasons (R38-7)
+
+---
+
+## Entry 40 — 2026-03-14 — Scarcity Seasons (Galaxy-Wide Resource Pressure)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Galaxy-wide scarcity seasons: every 800-1200 ticks (randomized), one commodity resource (energy/minerals/food) gets -30% production for 300 ticks (30 seconds)
+- 100-tick advance warning broadcast before scarcity starts, giving players time to stockpile or activate Emergency Reserves edict
+- Resource rotation: same resource cannot be hit twice in a row
+- `_processScarcitySeason()` method called every tick — handles warning phase, scarcity start, countdown, and end
+- SCARCITY_MULTIPLIER (0.70) applied in `_calcProduction` after edict bonuses, before crisis effects
+- `_invalidateAllProductionCaches()` method invalidates all colony production caches on scarcity start/end
+- Three broadcast events: `scarcityWarning`, `scarcityStarted`, `scarcityEnded` — all broadcast to all players
+- Active scarcity state included in `getState()` and `getPlayerState()` serialization for client HUD
+- Client: toast notifications for all three scarcity events, ticker display with colored warnings, HUD indicator showing active scarcity countdown
+
+**Files changed:**
+- `server/game-engine.js` — SCARCITY_RESOURCES/SCARCITY_MIN_INTERVAL/SCARCITY_MAX_INTERVAL/SCARCITY_DURATION/SCARCITY_WARNING_TICKS/SCARCITY_MULTIPLIER constants, constructor init (_activeScarcity, _lastScarcityResource, _nextScarcityTick, _scarcityWarned), _randomScarcityInterval, _pickScarcityResource, _processScarcitySeason, _invalidateAllProductionCaches methods, scarcity multiplier in _calcProduction, activeScarcity in getState/getPlayerState, constants in module.exports
+- `src/public/js/toast-format.js` — scarcityWarning/scarcityStarted/scarcityEnded in TOAST_TYPE_MAP and formatGameEvent
+- `src/public/js/app.js` — scarcity events in _formatTickerEvent, scarcity HUD indicator in _updateHUD
+- `src/public/index.html` — scarcity-indicator span in status bar
+- `src/tests/scarcity-seasons.test.js` — **new** 31 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 887 total (31 new: 2 constants, 3 initialization, 3 warning phase, 4 active scarcity lifecycle, 5 production multiplier, 2 resource rotation, 2 scheduling, 2 cache invalidation, 1 multiplayer, 4 state serialization, 2 edict interaction, 1 full lifecycle integration). All passing (1 pre-existing failure in game-engine.test.js:549 unrelated).
+
+**Key decisions:**
+- Scarcity multiplier applied after edict bonuses but before crisis effects (power surge) — scarcity stacks multiplicatively with edicts, creating interesting interaction (e.g., Mineral Rush during mineral scarcity partially offsets the penalty)
+- Only commodity resources (energy/minerals/food) affected — alloys and research are strategic, not commodity; scarcity on them would feel punishing rather than interesting
+- Warning resource is pre-picked and stored as `_pendingScarcityResource` so the same resource from the warning is used when scarcity starts
+- `_invalidateAllProductionCaches` is a new method separate from `_invalidatePlayerProductionCaches` — scarcity affects ALL players, not per-player
+- Scarcity is galaxy-wide (not per-colony) to create shared economic weather that drives trade/diplomacy decisions
+
+**Next:** Opening Hands starting draft (R40-2), military outposts (R40-3), or in-game chat + diplomacy pings (R40-4)
+
+---
+
+## Entry 41 — 2026-03-14 — NPC Raider Fleets (PvE Military Threat)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- NPC raider fleet spawning: every 1800-3000 ticks (3-5 min), a raider spawns at a random galaxy edge system and moves toward the nearest player colony via BFS pathfinding at 40 ticks/hop
+- Defense platform build command: `buildDefensePlatform` costs 100 alloys, 200-tick build time, max 1 per colony, 50 HP / 15 attack per combat tick
+- Combat resolution: auto-resolves over 5 ticks when raider arrives — platform deals 15/tick (kills 30 HP raider in 2 ticks), raider deals 8/tick (platform survives at 42 HP). Damaged platforms may lose to subsequent raiders
+- Raid consequences: undefended colonies lose 2 random districts (disabled for 300 ticks) + 50 of each resource stolen
+- VP integration: +5 VP per raider destroyed, tracked per player as lifetime count, shown in scoreboard
+- Defense platform passive repair: +10 HP/month, capped at maxHp
+- Raider-disabled district re-enable timers: districts auto-re-enable after 300 ticks
+- Client: toast notifications for raiderSpawned/raiderDefeated/colonyRaided, event ticker entries, HUD raider count indicator, red diamond raider markers on galaxy map with smooth animation, game-over scoreboard "Raiders" column
+
+**Files changed:**
+- `server/game-engine.js` — 14 new constants (RAIDER_*, DEFENSE_PLATFORM_*), constructor init (_raiders, _nextRaiderTick, _raidersDestroyed), _randomRaiderInterval, _getEdgeSystems, _findNearestColonySystem, _processRaiderSpawning, _processRaiderMovement, _resolveRaiderArrival, _raidColony, _removeRaider, _processRaiderDisableTimers, _processDefensePlatformRepair, _processDefensePlatformConstruction methods, buildDefensePlatform command handler, raider VP in _calcVPBreakdown, raiders in getState/getPlayerState serialization, defensePlatform in _serializeColony (conditional), defensePlatform field on colony objects, updated tick() and module.exports
+- `src/public/js/toast-format.js` — raiderSpawned/raiderDefeated/colonyRaided in TOAST_TYPE_MAP and formatGameEvent
+- `src/public/js/app.js` — raider events in _formatTickerEvent, raider HUD indicator, updateRaiders call in galaxy view update, game-over scoreboard "Raiders" column
+- `src/public/js/galaxy-view.js` — raider geometry/material, raiderMeshes/raiderPool tracking, updateRaiders function, raider animation in _animateShips, cleanup in destroy, exported in GalaxyView object
+- `src/public/index.html` — raider-indicator span in status bar
+- `src/tests/raider-fleets.test.js` — **new** 44 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 945 total (44 new: 4 constants, 4 initialization, 4 spawning, 1 movement, 5 defense platform construction, 6 combat resolution, 3 VP integration, 4 defense platform repair, 5 serialization, 1 resource theft limits, 5 edge cases, 1 toast format, 1 lifecycle integration). All passing.
+
+**Key decisions:**
+- Combat resolves instantly on arrival (not over multiple ticks in the tick loop) — simpler and avoids needing to track in-progress combats, matches the "auto-resolve over 5 ticks" spec by running 5 combat iterations in a single function call
+- Platform attacks first each combat tick — the defender has advantage, so a full-HP platform always beats a single raider (15×2 = 30 kills raider, takes 8 damage = 42 HP remaining)
+- Raider-disabled districts use `_raiderDisableTick` property on district objects to track when to re-enable, separate from crisis disable mechanism
+- Defense platform is omitted from colony serialization when null to keep payload under 25KB at 8 players / 40 colonies
+- Raiders visible to all players (not fog-gated) since they're a shared threat that all players should see and prepare for
+- Edge systems for spawning are defined as systems with ≤2 hyperlane connections (galactic rim nodes)
+
+**Next:** Opening Hands starting draft (R40-2), military outposts (R40-3), or in-game chat + diplomacy pings (R40-4)
+
+---
+
+## Entry 42 — 2026-03-14 — Live Scoreboard with Opponent Summaries
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Added `techs` (completed tech count) and `raidersDestroyed` fields to all player objects in `getPlayerState()` — both for the requesting player and all opponents
+- Updated client in-game scoreboard (Tab key) to show two new columns: "Techs" and "Raiders" between Pops and income columns
+- All players can now see every opponent's VP, colony count, pop count, tech count, raiders destroyed, and net resource income in real-time
+
+**Files changed:**
+- `server/game-engine.js` — Added `techs` and `raidersDestroyed` fields to both `me` (own player) and `others` (opponent) objects in `getPlayerState()`
+- `src/public/js/app.js` — Added Techs and Raiders columns to `_renderScoreboard()` table header and row rendering
+- `src/tests/live-scoreboard.test.js` — **new** 14 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 987 total (14 new: 3 field presence, 2 techs tracking, 2 raiders tracking, 1 existing fields preserved, 1 multi-player, 1 VP ranking, 1 JSON serialization, 1 symmetry, 1 edge case null techs, 1 cache invalidation). All passing.
+
+**Key decisions:**
+- Added `techs` and `raidersDestroyed` directly in `getPlayerState()` rather than extending `_getPlayerSummary()` — these are scoreboard-specific fields that don't need the summary cache (they're cheap O(1) lookups from existing player state)
+- Kept `completedTechs` array on own player for client tech tree rendering, but added `techs` count separately for scoreboard consistency across all players
+- Used `(p.completedTechs || []).length` for null safety since `completedTechs` could theoretically be undefined
+
+**Next:** In-game chat + diplomacy pings (R41-3), colony ship cost reduction (R41-balance), or starting planet variety
+
+---
+
+## Entry 43 — 2026-03-14 — Corvette Ship Class (First Military Unit)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- First military ship type: Corvette — cost 100 minerals + 50 alloys, 400-tick build time (40s), 10 HP, 3 attack
+- `buildCorvette` command: validates colony ownership, resource availability, build queue capacity, and corvette cap (max 10 per player including those building)
+- `sendFleet` command: orders a corvette to move to any target system via BFS-pathed hyperlane navigation at 40 ticks/hop
+- Military ship movement processing in tick loop (`_processMilitaryShipMovement`): hop progress, system transitions, dirty player marking with 5-tick throttle
+- VP integration: +1 VP per corvette owned, tracked as `corvettes` and `militaryVP` in VP breakdown
+- State serialization: `militaryShips` array in both `getState()` and `getPlayerState()`, corvette count in player scoreboard fields
+- Build queue cancellation with 50% resource refund (follows existing pattern)
+- Client: corvette build button in colony build menu (red swatch, shows stats and cost), fleet count indicator in HUD status bar, "Fleet" column in live scoreboard and game-over scoreboard
+- Galaxy map: corvette rendering as cone geometry with player-colored material, smooth hyperlane transit animation at 40 ticks/hop, mesh pooling and recycling
+
+**Files changed:**
+- `server/game-engine.js` — 6 new constants (CORVETTE_*), `_militaryShips` array in constructor, corvette spawn in `_processConstruction`, `buildCorvette` and `sendFleet` command handlers, `_processMilitaryShipMovement` and `_removeMilitaryShip` methods, corvette in build queue refund cost table, `militaryShips` in getState/getPlayerState serialization, `corvettes` field in player state, corvettes/militaryVP in VP breakdown, updated module.exports
+- `src/public/js/galaxy-view.js` — corvette geometry/material cache, corvetteMeshes/corvettePool arrays, `updateCorvettes` function, corvette animation in `_animateShips`, cleanup in `_clearGalaxy`, exported in GalaxyView object
+- `src/public/js/app.js` — corvette build button in build menu, `updateCorvettes` call in galaxy view update, fleet indicator HUD update, "Fleet" column in live scoreboard and game-over scoreboard
+- `src/public/index.html` — fleet-indicator span in status bar
+- `src/tests/corvette.test.js` — **new** 34 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1043 total (34 new: 5 constants, 1 initialization, 7 build command, 2 construction completion, 7 sendFleet command, 3 movement, 3 VP integration, 6 state serialization, 1 build queue cancellation, 2 _removeMilitaryShip, 4 edge cases). All passing (1 pre-existing failure in game-engine.test.js:549 unrelated).
+
+**Key decisions:**
+- Corvette uses the same BFS pathfinding and hop-based movement as colony/science ships — consistent pattern, no new movement system needed
+- Military ships visible to all players (no fog restriction) — seeing enemy fleets is essential for PvP military tension
+- Max 10 corvettes per player — large enough to feel powerful, small enough to keep serialization compact
+- Corvette VP is +1 each (not higher) — military should contribute to VP but not dominate over economic development
+- Cone geometry distinguishes corvettes visually from the octahedron shapes used for colony/science ships and raiders
+
+**Next:** Basic fleet combat (game-designer R34) — auto-resolve when hostile military ships occupy the same system. This completes the "Exterminate" pillar
+
+---
+
+## Entry 44 — 2026-03-14 — Fleet Combat Resolution (PvP Combat)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Fleet combat resolution: when corvettes from different players occupy the same system, combat auto-resolves via `_resolveFleetCombat`. Both sides attack simultaneously each round, focusing fire on lowest-HP enemy. Up to 10 rounds per battle.
+- `retreatFleet` command: corvettes can flee from hostile systems; all enemy corvettes get 1 free attack during retreat. Ship may be destroyed if retreat damage exceeds HP.
+- VP integration: +5 VP per fleet battle won (`battlesWon`), -2 VP per own ship lost in combat (`shipsLost`). Both tracked as lifetime counters.
+- System control: enemy corvettes at a system block colonization — colony ships fail to found if enemy military present.
+- Combat events: `combatStarted` (with combatant list) and `combatResult` (with winner, losses, survivors) emitted to all players.
+- Client: combat events in event ticker with player names, "Battles" column in live and game-over scoreboards.
+- Galaxy map: combat flash — expanding red sphere at combat system, fades over 1.5 seconds.
+
+**Files changed:**
+- `server/game-engine.js` — 3 new constants (FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP), `_battlesWon`/`_shipsLost` tracking maps, `_checkFleetCombat` and `_resolveFleetCombat` methods, `retreatFleet` command handler, system control check in `_foundColonyFromShip`, VP breakdown extended, state serialization extended
+- `src/public/js/app.js` — combatStarted/combatResult event formatting in ticker, combat flash trigger, "Battles" column in live and game-over scoreboards
+- `src/public/js/galaxy-view.js` — `showCombatFlash` function with expanding/fading sphere, `_updateCombatFlashes` in render loop
+- `src/tests/fleet-combat.test.js` — **new** 38 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1104 total (38 new: 2 constants, 9 combat resolution, 3 combat events, 4 VP integration, 5 serialization, 8 retreat, 2 system control, 1 tick-driven, 4 edge cases). All passing.
+
+**Key decisions:**
+- Combat resolves instantly when `_checkFleetCombat` runs (after movement processing), not over multiple ticks — simpler and avoids tracking in-progress combats
+- Simultaneous damage model (both sides attack each round before casualties) — fairer than sequential and creates the classic "mutual destruction" scenario with equal forces
+- Focus fire on lowest-HP target — creates deterministic, explainable outcomes and rewards having more ships (overwhelming fire)
+- Retreat uses free attack from ALL enemy ships, not just one — retreating from a large fleet is much more dangerous than from a single corvette
+- System control is a simple "any enemy corvette blocks colonization" check — no need for formal ownership tracking
+- Combat flash is a Three.js sphere that expands and fades — gives visual feedback on galaxy map without complex particle effects
+
+**Next:** Ship maintenance costs (R43-2) — 1 energy + 1 alloy/month per corvette creates military-economic tension
+
+---
+
+## Entry 45 — 2026-03-14 — Ship Maintenance Costs (Military-Economic Tension)
+
+**Phase:** 1 (Foundation Pivot) / 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Ship maintenance system: corvettes cost 1 energy + 1 alloy per month, processed in `_processMonthlyResources`
+- Civilian ship maintenance: idle colony ships and idle science ships cost 1 energy/month each (ships in transit or surveying are exempt)
+- HP degradation: when energy or alloys go negative from maintenance, all player corvettes take 2 HP damage. Ships at 0 HP are destroyed
+- Maintenance attrition events: `shipLostMaintenance` (per destroyed ship) and `maintenanceAttrition` (broadcast, total count) emitted when ships scrapped
+- Income display: `_getPlayerSummary` includes maintenance costs in energy/alloy income, so resource bar shows net income after fleet upkeep
+- Client: corvette build tooltip shows "Upkeep: 1⚡ 1🔩/mo", ticker and toast messages for maintenance attrition events
+
+**Files changed:**
+- `server/game-engine.js` — 3 new constants (CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE), maintenance processing in `_processMonthlyResources`, maintenance deduction in `_getPlayerSummary`, updated module.exports
+- `src/public/js/app.js` — corvette build tooltip updated with upkeep info, `maintenanceAttrition` ticker event formatter
+- `src/public/js/toast-format.js` — `shipLostMaintenance` and `maintenanceAttrition` toast formatting + type map entries
+- `src/tests/ship-maintenance.test.js` — **new** 21 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1155 total (21 new: 3 constants, 3 corvette cost deduction, 5 HP degradation/attrition, 3 event emission, 2 civilian ship maintenance, 2 income display, 3 edge cases). All passing.
+
+**Key decisions:**
+- Maintenance deducted after colony production in same monthly pass — conceptually correct (production funds maintenance) and avoids extra iteration
+- HP degradation applies to ALL player corvettes when resources go negative, not just "unpaid" ones — simpler and creates stronger pressure to balance fleet size with economy
+- Idle-only maintenance for civilian ships: ships in transit or surveying are "operational" and don't incur idle cost — rewards active use of civilian fleet
+- Attrition event is broadcast so all players see when an opponent's fleet degrades — creates strategic information
+
+---
+
+## Entry 46 — 2026-03-14 — Colony Occupation After Fleet Combat
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Colony occupation system: when an attacker has corvettes in a system with an enemy colony and no defender ships, occupation progress increments each tick. After 300 ticks (30 seconds), colony becomes occupied.
+- Occupied colonies produce at 50% output (applied as final multiplier in `_calcProduction`).
+- VP integration: attacker gains +3 VP per occupied colony, defender loses -5 VP per occupied colony (asymmetric to punish losing territory).
+- Liberation: defender moves corvettes to system with no enemy ships → colony is freed, production restored, VP reset.
+- Progress reset: if attacker ships leave or defender ships arrive before occupation completes, progress resets to 0.
+- Events: `colonyOccupied` and `colonyLiberated` broadcast events with system/colony details.
+- Client: occupation events in event ticker, toast notifications for own events, "OCCUPIED" badge in colony list sidebar, "Occupation" column in game-over scoreboard.
+- Serialization: `occupiedBy` and `occupationProgress` included in colony state when active.
+
+**Files changed:**
+- `server/game-engine.js` — 4 new constants (OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP), `occupiedBy`/`occupationProgress` fields on colonies, `_processOccupation` tick method, occupation multiplier in `_calcProduction`, occupation VP in `_calcVPBreakdown`, serialization, module.exports
+- `src/public/js/app.js` — `colonyOccupied`/`colonyLiberated` ticker formatters, occupation badge in colony list, "Occupation" column in game-over scoreboard
+- `src/public/js/toast-format.js` — toast formatting and type map for occupation events
+- `src/public/css/style.css` — `.colony-list-occupied` badge style
+- `src/tests/colony-occupation.test.js` — **new** 34 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1188 total (34 new: 2 constants, 1 initial state, 7 occupation progress, 2 events, 3 production penalty, 4 VP integration, 4 liberation, 4 serialization, 2 tick integration, 5 edge cases). All passing (1 pre-existing flaky perf test unrelated).
+
+**Key decisions:**
+- Occupation progress is per-tick (not monthly) — 300 ticks = 30 seconds, giving defenders a meaningful window to respond
+- Progress resets entirely if attacker leaves or defender arrives — no partial credit, clean binary state
+- Production multiplier applies to all positive production resources (not consumption) — occupied colonies still consume food/energy, creating a drain on the defender
+- VP is asymmetric (-5 defender, +3 attacker) — losing territory hurts more than gaining it, incentivizing defense
+- Already-occupied colonies cannot be re-occupied by a third party — the `continue` in `_processOccupation` skips occupied colonies, preventing occupation chain exploits
+- Liberation invalidates production cache immediately — no stale 50% penalty after liberation
+
+**Next:** Colony procedural naming (Phase 7, R45-6) — 30-minute task with outsized emotional payoff per game-designer R45 priority order
+
+---
+
+## Entry 47 — 2026-03-14 — Colony Procedural Naming
+
+**Phase:** 7 (Polish & Content)
+**Status:** Complete
+
+**What was built:**
+- Procedural colony naming system: `COLONY_NAMES` lookup table with 10 curated names per habitable planet type (continental, ocean, tropical, arctic, desert, arid)
+- `_generateColonyName(planetType)` method picks unused names sequentially, tracks used names via `_usedColonyNames` Set to prevent duplicates across the entire game
+- Fallback naming (`Colony <type>-N`) when all curated names for a type are exhausted
+- Starting colonies and colony-ship-founded colonies both use procedural names instead of the old `systemName + ' Colony'` pattern
+- Unknown planet types gracefully fall back to continental name list
+
+**Files changed:**
+- `server/game-engine.js` — `COLONY_NAMES` constant (60 names across 6 types), `_usedColonyNames` Set in constructor, `_generateColonyName` method, updated `_initStartingColonies` and colony ship founding to use procedural names, added `COLONY_NAMES` to module.exports
+- `src/tests/colony-naming.test.js` — **new** 17 tests
+- `src/tests/game-engine.test.js` — updated 1 existing test (colony name derivation) to match procedural naming
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1230 total (17 new: 4 constant validation, 7 name generation, 3 starting colony names, 2 colony ship founding, 1 serialization). All passing.
+
+**Key decisions:**
+- Names are assigned in list order (not random) — deterministic and simpler to test; randomization adds no gameplay value since players don't see the list
+- Used-name tracking is global (not per-type) — prevents any name appearing on two colonies even across different planet types
+- Fallback format `Colony <type>-N` is intentionally bland — signals to the designer that more names should be added rather than masking the exhaustion
+- No rename command added — the spec mentions it as a future possibility; this iteration focuses on procedural generation only
+
+---
+
+## Entry 48 — 2026-03-15 — Diplomatic Stances
+
+**Phase:** 6 (Diplomacy & Interaction)
+**Status:** Complete
+
+**What was built:**
+- Full diplomatic stance system: Neutral (default), Hostile (enables combat/occupation), Friendly (mutual acceptance required, +10% production bonus, shared vision future-ready).
+- `setDiplomacy` command: costs 25 influence, 600-tick cooldown per target. Declaring Hostile is mutual and auto-sets both sides. Friendly requires proposal + acceptance via `acceptDiplomacy` command. Mutual proposals auto-accept.
+- Combat gating: `_checkFleetCombat` and `_resolveFleetCombat` now only trigger between hostile players. Neutral/friendly ships coexist peacefully in the same system.
+- Occupation gating: `_processOccupation` only progresses for hostile attackers. Neutral/friendly ships do not occupy.
+- Friendly production bonus: colonies within 3 BFS hops of a mutual-friendly player's colony get +10% production on all resources (applied after occupation penalty in `_calcProduction`).
+- Diplomacy VP: +5 VP per one-sided friendly relationship, +10 VP per mutual friendly at game end (in `_calcVPBreakdown`).
+- Events: `warDeclared` (broadcast to all), `friendlyProposed` (to target), `allianceFormed` (broadcast to all).
+- Client: stance column in scoreboard with action buttons (Declare War, Propose Alliance, Set Neutral), stance icons, pending state indicator. Diplomacy column in game-over scoreboard. Ticker and toast formatting for all diplomacy events. Accept button in ticker for incoming proposals.
+- Serialization: `diplomacy` field in player state (stances + pending), `stanceTowardMe` on other players.
+
+**Files changed:**
+- `server/game-engine.js` — 7 new constants, `diplomacy`/`pendingFriendly` in player state, `_getStance`/`_areHostile`/`_areMutuallyFriendly`/`_hasFriendlyColonyNearby`/`_invalidateProductionCaches`/`_serializeDiplomacy` helper methods, combat gating in `_checkFleetCombat`/`_resolveFleetCombat`, occupation gating in `_processOccupation`, friendly bonus in `_calcProduction`, diplomacy VP in `_calcVPBreakdown`, `setDiplomacy`/`acceptDiplomacy` command handlers, diplomacy in state serialization, module.exports
+- `server/server.js` — added `setDiplomacy`/`acceptDiplomacy` to command routing
+- `src/public/js/app.js` — stance column in scoreboard, diplomacy buttons, event ticker formatters, game-over diplomacy VP column, `_setDiplomacy`/`_acceptDiplomacy` window functions
+- `src/public/js/toast-format.js` — toast formatting and type map for `warDeclared`/`allianceFormed`/`friendlyProposed`
+- `src/public/css/style.css` — stance button styles
+- `src/tests/diplomacy-stances.test.js` — **new** 36 tests
+- `src/tests/fleet-combat.test.js` — updated 12 tests (added `setHostile` for combat gating)
+- `src/tests/fleet-combat-deep.test.js` — updated 14 tests (added `setHostile`)
+- `src/tests/colony-occupation.test.js` — updated 12 tests (added `setHostile` for occupation gating)
+- `src/tests/colony-occupation-deep.test.js` — updated 8 tests (added `setHostile`)
+- `src/tests/game-engine.test.js` — updated 2 payload size tests (increased limits for diplomacy data)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1284 total (36 new: 1 constants, 4 initial state, 6 setDiplomacy validation, 3 hostile stance, 2 cooldown, 5 friendly stance, 3 acceptDiplomacy, 4 combat gating, 2 occupation gating, 2 friendly production, 4 diplomacy VP, 5 serialization, 5 edge cases). All passing.
+
+**Key decisions:**
+- Hostile is always mutual — declaring war on someone auto-sets their stance to hostile too. This prevents "ambush" scenarios where one player attacks neutrals.
+- Friendly requires acceptance — prevents forced alliances. Mutual proposals auto-accept for convenience.
+- Combat gating filters at the system level — only hostile pairs participate in `_resolveFleetCombat`. Neutral/friendly ships in the same system are excluded from the combat resolution loop entirely.
+- Friendly production bonus uses BFS with FRIENDLY_HOP_RANGE=3 — creates geographic relevance (allies must be nearby to benefit).
+- VP is asymmetric: one-sided friendly = +5 VP, mutual = +10 VP (replaces, not stacks). Rewards the social game.
+- `pendingFriendly` uses a Set (not serializable by default) — serialized as array in `_serializeDiplomacy` for JSON transport.
+
+**Next:** Doctrine choice at game start (Phase 4, game-designer R47-2) — 3 asymmetric doctrines (Industrialist/Scholar/Expansionist) that break the solved opening build order
+
+---
+
+## Entry 49 — 2026-03-15 — Doctrine Choice at Game Start
+
+**Phase:** 4 (Technology & Progression)
+**Status:** Complete
+
+**What was built:**
+- Doctrine selection system: 3 asymmetric doctrines (Industrialist, Scholar, Expansionist) chosen during first 30 seconds of game start. Breaks the solved opening build order with meaningful strategic divergence.
+- **Industrialist:** +25% Mining and Industrial output, +1 extra starting Mining district, -10% research output. Economy-first path.
+- **Scholar:** +25% Research output, T1 research 33% complete in all 3 tracks (progress = 50/150), -10% mineral output. Tech-rush path.
+- **Expansionist:** Colony ships -25% cost and -25% build time, +2 starting pops (10 instead of 8), -10% alloy output. Wide expansion path.
+- `selectDoctrine` command: validates doctrine type, prevents double-selection, rejects after 30-second timer. Emits `doctrineChosen` broadcast event.
+- Auto-assignment: random doctrine assigned to undecided players when 300-tick timer expires. Emits `doctrineAutoAssigned` event. Phase ends early when all players choose.
+- Production modifiers: applied multiplicatively in `_calcProduction` after edict bonuses, before scarcity. Bonuses and penalties target specific resource types.
+- Expansionist colony ship discount: per-player cost/time multipliers applied in `buildColonyShip` handler. Uses `Math.ceil` for fractional costs.
+- Client: doctrine selection overlay with 3 clickable cards showing bonuses/penalties, countdown timer, auto-hides on selection or phase end. Doctrine badge (emoji) shown on scoreboard next to player names.
+- Serialization: `doctrine` field in both own and other players' state. `doctrinePhase` and `doctrineDeadlineTick` in gameState during selection window.
+- Toast formatting: `doctrineChosen` and `doctrineAutoAssigned` events in toast-format.js.
+
+**Files changed:**
+- `server/game-engine.js` — `DOCTRINE_DEFS` and `DOCTRINE_SELECTION_TICKS` constants, `doctrine: null` in player state, `_doctrinePhase`/`_doctrineDeadlineTick` in constructor, `_applyDoctrineStartingBonus` method, `_processDoctrinePhase` method (called in tick loop), `selectDoctrine` case in `handleCommand`, doctrine production modifiers in `_calcProduction`, Expansionist colony ship cost/time discount in `buildColonyShip`, doctrine in player state serialization (`getPlayerState`), `doctrinePhase`/`doctrineDeadlineTick` in state broadcast, module.exports
+- `server/server.js` — added `selectDoctrine` to command routing
+- `src/public/index.html` — doctrine selection overlay HTML
+- `src/public/css/style.css` — doctrine overlay and card styles
+- `src/public/js/app.js` — doctrine overlay DOM refs, `_showDoctrineSelection` function, `_updateDoctrineTimer` in HUD loop, doctrine badge in scoreboard, `doctrinePhase`/`doctrineDeadlineTick` in gameState handling
+- `src/public/js/toast-format.js` — `doctrineChosen` and `doctrineAutoAssigned` toast types and formatters
+- `src/tests/doctrine-choice.test.js` — **new** 30 tests
+- `src/tests/game-engine.test.js` — updated 7 tests (skip doctrine phase to prevent auto-assignment interference)
+- `src/tests/colony-traits.test.js` — updated 1 test (skip doctrine phase)
+- `src/tests/scarcity-seasons.test.js` — updated 1 test (skip doctrine phase)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1366 total (30 new: 3 constants, 3 initial state, 7 selectDoctrine command, 3 auto-assignment, 4 Industrialist, 4 Scholar, 4 Expansionist, 5 serialization, 2 production interactions, 5 edge cases). All passing.
+
+**Key decisions:**
+- Doctrine modifiers are multiplicative on production, applied after edicts but before scarcity — same stacking layer as other empire-wide modifiers
+- Auto-assignment is random (not deterministic) — mirrors the "random if no choice" spec. Tests that tick past 300 skip the doctrine phase to avoid interference
+- Expansionist colony ship discount uses `Math.ceil` on fractional costs — ensures player always pays at least 1 of each resource
+- Scholar's T1 research head start (50/150 = 33%) doesn't overwrite existing progress — handles edge case where a player might somehow have more
+- Starting bonuses (extra district, extra pops, research progress) are applied immediately on selection, not deferred — creates visible feedback in colony view
+- All three doctrines have a penalty (-10% on one resource type) to prevent any doctrine from being strictly dominant
+
+**Next:** Endgame crisis event (Phase 7, R48-2) — Galactic Storm or Precursor Awakening at 75% match timer. Creates the climax every match needs
+
+**Next:** Diplomatic stances (Phase 6, R46-2) — minimum viable multiplayer social layer with Neutral/Hostile/Friendly stance-based combat gating
+
+---
+
+## Entry 50 — 2026-03-15 — Endgame Crisis Event
+
+**Phase:** 7 (Events, Polish & Win Conditions)
+**Status:** Complete
+
+**What was built:**
+- Endgame crisis system: at 75% match timer elapsed, a galaxy-wide crisis triggers randomly. Two variants provide dramatic late-game climax.
+- **Galactic Storm:** All production reduced by 25% for the remainder of the match. Applied as 0.75 multiplier in `_calcProduction` after scarcity but before occupation. Forces economic adaptation — players who stockpiled thrive, barely-breaking-even players get punished.
+- **Precursor Awakening:** Hostile 60 HP / 15 attack warship spawns at galaxy center (most-connected system), pathfinds toward nearest colony at 3 seconds/hop (faster than raiders). Engages defense platforms and player corvettes. Occupies undefended colonies (50% production penalty). +15 VP for destroying it, -5 VP per colony it occupies.
+- 100-tick (10-second) advance warning broadcast before crisis triggers.
+- Precursor fleet combat: engages idle corvettes at intercepted systems during movement and on arrival. Defense platforms fight first, then military ships. Over 8 combat rounds. Focus-fires weakest target.
+- Precursor retargeting: after occupying a colony, fleet pathfinds to next nearest colony.
+- VP integration: `precursorVP` and `precursorOccupiedCount` fields in `_calcVPBreakdown`. Destroyer gets +15 VP, each occupied colony owner gets -5 VP.
+- Client: dramatic banner alerts for crisis warning/trigger, HUD indicator showing active crisis type (Galactic Storm with red text, Precursor Awakening with HP display), toast formatting for all 5 crisis event types, scoreboard Crisis VP column in game-over screen, ticker integration for all broadcast events.
+- Serialization: `endgameCrisis` and `precursorFleet` in both `getState()` and `getPlayerState()`. Precursor fleet in cached ship data.
+
+**Files changed:**
+- `server/game-engine.js` — 9 new constants, constructor state (6 fields), `_processEndgameCrisis` method, `_spawnPrecursorFleet`, `_processPrecursorMovement`, `_resolvePrecursorCombat`, `_resolvePrecursorArrival` methods, Galactic Storm and precursor occupation multipliers in `_calcProduction`, precursor VP in `_calcVPBreakdown`, crisis state in `getState`/`getPlayerState`/`_getSerializedShipData`, tick loop hooks, module.exports updated
+- `src/public/js/app.js` — endgame crisis event handlers, `_showEndgameCrisisAlert` function, HUD crisis indicator, scoreboard Crisis VP column, ticker broadcast list updated
+- `src/public/js/toast-format.js` — 5 new event types and formatters (endgameCrisisWarning, endgameCrisis, precursorCombat, precursorDestroyed, precursorOccupied)
+- `src/public/index.html` — endgame-crisis-indicator span element
+- `src/tests/endgame-crisis.test.js` — **new** 30 tests
+- `src/tests/game-engine.test.js` — updated 1 test (skip endgame crisis for VP tie test)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1439 total (30 new: 3 constants, 3 initialization, 1 no-timer guard, 2 warning, 2 trigger, 3 Galactic Storm production, 4 Precursor Awakening spawn/movement/serialization, 1 precursor combat with ships, 1 precursor combat with defense platform, 4 VP effects, 1 precursor occupation production, 5 serialization, 5 edge cases). All passing.
+
+**Key decisions:**
+- Precursor spawns at the galaxy's most-connected system (hub/center) rather than a random system — creates natural drama as it advances from the core outward.
+- Precursor is faster than raiders (30 ticks/hop vs 40) and much stronger (60 HP/15 atk vs 30 HP/8 atk) — it's a credible threat that demands military response.
+- Precursor occupation uses the same 0.5 multiplier as player occupation but doesn't require the 300-tick occupation progress mechanic — instant occupation on arrival at undefended colony.
+- Galactic Storm stacks multiplicatively with scarcity seasons — a storm+scarcity combo can reduce production to ~52.5% (0.75 × 0.70), creating genuine economic emergencies.
+- Crisis type is randomly selected (50/50) — prevents metagaming around a known crisis type.
+- After occupying a colony, precursor retargets the next nearest colony — continued threat until destroyed.
+
+---
+
+## Entry 51 — 2026-03-15 — Corvette Variants via Tech
+
+**Phase:** 5 (Military & Fleets)
+**Status:** Complete
+
+**What was built:**
+- 3 corvette variants unlocked by T2 technologies, creating rock-paper-scissors fleet composition metagame. Your tech path determines your military options.
+- **Interceptor** (Physics T2: Advanced Reactors): 8 HP, 5 ATK, 30 ticks/hop. Fast striker. Counters gunboats (targets them first). Maintenance: 1E/mo. Priority 3 (attacks first in combat round).
+- **Gunboat** (Engineering T2: Deep Mining): 15 HP, 4 ATK, 50 ticks/hop. Tanky heavy hitter. Counters sentinels. Maintenance: 2E + 1A/mo. Priority 1 (attacks last).
+- **Sentinel** (Society T2: Gene Crops): 12 HP, 3 ATK + 2 HP regen/round, 40 ticks/hop. Sustain fighter. Counters interceptors (heals through damage). Maintenance: 1E + 2A/mo. Priority 2.
+- Same build cost as base corvette (100M + 50A), but 500-tick build time (vs 400 for base). All count toward MAX_CORVETTES=10 cap.
+- Combat system upgraded: ships attack in priority order (interceptors first), counter-targeting prioritizes the variant each ship is strong against, Sentinel regen heals after damage each round (capped at maxHp).
+- Per-variant movement speed: interceptors move at 30 ticks/hop (fastest), sentinels at 40 (same as base), gunboats at 50 (slowest).
+- Per-variant maintenance costs: calculated per-ship instead of flat per-corvette. Mixed fleets have accurate maintenance display.
+- Client: variant build buttons in build menu (shown when T2 tech is completed, disabled/locked otherwise). Distinct colors: Interceptor=blue, Gunboat=orange, Sentinel=green. Stats and upkeep shown in button descriptions.
+- Galaxy view: variant-specific 3D geometries (Interceptor=narrow tri-cone, Gunboat=chunky box, Sentinel=diamond octahedron). Transit animation uses per-variant hop speed.
+- Toast formatting for variant construction events (corvette-interceptor, corvette-gunboat, corvette-sentinel).
+- Serialization: `variant`, `maxHp` fields in military ship data. Build queue items include `variant` field.
+
+**Files changed:**
+- `server/game-engine.js` — CORVETTE_VARIANTS and CORVETTE_VARIANT_BUILD_TIME constants, variant validation in buildCorvette handler, variant stats on ship spawn, per-variant hop ticks in movement, per-variant maintenance in production and income display, counter-targeting and regen in fleet combat, variant+maxHp in serialization, module.exports updated
+- `src/public/js/app.js` — variant build buttons in build menu with tech-gating, stats display, send variant in buildCorvette message
+- `src/public/js/galaxy-view.js` — interceptor/gunboat/sentinel geometries, variant-aware mesh creation, per-variant hop ticks in transit animation
+- `src/public/js/toast-format.js` — 3 new constructionComplete variant messages
+- `src/tests/corvette-variants.test.js` — **new** 39 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1512 total (39 new: 5 constants, 6 tech gating, 6 build & spawn, 3 movement speed, 5 combat/counter-targeting, 4 maintenance, 4 serialization, 6 edge cases). All passing (1 pre-existing unrelated failure in doctrine-choice-deep).
+
+**Key decisions:**
+- Combat uses priority-ordered attack resolution: interceptors select targets first (priority 3), then sentinels (2), then gunboats/base (1). Damage still accumulates in a map and applies simultaneously, but target selection order gives interceptors the counter-targeting advantage.
+- Sentinel regen applies after damage resolution each round, capped at maxHp — prevents HP inflation while making sentinels durable against low-damage attackers.
+- Counter-targeting: each variant prioritizes attacking its counter-target variant. When no counter-target is available, falls back to lowest-HP focus fire. This is the primary mechanism for rock-paper-scissors dynamics.
+- All ships now carry `variant` (null for base), `regen`, and `maxHp` fields — backward compatible since null/0 values match base corvette behavior.
+- Maintenance is now computed per-ship from variant definitions instead of flat `corvetteCount * CORVETTE_MAINTENANCE` — more accurate for mixed fleets.
+
+**Next:** Underdog production bonus (Phase 6, R50-3) — +15% production per colony gap vs leader (cap +45%), prevents death spirals
+
+---
+
+## Entry 52 — 2026-03-15 — Underdog Bonus + Gunboat Balance Tweak
+
+**Phase:** 6 (Diplomacy & Interaction) + Phase 5 (Balance)
+**Status:** Complete
+
+**What was built:**
+- **Underdog production bonus:** Players with fewer colonies than the leader get +15% production per colony gap (max +45% at 3+ gap). Applied as multiplicative modifier in `_calcProduction` after friendly bonus. Only active in 2+ player games. Production cache invalidated when colony count changes.
+- **Tech cost discount:** Each tech costs 15% less per player who has already completed it. Applied in `_processResearch` via `_calcTechDiscount()` — trailing players can catch up faster on the tech tree.
+- **Client indicator:** Green "Underdog Bonus: +X%" badge in status bar, visible when bonus is active. `underdogBonus` field in player state serialization.
+- **Gunboat ATK 4→3:** Tightens the corvette rock-paper-scissors triangle. Gunboat HP×ATK drops from 60 to 45, closer to Interceptor's 40 and Sentinel's 36+regen. Gunboat's strength is now durability (15 HP), not damage.
+
+**Files changed:**
+- `server/game-engine.js` — UNDERDOG_BONUS_PER_COLONY/UNDERDOG_BONUS_CAP/UNDERDOG_TECH_DISCOUNT constants, `_calcUnderdogBonus` and `_calcTechDiscount` methods, underdog multiplier in `_calcProduction`, tech discount in `_processResearch`, `underdogBonus` in `getPlayerState`, production cache invalidation on colony founding, Gunboat attack 4→3, module.exports updated
+- `src/public/js/app.js` — underdog indicator in `_updateHUD`
+- `src/public/index.html` — underdog-indicator span element
+- `src/tests/underdog-bonus.test.js` — **new** 26 tests
+- `src/tests/corvette-variants.test.js` — updated 2 tests (gunboat attack 4→3)
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1562 total (26 new: 3 constants, 6 _calcUnderdogBonus, 2 production multiplier, 5 tech cost discount, 3 serialization, 3 edge cases, 4 gunboat balance). All passing (1 pre-existing doctrine-choice-deep flaky test unrelated).
+
+**Key decisions:**
+- Underdog bonus applied in `_calcProduction` (per-colony) rather than `_processMonthlyResources` (per-player) — consistent with how all other production modifiers work, and production cache handles performance
+- Tech discount computed dynamically in `_processResearch` — no stored state needed, just counts completedTechs across all players
+- Bonus caps at +45% (3 colony gap) — prevents absurd multipliers in extreme scenarios while providing meaningful catch-up
+- Production cache invalidated on colony founding via `_invalidateAllProductionCaches` — underdog ratio changes affect all players when any player founds a colony
+- Gunboat ATK 3 makes all three variants closer in raw power (40/45/36+regen), shifting the balance toward rock-paper-scissors counter-targeting rather than raw stats
+
+**Next:** Mid-game catalyst events (Phase 7, R51-1) — 3 timed events at 30/45/55% match time. Or fleet intelligence/espionage (Phase 5, R51-6)

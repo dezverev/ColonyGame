@@ -23,8 +23,14 @@
   let colonyShipPool = [];     // reusable colony ship mesh pool
   let scienceShipMeshes = [];  // active science ship marker meshes
   let scienceShipPool = [];    // reusable science ship mesh pool
+  let raiderMeshes = [];       // active raider marker meshes
+  let raiderPool = [];         // reusable raider mesh pool
+  let corvetteMeshes = [];     // active corvette marker meshes
+  let corvettePool = [];       // reusable corvette mesh pool
   let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
   let _lastScienceShipData = null;
+  let _lastRaiderData = null;
+  let _lastCorvetteData = null;
 
   // Must match server/game-engine.js SPEED_INTERVALS exactly
   const SPEED_INTERVALS = { 1: 200, 2: 100, 3: 50, 4: 33, 5: 20 };
@@ -49,6 +55,12 @@
   // Hover throttle — limit raycasting to ~30Hz (every 33ms) instead of every mousemove
   let _lastHoverTime = 0;
   const _HOVER_INTERVAL = 33; // ms
+
+  // Variant hop ticks — hoisted from _animateShips to avoid per-frame object allocation
+  const _variantHopTicks = { interceptor: 30, gunboat: 50, sentinel: 40 };
+
+  // Reusable temp position object for ship interpolation (avoids per-ship GC pressure)
+  const _tempPos = { x: 0, y: 0, z: 0 };
 
   // Shared materials/geometries
   const _matCache = {};
@@ -156,6 +168,22 @@
     _matCache.scienceShip = new THREE.MeshBasicMaterial({
       color: 0x00e5ff, transparent: true, opacity: 0.9,
     });
+
+    // Raider: diamond shape, red
+    _geoCache.raider = new THREE.OctahedronGeometry(2.5, 0);
+    _matCache.raider = new THREE.MeshBasicMaterial({
+      color: 0xff2222, transparent: true, opacity: 0.9,
+    });
+
+    // Corvette (military ship): small cone shape, aggressive red-orange
+    _geoCache.corvette = new THREE.ConeGeometry(1.8, 4.0, 4);
+    _matCache.corvette = new THREE.MeshBasicMaterial({
+      color: 0xff4444, transparent: true, opacity: 0.9,
+    });
+    // Corvette variants: distinct geometries
+    _geoCache.interceptor = new THREE.ConeGeometry(1.5, 5.0, 3);   // narrow tri-cone — fast
+    _geoCache.gunboat = new THREE.BoxGeometry(2.5, 2.5, 4.5);      // chunky box — tanky
+    _geoCache.sentinel = new THREE.OctahedronGeometry(2.2, 0);      // diamond — balanced
   }
 
   // ── Build galaxy scene ──
@@ -223,6 +251,14 @@
     scienceShipMeshes = [];
     for (const mesh of scienceShipPool) scene.remove(mesh);
     scienceShipPool = [];
+    for (const mesh of raiderMeshes) scene.remove(mesh);
+    raiderMeshes = [];
+    for (const mesh of raiderPool) scene.remove(mesh);
+    raiderPool = [];
+    for (const mesh of corvetteMeshes) scene.remove(mesh);
+    corvetteMeshes = [];
+    for (const mesh of corvettePool) scene.remove(mesh);
+    corvettePool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -579,6 +615,88 @@
     }
   }
 
+  function updateRaiders(raiders) {
+    if (!scene || !galaxyData) return;
+    _lastRaiderData = raiders;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (raiders) for (const r of raiders) activeIds.add('r' + r.id);
+    raiderMeshes = _recycleStaleMeshes(raiderMeshes, activeIds, raiderPool);
+
+    if (!raiders || raiders.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of raiderMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    raiderMeshes = [];
+
+    for (const raider of raiders) {
+      const shipKey = 'r' + raider.id;
+      // Raiders use red color (not player-owned)
+      const matKey = 'raider_red';
+      if (!_matCache[matKey]) {
+        _matCache[matKey] = new THREE.MeshBasicMaterial({
+          color: 0xff2222, transparent: true, opacity: 0.9,
+        });
+      }
+      let mesh = meshByKey[shipKey];
+      let isNew = false;
+      if (!mesh) {
+        isNew = true;
+        if (raiderPool.length > 0) {
+          mesh = raiderPool.pop();
+          mesh.material = _matCache[matKey];
+          mesh.visible = true;
+        } else {
+          mesh = new THREE.Mesh(_geoCache.raider, _matCache[matKey]);
+          scene.add(mesh);
+        }
+      }
+      const sys = galaxyData.systems[raider.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; raiderPool.push(mesh); continue; }
+
+      mesh.userData.shipData = raider;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      raiderMeshes.push(mesh);
+    }
+  }
+
+  function updateCorvettes(ships) {
+    if (!scene || !galaxyData) return;
+    _lastCorvetteData = ships;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('m' + s.id);
+    corvetteMeshes = _recycleStaleMeshes(corvetteMeshes, activeIds, corvettePool);
+
+    if (!ships || ships.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of corvetteMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    corvetteMeshes = [];
+
+    for (const ship of ships) {
+      const shipKey = 'm' + ship.id;
+      const geoKey = ship.variant || 'corvette';
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, geoKey, _getPlayerColor(ship.ownerId), meshByKey, corvettePool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; corvettePool.push(mesh); continue; }
+
+      mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x - 3, (sys.y || 0) + 3, sys.z + 3);
+      }
+      corvetteMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -728,33 +846,37 @@
   // that update × correct tick rate → compute exact position on the lane.
   // Mesh is reused across updates so position is continuous.
 
+  // Cached game speed state for per-frame use (set once in _animateShips, read per ship)
+  let _frameGameSpeed = 2;
+  let _framePaused = false;
+  let _frameMsPerTick = 100;
+
   function _extrapolateTransitPos(ship, hopTicks, yOffset, updateTime, now) {
     if (!ship.path || ship.path.length === 0) return null;
     const fromSys = galaxyData.systems[ship.systemId];
     const toSys = galaxyData.systems[ship.path[0]];
     if (!fromSys || !toSys) return null;
 
-    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
-    const gameSpeed = (gs && gs.gameSpeed) || 2;
-    const paused = gs && gs.paused;
-
-    // Correct tick rate from SPEED_INTERVALS (NOT 100/gameSpeed which is wrong)
-    const msPerTick = SPEED_INTERVALS[gameSpeed] || 100;
-    const elapsedTicks = paused ? 0 : (now - updateTime) / msPerTick;
+    const elapsedTicks = _framePaused ? 0 : (now - updateTime) / _frameMsPerTick;
     // Clamp: never predict past end of hop (server will tell us when hop completes)
     const hp = Math.min((ship.hopProgress || 0) + elapsedTicks, hopTicks - 0.5);
     const t = hp / hopTicks;
 
-    return {
-      x: fromSys.x + (toSys.x - fromSys.x) * t,
-      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
-      z: fromSys.z + (toSys.z - fromSys.z) * t,
-    };
+    _tempPos.x = fromSys.x + (toSys.x - fromSys.x) * t;
+    _tempPos.y = (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset;
+    _tempPos.z = fromSys.z + (toSys.z - fromSys.z) * t;
+    return _tempPos;
   }
 
   function _animateShips() {
     if (!galaxyData) return;
     const now = performance.now();
+
+    // Fetch game speed once per frame (was previously per-ship inside _extrapolateTransitPos)
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    _frameGameSpeed = (gs && gs.gameSpeed) || 2;
+    _framePaused = !!(gs && gs.paused);
+    _frameMsPerTick = SPEED_INTERVALS[_frameGameSpeed] || 100;
 
     // Colony ships
     for (const mesh of colonyShipMeshes) {
@@ -798,6 +920,35 @@
       }
       mesh.rotation.y = now * 0.003;
     }
+
+    // Corvettes (military ships) — variant-aware hop speed
+    for (const mesh of corvetteMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const hopTicks = ship.variant ? (_variantHopTicks[ship.variant] || 40) : 40;
+      const pos = _extrapolateTransitPos(ship, hopTicks, 3, mesh.userData._updateTime || now, now);
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) mesh.position.set(sys.x - 3, (sys.y || 0) + 3, sys.z + 3);
+      }
+      mesh.rotation.y = now * 0.003;
+    }
+
+    // Raiders
+    for (const mesh of raiderMeshes) {
+      const raider = mesh.userData.shipData;
+      if (!raider) continue;
+      const pos = _extrapolateTransitPos(raider, 40, 3, mesh.userData._updateTime || now, now);
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        const sys = galaxyData.systems[raider.systemId];
+        if (sys) mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      mesh.rotation.y = now * 0.004;
+    }
   }
 
   // ── Render ──
@@ -805,6 +956,7 @@
   function render() {
     if (renderer && scene && camera) {
       _animateShips();
+      _updateCombatFlashes();
       renderer.render(scene, camera);
     }
   }
@@ -837,6 +989,50 @@
     container = null;
   }
 
+  // ── Combat Flash ──
+  const _combatFlashes = []; // { mesh, startTime, duration }
+  const _combatFlashPool = []; // reusable flash meshes
+
+  function showCombatFlash(systemId) {
+    if (!scene || !galaxyData || !galaxyData.systems[systemId]) return;
+    const sys = galaxyData.systems[systemId];
+    if (typeof THREE === 'undefined') return;
+    // Shared geometry + per-flash material (opacity varies, needs own material)
+    if (!_geoCache.combatFlash) {
+      _geoCache.combatFlash = new THREE.SphereGeometry(4, 16, 12);
+    }
+    let mesh;
+    if (_combatFlashPool.length > 0) {
+      mesh = _combatFlashPool.pop();
+      mesh.material.opacity = 0.8;
+      mesh.scale.setScalar(1);
+      mesh.visible = true;
+    } else {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+      mesh = new THREE.Mesh(_geoCache.combatFlash, mat);
+      scene.add(mesh);
+    }
+    mesh.position.set(sys.x, sys.y || 0, sys.z);
+    _combatFlashes.push({ mesh, startTime: performance.now(), duration: 1500 });
+  }
+
+  function _updateCombatFlashes() {
+    const now = performance.now();
+    for (let i = _combatFlashes.length - 1; i >= 0; i--) {
+      const f = _combatFlashes[i];
+      const elapsed = now - f.startTime;
+      if (elapsed >= f.duration) {
+        f.mesh.visible = false;
+        _combatFlashPool.push(f.mesh);
+        _combatFlashes.splice(i, 1);
+      } else {
+        const t = elapsed / f.duration;
+        f.mesh.material.opacity = 0.8 * (1 - t);
+        f.mesh.scale.setScalar(1 + t * 2);
+      }
+    }
+  }
+
   // ── Public API ──
   const GalaxyView = {
     init,
@@ -844,6 +1040,9 @@
     updateOwnership,
     updateColonyShips,
     updateScienceShips,
+    updateRaiders,
+    updateCorvettes,
+    showCombatFlash,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,

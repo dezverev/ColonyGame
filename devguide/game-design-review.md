@@ -4,791 +4,916 @@
 
 ---
 
-## Review #32 — 2026-03-12 — The Missing Middle: From Colony Builder to 4X
+## Review #51 — 2026-03-15 — The Missing Middle
 
 **Reviewer:** Game Design Analyst (automated)
-**Build State:** 60/162 tasks complete (37%). Colony traits, science ships, fog of war, anomalies, single-player mode. 645 tests passing. ~16,200 lines.
-**Focus:** Holistic 4X evaluation at the 37% mark. The game has exploration and expansion — what's needed to make a 20-minute session feel like a complete, satisfying game?
+**Build State:** 91/212 tasks complete (43%). Corvette variants (Interceptor/Gunboat/Sentinel rock-paper-scissors), endgame crisis (Galactic Storm/Precursor Awakening), doctrine choice (3 asymmetric start doctrines), diplomatic stances (Neutral/Hostile/Friendly), colony occupation, PvP fleet combat, NPC raiders + defense platforms, scarcity seasons, 9 techs (3T×3 tracks), colony crises (4 types), personality traits, edicts, influence, science ships, fog of war, colony expansion (5 max), 5 game speeds + pause, match timer VP win, instant victory conditions. 1,535 tests (1 failing — doctrine research penalty). ~35,400 lines.
 
 ---
 
-### 1. Current State Audit
+### 1. 4X Design Pillar Scores
 
-**What a player experiences today:**
-1. Enter name → "Single Player" one-click or multiplayer lobby
-2. Galaxy generated (50/100/200 systems), starting colony on habitable planet with 4 pre-built districts, 8 pops
-3. Build 6 district types with energy/mineral/food/alloy/research economy
-4. Research 6 techs across 3 tracks (2 tiers, T1 costs 150, T2 costs 500)
-5. Galaxy map with fog of war (2-hop visibility), science ships for exploration
-6. Colony ships for expansion (max 5 colonies), planet type bonuses
-7. Colony personality traits at 4+ district specialization (+10% empire-wide bonuses, +5 VP each)
-8. Energy deficit auto-disables districts, food deficit kills pops
-9. Match timer → VP scoring → scoreboard
+| Pillar | Score | Trend | Assessment |
+|--------|-------|-------|-----------|
+| **Strategic Depth** | 8/10 | +0.5 | Corvette variants add a genuine fleet composition layer — your tech path now determines military options, creating a spy-game around T2 tech choices. The rock-paper-scissors triangle is elegant. Combined with doctrines, there are now ~9 distinct opening strategies (3 doctrines × 3 T2 tech rushes). Missing: the mid-game still lacks strategic inflection points. Once you've picked your doctrine and first T2 tech, the optimal play is largely "build more of the same." Need a 3-colony empire specialization doctrine or equivalent pivot moment. |
+| **Pacing & Tension** | 7/10 | = | Three-act structure holds: early (doctrine + build), mid (expand + tech + raiders), late (crisis + VP sprint). Scarcity seasons and colony crises provide periodic jolts. The endgame crisis at 75% timer is still the game's best pacing device. But the mid-game valley (minutes 6-14 in a 20-min match) remains the weakest segment — there's a long stretch where you're optimizing production without meaningful decisions to make. The underdog bonus (planned but unimplemented) would help, but the real fix is mid-game events and diplomatic pressure. |
+| **Economy & Production** | 7/10 | = | Resource system creates genuine trade-offs. Energy is the chokepoint (powers everything, limits military maintenance), minerals are the expansion fuel, alloys are the military bottleneck. Per-variant corvette maintenance costs add nuance — a fleet of 5 gunboats costs 10E + 5A/month, which is serious economic pressure. Colony traits reward specialization. But the economy is still fundamentally linear: more districts = more output, no diminishing returns, no trade-off between colony width and depth beyond the 5-colony cap. |
+| **Exploration & Discovery** | 5/10 | = | This is the game's weakest pillar. Science ships survey systems, anomalies give one-time bonuses, fog of war hides the galaxy. But exploration feels like a checkbox exercise — survey everything reachable, collect bonuses, done. No branching anomaly chains, no risk/reward expeditions, no narrative discovery moments. The precursor anomaly chain (planned) would significantly improve this. Galactic leylines would add strategic depth to expansion choices. Right now, exploration is a means to an end (finding colony sites), not an experience in itself. |
+| **Multiplayer Fairness** | 6/10 | = | Starting positions use procedural galaxy generation with assigned starting systems. Doctrine choice creates asymmetry by consent. But no underdog bonus exists yet — a player who loses their second colony is in a death spiral with no comeback mechanic. Occupation VP is static (no decay), meaning a dominant player can farm VP indefinitely from an occupied colony. The planned underdog bonus (+15% production per colony gap) and occupation VP decay would address both issues, but neither is implemented. |
 
-**What's conspicuously absent:**
-- No military units, combat, or threat of any kind
-- No diplomacy, trade, or player interaction beyond chat
-- No mid-game events or crises that disrupt plans
-- No win condition other than timer expiry
-- No way to interact with or respond to other players' actions
-- Tech tree ends at T2 — late game has nothing new to unlock
-- No visual progression on colonies (same look at pop 8 and pop 30)
+**Overall Score: 6.6/10** (up from 6.4)
 
 ---
 
-### 2. Pillar Scores
+### 2. Top 5 Things a Playtester Would Notice
 
-#### Strategic Depth: 4/10
-The colony specialization system (planet bonuses + traits) is genuinely good. Players make real choices about which districts to build and where to expand. But strategic depth bottoms out fast: there's no military dimension, no diplomacy, no competing victory paths. Every game plays the same — expand to 5 colonies, specialize, wait for timer. The tech tree is too shallow (6 techs) to create divergent strategies. There's no "opponent's move" that forces you to adapt.
+1. **"I'm bored between minutes 6 and 14."** After establishing your second or third colony and picking your T2 tech, there's little to actively decide. You're watching numbers tick up. The mid-game needs disruptive events, diplomatic pressure, or strategic pivots to keep players engaged.
 
-#### Pacing & Tension: 3/10
-The weakest pillar. Early game has a nice rhythm (build first districts, scout galaxy, pick expansion targets). But there's no mid-game inflection point and no late-game climax. Once you have 3-4 colonies running, you're on autopilot — queue districts, wait for pops, research finishes itself. No crises, no threats, no "oh no" moments. The match timer ending is the only dramatic beat, and it's external to gameplay. The 2-minute warning helps but can't substitute for organic tension.
+2. **"Exploration feels pointless after the first 5 minutes."** Once you've found your colony sites, science ships have nothing meaningful to do. Anomalies are one-click bonuses, not stories. There's no reason to keep exploring.
 
-#### Economy & Production: 6/10
-The strongest system in the game. Energy as a power grid with auto-disable creates real tension. Food pressure via pop consumption forces agriculture investment. Alloy costs for ships create expansion trade-offs. Planet type bonuses (desert +minerals, ocean +research) make colony site selection meaningful. Colony traits reward specialization. The economy genuinely works — but it needs more sinks. Once you're stable, resources just pile up with nothing to spend them on.
+3. **"I got crushed early and had no way to come back."** Without the underdog bonus, losing a colony or falling behind in expansion creates a snowball that's impossible to recover from. The winner is often decided by minute 8.
 
-#### Exploration & Discovery: 5/10
-Science ships + fog of war + anomalies create a legitimate explore loop. Surveying reveals planets, anomalies give one-time bonuses, and persistent fog penetration rewards systematic scouting. But the reward space is shallow: 5 anomaly types with static bonuses. No narrative choices, no multi-step chains, no "ancient precursor mystery" to unravel. Exploration is functional but not exciting. The galaxy feels like a spreadsheet of habitability numbers rather than a frontier of wonders.
+4. **"Diplomacy is just declaring war or not."** The stance system works, but there's no in-game chat, no trade proposals, no ceasefire mechanic. You can't actually negotiate. In a 1v1, diplomacy is binary (war or not). In multiplayer, there's no kingmaker prevention.
 
-#### Multiplayer Fairness: 3/10
-Hard to evaluate fully since there's no interaction beyond chat. Starting positions use galaxy generation's spacing, which is reasonable. But there are no comeback mechanics, no underdog bonuses, no way to interfere with or respond to another player. In a 2-player match, both players play solitaire on the same map. VP scoring is the only competitive element, and it heavily favors wide play (more colonies = more pops = more VP).
-
-**Overall Score: 4.2/10**
+5. **"I don't know what my opponent is doing."** Beyond fog of war reveals from friendly stances, there's no intelligence system, no espionage, no scouting reports. You can't see enemy fleet composition, tech choices, or economic strength. This makes counter-play impossible — you can't react to what you can't see.
 
 ---
 
-### 3. Top 5 Gaps a Playtester Would Notice
+### 3. Recommendations
 
-1. **"Nothing is happening to me."** After the initial build-out, the game becomes purely reactive to the player's own decisions. No events, no crises, no AI actions, no opponent moves. This is the #1 fun killer — 4X games need external pressure.
+### 3.1 Mid-Game Catalyst Events
 
-2. **"I've researched everything, now what?"** The tech tree empties after 6 techs. In a 20-minute match at normal speed, an active researcher finishes all T2 techs by minute 12-14. The last 6-8 minutes have no progression system.
+**Impact:** High | **Effort:** Medium | **Category:** Core Mechanic
 
-3. **"Why should I care about other players?"** In multiplayer, other players are invisible except as VP numbers. No territorial conflict, no trade, no diplomacy. The multiplayer label promises interaction but delivers parallel solitaire.
+**The problem:** Minutes 6-14 of a 20-minute match are a dead zone. Players have made their early choices (doctrine, first colony sites, T1 tech) but the endgame crisis hasn't hit yet. There's nothing forcing decisions.
 
-4. **"My colonies all look the same."** Despite planet type bonuses, the isometric colony view doesn't change based on planet type. A Desert colony looks identical to an Arctic colony. The 3D rendering — the game's visual signature — isn't leveraging its biggest differentiator.
+**The fix:** Add a "Galactic Event" system that fires 2-3 timed events during the mid-game, each requiring player response:
 
-5. **"The game just... stops."** The match timer ending feels arbitrary. There's no climax, no final push, no dramatic finish. The game needs a rising action curve that makes the last few minutes intense rather than anticlimactic.
+- **Resource Rush (30% match time):** A random system is revealed to contain a "motherlode" — first player to colonize or station a military ship there gets +100 of a random resource per month for 3 minutes. Creates a land-rush moment.
+- **Tech Breakthrough Auction (45% match time):** All players simultaneously bid influence on a free T2 tech completion. Highest bidder gets it, others keep their influence. Creates an information game — how much is it worth?
+- **Border Incident (55% match time):** Two random players with adjacent territory get a "border incident" — both must choose: escalate (gain +3 VP, other player forced to hostile stance) or de-escalate (gain +5 VP if both de-escalate, gain nothing if opponent escalates). Prisoner's dilemma in space.
 
----
+**Why it matters:** Stellaris uses mid-game crises, Civ VI uses Great People competition, Endless Space 2 uses quest stages. The mid-game needs external pressure to break the optimization loop.
 
-### 4. Recommendations
-
-### R32-1: Colony Crisis Events (already designed, needs implementation)
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Zero external pressure after initial setup. The game is a sandbox with a timer.
-**The fix:** Implement the 4 crisis types already designed in design.md (Seismic Activity, Plague, Power Surge, Labor Unrest). These are the single highest-impact addition for player engagement.
-**Why it matters:** Crises create "oh no" moments that break monotony, force resource stockpiling as insurance, and create stories ("remember when the plague hit our Forge World?"). Every good 4X has them — Stellaris has galactic crises, Civ has barbarians and natural disasters.
 **Design details:**
-- Already fully specified in Phase 2 of design.md
-- First crisis at 500-800 ticks (50-80 seconds) gives players time to establish before disruption
-- 200-tick (20 second) decision window is tight enough to feel urgent
-- Crisis immunity window (300 ticks) prevents frustrating back-to-back events
-- Priority: implement this before any other recommendation
+- Fire at fixed match-time percentages (30%, 45%, 55%) so players can anticipate them
+- 60-second response window for each event
+- Only in timed matches (same gate as endgame crisis)
+- Each event creates a decision with no obviously correct answer
 
-### R32-2: Tech Tree T3 Expansion
+### 3.2 Underdog Production Bonus (Already Designed, Needs Implementation)
 
-**Impact:** High
-**Effort:** Low
-**Category:** Core Mechanic
+**Impact:** High | **Effort:** Low | **Category:** Balance
 
-**The problem:** Tech tree exhausts at T2, leaving 6-8 minutes of a match with no research goals.
-**The fix:** Add T3 techs (already designed): Fusion Reactors, Genetic Engineering, Automated Mining. Cost 1000 each — unreachable without heavy research investment, creating a viable "tech rush" strategy.
-**Why it matters:** Progression systems are the backbone of 4X engagement. An empty tech tree means no reason to build research districts after minute 12. T3 techs with powerful effects (generators produce alloys, pop growth halved, mining costs 0 jobs) create late-game power spikes and viable "research victory" vibes.
+**The problem:** Losing a colony or falling behind in expansion creates a death spiral. The leader snowballs, the loser can't recover.
+
+**The fix:** Implement the already-designed underdog bonus from design.md (R47-5): +15% production per colony gap vs leader, capped at +45%. This is the single highest-impact, lowest-effort change available.
+
+**Why it matters:** Every competitive 4X needs comeback mechanics. Mario Kart has blue shells, Civ VI has era score bonuses for underdogs, Stellaris has crisis response bonuses. Without this, games are decided too early.
+
 **Design details:**
-- Already specified in Phase 4 of design.md
-- At 12 research/month (2 research districts), T3 takes ~83 months (14 minutes) — forces dedicated investment
-- T3 VP bonus (+20 per tech) makes full tech completion worth +60 VP, competitive with an extra colony
+- Already fully specified in Phase 6 of design.md
+- Apply as multiplier in `_processMonthlyResources`
+- Show "Underdog Bonus: +X%" indicator in HUD
+- Only active in 2+ player games
 
-### R32-3: Colony Planet Context Rendering
+### 3.3 Science Ship Expeditions (Extend Exploration into Mid-Game)
 
-**Impact:** High
-**Effort:** Low-Medium
-**Category:** Visual Polish / Player Experience
+**Impact:** High | **Effort:** Medium | **Category:** Content
 
-**The problem:** All colonies look identical regardless of planet type. The isometric 3D view — the game's visual signature — wastes its biggest differentiator.
-**The fix:** Change ground plane color and scene background based on planet type (already designed as R24-2 in Phase 3). Desert colonies get sandy ground (#c4956a), Arctic gets icy blue (#b8c9d4), etc.
-**Why it matters:** Visual identity makes colonies feel like distinct places rather than spreadsheet rows. When a player switches between their Ocean World and their Desert Colony, it should feel like visiting different locations. This is low-hanging fruit that dramatically improves the "feel" of multi-colony gameplay.
+**The problem:** Science ships become idle after surveying reachable systems (~5 minutes in). Exploration, the first "X" in 4X, disappears from gameplay.
+
+**The fix:** After surveying 5+ systems, unlock "Expeditions" — multi-step missions that send science ships on risky journeys:
+
+- **Deep Space Probe:** Send ship to edge of galaxy for 120 ticks. 70% chance: discover a hidden system with rare resources. 30% chance: ship damaged, returns after 200 ticks with partial data (+50 research).
+- **Precursor Signal:** Follow a chain of 3 survey targets. Each takes 60 ticks. Reward: free T1 tech completion or +25 VP.
+- **Wormhole Mapping:** Survey 2 specific systems to discover a shortcut (permanent 1-hop path between distant systems). First player to find it gets exclusive use for 5 minutes.
+
+**Why it matters:** Master of Orion II and Stellaris both keep exploration alive throughout the game with anomaly chains and special projects. Exploration should be a persistent activity, not a one-time checklist.
+
 **Design details:**
-- 6 ground plane colors, 6 background colors already specified
-- Implement in `buildColonyGrid()` based on `colony.planet.type`
-- Optional horizon glow adds atmosphere for minimal extra effort
-- Pure client-side change — no server modifications
+- Already partially designed in design.md (Phase 3)
+- Max 1 expedition active per science ship
+- Expeditions visible on galaxy map as animated route lines
+- Risk/reward creates interesting decisions (send your only science ship, or keep it safe?)
 
-### R32-4: Empire Specialization Doctrines
+### 3.4 In-Game Chat + Diplomacy Pings
 
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic / Strategic Depth
+**Impact:** High | **Effort:** Low | **Category:** Core Mechanic
 
-**The problem:** Every game plays identically. No strategic divergence, no commitment moments, no "build identity."
-**The fix:** At 3 colonies, players choose a permanent doctrine: Expansionist (colony cap +2, ship build -40%), Industrialist (district build -25%, +1 alloy/industrial), or Scholar (research +25%, +3 VP per tech). Already designed in Phase 4.
-**Why it matters:** Permanent choices create identity and replayability. "I'm going Expansionist this game" vs "Scholar rush" creates different playstyles from the same starting point. This is the cheapest way to add strategic depth — one decision that ripples through the entire mid/late game. Reference: Endless Space 2 faction quests, Stellaris tradition trees.
+**The problem:** Multiplayer games are parallel solitaire. Players can't communicate, negotiate, threaten, or coordinate. Diplomacy is mechanical (click stance button), not social.
+
+**The fix:** Enable the existing chat infrastructure during gameplay (it already works in the lobby) and add ping types:
+
+- Chat messages visible to all players in a collapsible panel
+- 4 ping types: Peace (green), Warning (yellow), Alliance (blue), Rival (red)
+- Pings appear as temporary icons on the sender's territory on the galaxy map
+
+**Why it matters:** This is the cheapest possible feature with the highest social impact. Chat transforms every other system — trades become negotiable, wars become personal, alliances become meaningful. The infrastructure already exists.
+
 **Design details:**
-- Trigger at exactly 3 colonies — natural mid-game milestone
-- Expansionist raises cap to 7 colonies (wide play), Industrialist makes existing colonies more productive (tall play), Scholar makes research a win condition
-- +3 VP per tech for Scholar means all 6 current techs = +18 VP, competitive but not dominant
-- Show doctrine badge on scoreboard for multiplayer awareness
+- Already fully designed in design.md (R39-7)
+- Reuse existing lobby chat message routing
+- Add `diplomacyPing` command with 4 types
+- Ping icons fade after 300 ticks
 
-### R32-5: Colony Mood System
+### 3.5 Occupation VP Decay (Prevent War Farming)
 
-**Impact:** Medium-High
-**Effort:** Medium
-**Category:** Core Mechanic / Player Engagement
+**Impact:** Medium | **Effort:** Low | **Category:** Balance
 
-**The problem:** Colonies are pure optimization puzzles with no personality. There's no nurturing relationship — you build districts and forget about them.
-**The fix:** Colonies have mood states (Thriving/Content/Restless/Rebellious) based on housing ratio, food surplus, and district variety. Already designed in Phase 2.
-**Why it matters:** Mood creates a caretaking relationship with colonies. A "Thriving" colony producing +10% feels rewarding. A "Rebellious" colony destroying a district feels urgent. It transforms colonies from spreadsheets into places you care about. Reference: Tropico citizen satisfaction, Civ VI amenities.
+**The problem:** A player who occupies an enemy colony earns +3 VP/colony indefinitely with no degradation. This incentivizes permanent occupation over dynamic warfare.
+
+**The fix:** Implement the already-designed occupation VP decay from design.md (R48-8): after 500 ticks of continuous occupation, attacker VP decays by 1 per 200 ticks, reaching 0 at 900 ticks. Defender penalty decays symmetrically.
+
+**Why it matters:** Creates natural "war seasons" — conquer, hold briefly for VP, then move on or liberate. Prevents the degenerate strategy of rushing one enemy, occupying everything, and sitting on it.
+
 **Design details:**
-- Thriving: housing ratio < 0.7, food surplus > 5, 4+ district types → +10% all output
-- Rebellious: housing ratio > 1.0 AND food deficit for 3+ months → -25% output, district destruction after 5 months
-- Color-coded indicator (green/white/yellow/red) in colony panel
-- Creates tension between fast expansion (cramped, unhappy) and careful development
+- Already fully specified in Phase 5 of design.md
+- Formula: `max(0, BASE_VP - floor(max(0, elapsed - 500) / 200))`
+- Track `colony.occupationStartTick`
+- Combined with 600-tick diplomatic cooldown, creates raid-and-release rhythm
 
-### R32-6: Dynamic Galactic News Ticker
+### 3.6 Fleet Intelligence (See Enemy Composition)
 
-**Impact:** Medium
-**Effort:** Low
-**Category:** Multiplayer / Atmosphere
+**Impact:** Medium | **Effort:** Medium | **Category:** Core Mechanic
 
-**The problem:** The galaxy feels dead. In multiplayer, other players are invisible numbers. Even in single-player, events happen silently.
-**The fix:** Scrolling text feed at top of screen narrating events with procedural flavor text. "BREAKING: Player X establishes Dusthaven Colony in the Kepler system." Already designed in Phase 7.
-**Why it matters:** A news ticker makes the galaxy feel alive and populated. In multiplayer, it creates awareness of rivals without requiring direct interaction mechanics. In single-player, it adds narrative flavor. This is a pure client-side feature using existing event data — very low implementation cost for high atmosphere impact.
+**The problem:** You can't see enemy fleet composition, so the rock-paper-scissors corvette system has no counter-play. If you don't know the enemy has interceptors, you can't build sentinels to counter them.
+
+**The fix:** Add passive intelligence gathering:
+
+- **Shared-system visibility:** If your ship occupies the same system as an enemy fleet (while at peace), you can see their fleet composition in the system panel.
+- **Espionage action:** Spend 25 influence to reveal a specific enemy player's fleet composition for 5 minutes (galaxy-wide). 600-tick cooldown per target.
+- **Friendly intel sharing:** Mutual-friendly players can always see each other's fleet composition.
+
+**Why it matters:** Rock-paper-scissors only creates strategy when you have imperfect information that you can work to improve. Right now it's completely blind — you might as well pick randomly.
+
 **Design details:**
-- 3-4 text template variants per event type for variety
-- Single-line display, 4-second cycling, max 8 queued messages
-- Player names colored by player color
-- Already-broadcast events (colonyFounded, constructionComplete, researchComplete, popMilestone) provide the data
+- Espionage adds another sink for influence (currently underutilized)
+- Intel revealed via a "Fleet Report" panel accessible from the scoreboard
+- Shows ship types, counts, and approximate total HP/DPS
+- Reference: Stellaris intel system, Civ VI spy mechanic
 
-### R32-7: Scarcity Pre-Warning System
+### 3.7 Colony Mood System (Tall vs Wide Tension)
 
-**Impact:** Medium
-**Effort:** Low
-**Category:** UX / Player Quality of Life
+**Impact:** Medium | **Effort:** Medium | **Category:** Core Mechanic
 
-**The problem:** Resource shortfalls happen suddenly. A player builds an industrial district, doesn't realize it'll push energy negative, and districts get auto-disabled with no advance warning. This feels punishing rather than challenging.
-**The fix:** When the player's projected production (including in-queue buildings) would result in a deficit within 2 months, show a warning indicator. Amber for "will go negative if you build more consumers," red for "currently in deficit."
-**Why it matters:** Good 4X games give players information to plan ahead. Stellaris shows projected income. Anno shows production chains. Letting players see incoming shortfalls transforms "unfair surprise" into "strategic decision." This is the difference between a game that feels unfair and one that feels deep.
+**The problem:** Expanding from 1 to 5 colonies is always good — there's no cost to going wide beyond the colony ship investment. The 5-colony hard cap is artificial. There's no organic tension between tall (fewer, better colonies) and wide (more, weaker colonies).
+
+**The fix:** Add a colony mood system that creates diminishing returns on expansion:
+
+- **Thriving (1-2 colonies):** +10% all production. Your empire is focused and happy.
+- **Content (3 colonies):** No modifier. Normal.
+- **Restless (4 colonies):** -5% all production, -25% pop growth. Bureaucratic strain.
+- **Rebellious (5 colonies):** -10% all production, -50% pop growth. Empire is overstretched.
+
+**Why it matters:** This creates the tall-vs-wide tension that defines great 4X games. Civ VI uses amenities, Stellaris uses administrative capacity, Anno 1800 uses workforce management. Going wide should be powerful but costly.
+
 **Design details:**
-- Calculate projected net after all queue items complete
-- Show warning icon next to resource in HUD panel
-- Tooltip: "Energy: +6/month now, -1/month when Industrial completes"
-- Server already has the data; this is a client-side projection calculation
+- Applied as multiplier in `_calcProduction` based on `playerColonies.length`
+- Doctrine bonus: Expansionist doctrine shifts thresholds up by 1 (Thriving at 1-3, Content at 4, etc.)
+- Displayed in colony panel as mood indicator
+- Stacks with existing production modifiers
 
 ---
 
-### 5. Balance Snapshot
-
-**Resource Flow Analysis:**
-- Starting resources: 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence
-- Starting districts: 1 generator (+6 energy), 1 mining (+6 minerals), 2 agriculture (+12 food)
-- Starting pops: 8, with 4 jobs filled → 4 unemployed pops produce 4 physics/society/engineering each
-- Net month 1: +5 energy (6 produced - 1 housing), +6 minerals, +4 food (12 - 8 pops), 0 alloys
-- **Assessment:** Early economy is well-paced. Players have enough minerals (~300) for 3 districts before needing mining income. Energy becomes tight after 3-4 consumers, creating genuine tension. Food pressure from pop growth is well-calibrated.
-
-**District Balance:**
-| District | Cost | Build Time | Output/month | Energy Cost | Notes |
-|----------|------|-----------|-------------|------------|-------|
-| Housing | 100m | 20s | 5 housing | -1 energy | Necessary evil, no production |
-| Generator | 100m | 30s | 6 energy | 0 | Foundation — always needed |
-| Mining | 100m | 30s | 6 minerals | 0 | Good ROI, pays for itself in ~17 months |
-| Agriculture | 100m | 30s | 6 food | 0 | Pop growth engine |
-| Industrial | 200m | 40s | 4 alloys | -3 energy | Premium — needs generator support |
-| Research | 200m | 40s | 12 research (4×3) | -4 energy | Expensive but high VP yield |
-
-- **Issue:** Mining at 6 minerals/month for 100 mineral cost = 17-month ROI. But after initial colony build-out, minerals have nowhere to go (no ships, no starbases, limited district slots). Mining becomes less valuable than any other district type in mid-game.
-- **Fix:** This resolves naturally when military ships arrive (mineral→alloy pipeline), but in current state, consider: colony ships cost 200 minerals, so expansion gives minerals a sink. If players are expanding, mining stays relevant. No immediate rebalance needed.
-
-**Tech Pacing:**
-- T1 costs 150 research. With 2 unemployed pops (2 research/month each track) + 0 research districts = ~75 months per T1 tech (12.5 minutes). Too slow without research districts.
-- With 1 research district (4/month per track): ~25 months per T1 (4.2 minutes). Reasonable.
-- T2 costs 500. With 1 research district: ~83 months (13.8 minutes). In a 20-minute match, T2 is achievable but tight.
-- **Assessment:** Tech pacing is good for 20-minute matches. Players who invest in research can finish T1 by minute 5 and T2 by minute 14-15. Players who skip research lose ~30 VP (3×5 + 3×10) plus production bonuses. Tech is a real strategic choice, not free.
-
-**VP Distribution (typical 20-minute single-player game):**
-- 3 colonies × ~15 pops each = 45 pops × 2 = **90 VP** (dominant)
-- 3 colonies × ~8 districts each = 24 districts × 1 = **24 VP**
-- ~200 alloys stockpiled / 25 = **8 VP**
-- ~600 total research / 50 = **12 VP**
-- 6 techs completed = 3×5 + 3×10 = **45 VP**
-- 2 colony traits × 5 = **10 VP**
-- **Total: ~189 VP**
-
-- **Issue:** Pops dominate VP (48%). This heavily favors wide play (more colonies = more pops). A player with 5 colonies and 75 total pops gets 150 pop VP alone, dwarfing any tall-play strategy.
-- **Fix:** Doctrines (R32-4) help by giving tall players alternative VP paths. Colony traits are a good start (+5 VP each). Consider raising trait VP to +8 to further reward specialization depth.
-
-**Game Length:**
-- Default 20-minute match timer with 10Hz tick rate = 12,000 ticks
-- A month = 100 ticks = 10 seconds
-- 20 minutes = 120 months of game time
-- **Assessment:** Match length feels right for the current depth. As more systems are added (combat, diplomacy), 25-30 minute matches may become the sweet spot.
-
----
-
-### 6. Content Wishlist
-
-1. **Precursor Questline:** Discovering 3+ "Precursor Artifact" anomalies across different systems unlocks a multi-step questline: triangulate the precursor homeworld → send science ship to investigate → discover a dormant megastructure → spend massive resources to activate it → permanent empire-wide bonus + 30 VP. Creates a narrative throughline for exploration-focused players and makes anomaly hunting feel purposeful rather than random.
-
-2. **Colony Governance Elections:** Every 30 months (5 minutes), colonies hold an election where 2 randomly-generated policy options are presented: "Expand Housing" (+3 housing, -1 energy/month) vs "Intensify Production" (+15% output, -2 housing). The player picks one, creating periodic meaningful micro-decisions that shape colony identity over time. Each election adds a "law" to the colony's identity, visible as badges. Makes colonies feel like living societies, not just production centers.
-
-3. **Galactic Archaeology Layer:** Hidden beneath the galaxy topology, generate "precursor ruins" at 5-10% of systems. Ruins are only discovered by science ship survey. Each ruin contains a fragment of a procedurally generated precursor civilization name and backstory. Collecting 5+ fragments reveals the full story + unlocks a unique building type for all colonies. Adds a metagame collection quest that spans the entire match and gives exploration a deeper purpose than just finding colonizable planets.
-
-4. **Stellar Phenomena as Map Hazards:** Some hyperlanes pass through nebulae (slows fleet travel 2x), black holes (instant death for unshielded ships, requires T2 tech to traverse safely), or pulsar fields (drains energy from passing fleets). Creates geography that matters — some routes are faster but dangerous, others are safe but long. The galaxy becomes a landscape with terrain, not just a graph.
-
-5. **Colony Cultural Victory:** Instead of just VP numbers, colonies that reach "Thriving" mood for 10+ consecutive months develop "Cultural Influence" that slowly converts nearby unclaimed systems to the player's territory (1 hop per 20 months of sustained thriving). Creates a peaceful expansion path that rewards careful colony management. Cultural influence visible as a soft glow on the galaxy map. A "cultural victory" alternative: first player to culturally influence 10 systems wins.
-
----
-
-### 7. Roadmap Updates
-
-**7 new work items added to design.md** — see Phase 2 (colony mood, scarcity warnings) and Phase 7 (news ticker, VP timeline recording). Colony crises, T3 tech, planet context rendering, and doctrines were already present as existing tasks.
-
-**Prioritization recommendation for `/develop`:**
-1. Colony crisis events (Phase 2) — highest impact on engagement
-2. T3 tech expansion (Phase 4) — fills the late-game void
-3. Colony planet context rendering (Phase 3) — visual differentiation
-4. Colony mood system (Phase 2) — adds colony personality
-5. Empire doctrines (Phase 4) — strategic divergence
-6. Galactic news ticker (Phase 7) — atmosphere
-7. Scarcity pre-warning (Phase 1) — QoL
-
----
-
-## Review #31 — 2026-03-12 — Scout First, Settle Later: The Exploration Loop Lands
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 57/158 tasks complete (36%). Science ships, system surveying, 5 anomaly types, persistent fog penetration, single-player mode, research VP rebalance. 611 tests passing. ~15,600 lines.
-**Focus:** Post-science-ships audit. The game now has a scout→discover→evaluate→settle loop. How does it change the player experience? What's still missing for a compelling 20-minute session?
-
----
-
-### 1. Current State Audit
-
-**What a player experiences today:**
-1. Enter name → one-click "Single Player" or create/join multiplayer room
-2. Configure galaxy size (S/M/L), match timer (10/20/25/30 min or unlimited)
-3. Game starts: isometric 3D colony on a random planet type with 4 pre-built districts and 8 pops
-4. Build 6 district types, manage energy balance, research 6 techs across 3 tracks (2 tiers)
-5. Press G → galaxy map with fog of war (2-hop visibility from owned systems)
-6. Build science ships (100 minerals + 50 alloys) → send to explore unknown systems → auto-survey reveals planets + 20% anomaly chance per planet → 5 anomaly types with one-time bonuses
-7. Surveyed systems stay revealed permanently (persistent fog penetration)
-8. Build colony ships (200 minerals, 100 food, 100 alloys) → send along hyperlanes → found colonies
-9. Manage up to 5 colonies via sidebar list, keyboard shortcuts 1-5
-10. Planet type bonuses create differentiated colony economies
-11. VP scoring: pops×2 + districts + alloys/25 + research/50 + tech VP bonuses
-12. Game ends on timer → scoreboard with VP breakdown
-
-**What a player CANNOT do:**
-- See planets as 3D objects (system view is HTML table only)
-- Build military ships or engage in combat (no fleets)
-- Interact with other players beyond chat (no diplomacy, trade, territory claims)
-- Build buildings (only districts)
-- Specialize colonies for strategic bonus (no personality/trait system)
-- Choose different openings (every game starts identically)
-- Spend influence (100 starting, no sink)
-- Claim territory without colonizing (no outposts/starbases)
-
-**The honest assessment:** Science ships have completed the explore→exploit pipeline. There's now a genuine scouting loop: build science ship → push into fog → discover anomalies → evaluate planets → decide where to colonize. The persistent fog penetration reward feels good — surveying a system permanently reveals it. Anomaly bonuses create small dopamine hits during exploration. But the game still lacks inter-player friction, colony specialization depth, and any late-game strategic branching. The "what do I do next?" question gets answered faster than new questions arise.
-
----
-
-### 2. 4X Design Pillar Scores
-
-#### Strategic Depth: 5/10 (unchanged from R30)
-Science ships add a planning layer (scout then settle), but don't create new strategic branches. The opener is still largely solved — build science ship first or start economy? Economy first still wins because anomaly bonuses are small one-time payoffs. The tech tree has no branching; colony specialization doesn't exist yet; there's only one way to win (VP). Strategic depth requires choices where both options are viable. Currently, the viable path is: economy → science ship → colony ship → repeat.
-
-#### Pacing & Tension: 7/10 (up from 6)
-+1 from science ships. The early game now has three distinct phases: (1) build-up (minutes 0-3), (2) scouting (minutes 3-6, science ships exploring), (3) expansion (minutes 6-12, colony ships settling discovered worlds). Science ship movement creates micro-tension: "What will I find?" Anomaly discovery is a small but real excitement spike. The survey-then-settle rhythm is satisfying. But mid-to-late game still flattens once colonies are established and the galaxy is surveyed. No crises, no disruption, no opponent interaction to create turning points.
-
-#### Economy & Production: 7/10 (unchanged)
-Science ships add alloy tension (50 alloys competes with colony ships' 100 alloys). The "explore vs expand" resource trade-off is real. Anomaly bonuses (100 minerals, 50 alloys, etc.) create small economic boosts that reward scouting. Still missing: influence spending, building variety, scarcity events, and any late-game resource sinks.
-
-#### Exploration & Discovery: 7/10 (up from 5)
-+2 from science ships. This is the biggest single-feature improvement to a pillar since colony ships. The loop works: push science ships into fog → systems reveal → anomalies pop → "Ancient Ruins discovered! +50 research" creates genuine delight. Surveyed systems staying visible rewards systematic exploration. The 20% anomaly chance means some systems are barren and some are treasure troves — this variance is good. Auto-return to nearest colony after survey keeps ships active. Cap of 3 science ships creates fleet management lite. Still missing: anomaly choice events (branching decisions), multi-step anomaly chains, system orbital view to make discoveries visual, and any sense of galactic-scale narrative.
-
-#### Multiplayer Fairness: 4/10 (unchanged)
-Starting positions are balanced. Fog of war creates information asymmetry that adds tension. But multiplayer is still mostly parallel play. No territorial mechanics, no economic interaction (trade, blockade), no diplomacy. Science ship scouting is entirely PvE — discovering an opponent's territory is informational only, with no mechanical consequences. The expansion alert toast helps, but there's no way to respond to territorial encroachment.
-
-**Overall Score: 6.0/10 (up from 5.4)** — Science ships drove +0.6, entirely through Pacing and Exploration.
-
----
-
-### 3. Top 5 Things a Playtester Would Notice
-
-1. **"I explored everything and there's nothing left to do."** In a small galaxy (50 systems), 3 science ships can survey the entire map by minute 10. After that, the exploration pillar shuts off entirely. The remaining match is pure optimization with no new information. Larger galaxies help, but even medium (100 systems) gets fully explored by minute 15 in a 20-minute match.
-
-2. **"My opponent is invisible."** The biggest single gap: multiplayer matches feel like solo games with a shared scoreboard. No territorial friction, no economic interaction, no way to help or hinder another player. Chat exists but there's nothing to talk about beyond "good luck." The game needs inter-player mechanics to justify multiplayer.
-
-3. **"All my colonies play the same."** Despite planet bonuses creating different raw numbers, the build order barely changes across colonies. There's no reward for specializing a colony — no personality traits, no buildings, no colony-level upgrades. Each new colony is just another instance of the same optimization puzzle.
-
-4. **"The tech tree is too small."** 6 techs across 2 tiers completes in ~12-15 minutes with moderate research investment. After that, research districts produce VP but there's nothing exciting to unlock. T3 techs with transformative effects would give research districts purpose beyond point accumulation.
-
-5. **"I wish I could see the planets."** System information is still an HTML table. Discovering a size-20 Continental world via science ship survey should feel like finding El Dorado — instead it's a row in a table with green highlighting. The system orbital view would transform discovery moments from data events to visual experiences.
-
----
-
-### 4. Recommendations
-
-### R31-1: Colony Personality Traits — Make Specialization Pay
-
-**Impact:** High
-**Effort:** Low
-**Category:** Core Mechanic / Strategic Depth
-
-**The problem:** 5 colonies × same build order = repetitive mid-game. Planet bonuses add variance but don't change strategy. There's no mechanical reason to go all-in on one district type.
-
-**The fix:** When a colony has 4+ districts of one type, it earns a trait with empire-wide bonuses:
-- "Forge World" (4+ Industrial): +10% alloy production empire-wide
-- "Academy World" (4+ Research): +10% research empire-wide
-- "Mining Colony" (4+ Mining): +10% minerals empire-wide
-- "Breadbasket" (4+ Agriculture): +10% food empire-wide
-- "Power Hub" (4+ Generator): +10% energy empire-wide
-
-One trait per colony (highest count wins). Traits stack across colonies. +5 VP per trait for VP balance.
-
-**Why it matters:** Creates genuine empire-building strategy. "Should I make this Ocean world a Breadbasket (food bonus) or Academy (research bonus)?" becomes a real decision. Three Forge Worlds = +30% alloys empire-wide, making tall industrialist play viable. This single feature differentiates every mid-game. Reference: Stellaris planet designation system.
-
-### R31-2: T3 Tech Expansion — The Late-Game Fork
-
-**Impact:** High
-**Effort:** Low
-**Category:** Strategic Depth
-
-**The problem:** 6 techs complete by minute 12-15. Research becomes VP-only after that. No late-game strategic decisions. No "tech rush" archetype.
-
-**The fix:** Already in design.md. Add 3 T3 techs at cost 1000:
-- Physics T3: Fusion Reactors (+100% Generator output + generators produce +1 alloy/month)
-- Society T3: Genetic Engineering (+100% Agriculture + pop growth time halved)
-- Engineering T3: Automated Mining (+100% Mining + mining districts cost 0 jobs)
-
-**Why it matters:** T3 at 1000 cost with 2 research districts (8/month) takes ~125 months (~21 min). Reaching T3 in a 20-minute match requires 3+ research districts on an Academy World — a massive early investment that sacrifices economy for a transformative payoff. This creates the "tech rush" archetype alongside "expansion rush" and "economy rush." Three viable strategies = replayability.
-
-### R31-3: Colony Crisis Events — Break the Optimization Treadmill
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Pacing & Tension
-
-**The problem:** After the exploration phase ends (~minute 10), the game becomes pure optimization with no disruption. No surprises, no threats, no adaptation required. The "tension" line goes flat.
-
-**The fix:** Already detailed in design.md (Phase 2). 4 crisis types every 500-800 ticks per colony:
-- Seismic Activity: evacuate (lose district) or reinforce (100 minerals, 30% fail)
-- Plague Outbreak: quarantine (growth halted) or rush cure (50 energy + 50 food, 20% spread)
-- Power Surge: shut down (all districts disabled 100 ticks) or ride it out (25% lose generator)
-- Labor Unrest: negotiate (25 influence) or wait (300 ticks disabled)
-
-200-tick (20 sec) decision window. Unresolved = worst outcome.
-
-**Why it matters:** Crises inject mid-game tension and test player adaptability. A plague on your Forge World while you're saving alloys for a colony ship creates genuine drama. Crises also create the first influence sink (Labor Unrest negotiation), give the event system narrative weight, and break the "build and forget" colony management pattern. Reference: Stellaris empire crises, Frostpunk dilemma events.
-
-### R31-4: Empire Specialization Doctrines — The Mid-Game Commitment
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Strategic Depth
-
-**The problem:** At minute 8-10, players have 3 colonies and the game path is the same for everyone: expand to 5, optimize, wait for timer. No asymmetric mid-game strategies.
-
-**The fix:** Already in design.md (Phase 4). At 3 colonies, unlock a permanent doctrine:
-- **Expansionist:** Colony ship build time -40%, colony cap +2 (to 7)
-- **Industrialist:** All district build time -25%, +1 alloy per Industrial
-- **Scholar:** Research +25% empire-wide, each completed tech +3 VP
-
-**Why it matters:** This is the single most impactful strategic depth feature. A permanent commitment at the mid-game pivot point creates divergent player identities: "I'm going Scholar to rush T3 Fusion Reactors" vs "I'm going Expansionist to claim 7 colonies before the timer." Opponent doctrine choices become visible strategic information that changes your own plans. Reference: Endless Space 2's faction quests, Civ VI's government system.
-
-### R31-5: System Orbital View — Make Discovery Beautiful
-
-**Impact:** Medium-High
-**Effort:** Medium
-**Category:** Visual / Core UX
-
-**The problem:** Science ships now discover valuable planets, but the discovery is displayed as a table row. The exploration loop works mechanically but lacks visual payoff. A size-20 Continental world should feel spectacular to find.
-
-**The fix:** Already in design.md. system-view.js with central star, orbital rings, colored planet spheres, habitable atmospheres. Click planet for details, "Colonize" button for colony ships. Galaxy → System → Colony navigation.
-
-**Why it matters:** The system view is where exploration meets exploitation. Surveying a system with a science ship and then *seeing* the planets orbiting their star transforms data into experience. This is the "wow" moment that screenshots are made of. Every colony ship destination becomes a visual memory, not a row in a table. Reference: Stellaris system view.
-
-### R31-6: Scarcity Seasons — Punish Monocultures
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Economy / Balance
-
-**The problem:** Once a player's economy is established, it never gets disrupted. Optimal production ratios remain static. There's no reason to diversify beyond basic needs.
-
-**The fix:** Already in design.md (Phase 2). Every 8-12 months, one resource gets -25% production for 3 months galaxy-wide. Random selection from energy/minerals/food/alloys. Pre-warning 1 month before.
-
-**Why it matters:** Scarcity rewards diversified economies and punishes monocultures. A player with 4 Mining Colonies gets devastated by mineral scarcity; a balanced empire barely notices. The pre-warning creates strategic windows: "Mineral scarcity in 1 month — should I stockpile or shift to alloys?" This is the simplest way to add mid-game economy disruption.
-
-### R31-7: Edict System — Give Influence Purpose
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Core Mechanic
-
-**The problem:** Players start with 100 influence and have zero ways to spend it. It's a dead resource that creates confusion.
-
-**The fix:** Already in design.md (Phase 2). 4 edicts spending influence for temporary bonuses:
-- Mineral Rush (50 influence): +50% mining 5 months
-- Population Drive (75 influence): +100% pop growth 5 months
-- Research Grant (50 influence): +50% research 5 months
-- Emergency Reserves (25 influence): instant +100 energy/minerals/food
-
-Max 1 active. Starting 100 influence = 1-2 strategic uses per match.
-
-**Why it matters:** Transforms a dead resource into a timing weapon. "Do I use my influence now for a population boom, or save it for a late-game research sprint?" Edicts also create VP-relevant decisions: Population Drive early compounds through pop VP; Research Grant late accelerates T3 tech completion. This is the cheapest way to add strategic timing decisions.
-
----
-
-### 5. Balance Snapshot
-
-#### Resource Flow — Post-Science Ships
-
-**Starting position:** 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence. 8 pops on size-16 planet with 4 pre-built districts.
-
-**Science ship timing:** 100 minerals + 50 alloys = affordable by month 3-4. First survey results by month 6-8 (build + transit + survey). This is good — exploration begins before colony ship is ready.
-
-**Colony ship timing:** 200 minerals + 100 food + 100 alloys. First colony ship ready by month 8-10 (~minutes 5-6). Science ship scouting data informs colony ship targeting. The pipeline works.
-
-**Explore vs Expand tension:** Science ship (50 alloys) vs colony ship (100 alloys). Building 2 science ships costs 100 alloys — equivalent to 1 colony ship. This is the right tension: explore more or settle sooner?
-
-**5-colony empire timeline:** ~15-18 minutes in a 20-minute match. Tight but achievable. Colony personality traits (when implemented) should kick in around colony 2-3 (minute 10-12), creating mid-game strategic identity.
-
-#### VP Formula Assessment
-
-Current: Pops×2 + Districts + Alloys/25 + Research/50 + TechVP (+5/+10/+20 per tier)
-
-**Issue:** Expansion still dominates. 5 colonies × 8 districts × 10 pops = 80 VP from pops + 40 from districts = 120 base. Tech rush: 6 techs = 30 VP bonus + research stockpile. Colony traits at +5 VP each would add 15-25 VP for specialized empires.
-
-**Recommended addition:** +5 VP per colony personality trait (pending implementation). This closes the tall vs wide gap.
-
-#### Anomaly Economy
-
-5 anomaly types with 20% chance per planet. Average planet count per system: 3. Average anomalies per surveyed system: 0.6. Over 15 surveyed systems: ~9 anomaly discoveries.
-
-Average value per anomaly: ~80 resources equivalent. Total scouting value: ~720 resources from 15 systems. Science ship cost: 150 resources × 2 ships = 300 resources investment. ROI: ~2.4x. Healthy — scouting is profitable but not game-breaking.
-
----
-
-### 6. Content Wishlist
-
-1. **Galactic Leylines:** Hidden resource veins connecting 2-3 star systems. Only revealed when you colonize one endpoint. Control all endpoints = +15% production of leyline's resource. Creates a hidden puzzle on top of expansion: the "obviously best" planet might not be on a leyline, but two mediocre planets that complete a leyline outperform it. Rewards systematic exploration over greedy colonization.
-
-2. **Opening Hands (Starting Condition Draft):** At game start, pick from 3 randomly-selected starting conditions: "Industrial Start" (+200 alloys, 1 pre-built Industrial), "Research Rush" (+500 physics research, 1 pre-built Research), "Population Boom" (+4 starting pops, +1 Housing). 30-second timer. Breaks the solved opener and adds pre-game strategic choice. Every match starts differently.
-
-3. **Dynamic Galactic News Ticker:** Shared scrolling text at top of screen narrating events in-character: "BREAKING: Commander Zhang discovers Ancient Ruins in the Vega system", "CENSUS: New Helsinki reaches 15 population." Takes existing gameEvent data and wraps in procedural flavor text. Zero mechanical impact, massive atmosphere. Makes the galaxy feel alive and other players feel present.
-
-4. **Secret Rival Objectives:** At game start in multiplayer, each player gets a hidden objective targeting another player: "Control more colonies than Player B" (+10 VP), "Out-research Player A" (+10 VP). Revealed at game end. Creates invisible competition and post-game surprise moments.
-
-5. **Post-Game VP Timeline:** Record VP snapshots every 10 months during gameplay. Show as line chart on post-game screen. Reveals inflection points, surges, and comebacks. Low effort, high emotional payoff — players learn from their pacing. "I was ahead until minute 12 when they got their third colony."
-
----
-
-### 7. Roadmap Updates
-
-Added the following new tasks to `devguide/design.md`:
-
-**Phase 1 (1 new):**
-- Exploration exhaustion counter — track % of galaxy surveyed, surface as "X% Explored" badge
-
-**Phase 2 (1 new):**
-- Influence generation from colony traits (+2 influence/month per personality trait earned)
-
-**Phase 3 (1 new):**
-- Science ship auto-chain survey — after completing a survey, auto-target nearest unsurveyed system within 3 hops
-
-**Total: 3 new work items added + priority reorder**
-
----
-
-### 8. Summary
-
-| Metric | R27 | R28 | R30 | R31 | Delta |
-|--------|-----|-----|-----|-----|-------|
-| Strategic Depth | 5/10 | 5/10 | 5/10 | 5/10 | 0 |
-| Pacing & Tension | 5/10 | 6/10 | 6/10 | 7/10 | +1 |
-| Economy & Production | 7/10 | 7/10 | 7/10 | 7/10 | 0 |
-| Exploration & Discovery | 3/10 | 5/10 | 5/10 | 7/10 | +2 |
-| Multiplayer Fairness | 4/10 | 4/10 | 4/10 | 4/10 | 0 |
-| **Overall** | **4.8/10** | **5.4/10** | **5.4/10** | **6.0/10** | **+0.6** |
-
-Science ships delivered the biggest single-pillar improvement since colony ships: Exploration jumped from 5 to 7. The scout→discover→settle loop now works. But Strategic Depth and Multiplayer Fairness remain stuck — the game needs inter-player mechanics and strategic branching to climb above 6.0.
-
-**Critical path for next +1.0 to overall score:**
-1. Colony personality traits (Strategic Depth +1)
-2. T3 tech expansion (Strategic Depth +1)
-3. Colony crisis events (Pacing +1)
-4. System orbital view (Exploration +1 through visual payoff)
-
-**Priority order for `/develop`:**
-1. Colony personality traits (Phase 2) — highest impact-to-effort ratio
-2. T3 tech expansion (Phase 4) — unlocks tech rush strategy
-3. Colony crisis events (Phase 2) — breaks mid-game flatline
-4. Empire doctrines (Phase 4) — mid-game strategic fork
-5. System orbital view (Phase 3) — visual payoff for exploration
-6. Scarcity seasons (Phase 2) — economy disruption
-7. Edict system (Phase 2) — influence sink
-8. Surface anomalies on colony grid (Phase 1) — spatial puzzles
-
----
-
-## Review #30 — 2026-03-12 — The Strategy Gap: VP Rebalance Landed, But Where Are the Choices?
-
-**Reviewer:** Game Design Analyst (automated)
-**Build State:** 56/155 tasks complete (36%). Research VP rebalance, per-tech VP bonuses, VP breakdown caching, tick-cached player summaries. In-game chat, enhanced scoreboard, event ticker, fog of war, colony ships, multi-colony management. 516 tests passing. ~13,000 lines.
-**Focus:** Post-research-rebalance audit. Tech rush is now viable on paper — but does the game actually let players pursue divergent strategies? Where does the player experience stand as Phase 2 (Colony Management) remains at 4%?
-
----
-
-### 1. Current State Audit
-
-**What a player experiences today:**
-1. Enter name, create/join room, configure galaxy size + match timer + practice mode
-2. Game starts: isometric 3D colony on a random planet type with 4 pre-built districts and 8 pops
-3. Build 6 district types (housing, generator, mining, agriculture, industrial, research), manage energy balance
-4. Research 6 techs (2 tiers x 3 tracks) via R key — linear upgrades (+25%/+50%)
-5. Press G for galaxy map — fog of war with 2-hop BFS visibility, dim unknown systems
-6. Build colony ships (200m/100f/100a, 60 sec build), send along hyperlane paths
-7. Manage up to 5 colonies via sidebar list (keyboard shortcuts 1-5)
-8. Chat with other players, view scoreboard (Tab), watch event ticker
-9. Game ends on timer — highest VP wins: pops x2 + districts + alloys/25 + research/50 + techVP (+5/+10/+20 per tier)
-
-**What changed since R29:**
-- Research VP contribution doubled (divisor 100 → 50)
-- Per-tech VP bonuses: +5 per T1 tech, +10 per T2, +20 per T3
-- All 6 current techs = +45 VP bonus, making tech rush competitive
-- VP breakdown and player summary caching (perf, not gameplay)
-
-**What a player still CANNOT do:**
-- Scout without colonizing (no science ships)
-- Respond to crises or random events
-- Build buildings (only districts — no colony specialization depth)
-- See a system orbital view (galaxy → colony is abrupt)
-- Interact with other players beyond chat (no trade, diplomacy, combat)
-- Spend influence (100 starting, dead resource)
-- Choose an empire identity (no factions, doctrines, or asymmetry)
-- Claim territory without settling (no outposts/starbases)
-
----
-
-### 2. 4X Design Pillar Scores
-
-#### Strategic Depth: 4.5/10 (was 4)
-The research VP rebalance is a meaningful step — a player who rushes all 6 techs now earns +45 VP from tech bonuses alone, plus doubled stockpile VP. This creates a paper-viable "tech rush" strategy. But in practice, there's only one path through the tech tree (linear prerequisites, no branching), and the strategic decision is simply "build research districts or don't." The game still lacks the competing priorities that define strategic depth: there's no military threat to defend against, no diplomatic leverage to gain, no exclusive choices that lock out alternatives. Colony specialization remains implicit (planet bonuses) rather than mechanically rewarded.
-
-**What would move the needle:** Empire doctrines (permanent choice at 3 colonies), tech tree branching (mutually exclusive T2 options), and colony personality traits (mechanical reward for specialization).
-
-#### Pacing & Tension: 5/10 (unchanged)
-The early game arc (stabilize → grow → expand) remains solid. The mid-game is still a flatline. Once you have 3-4 colonies with districts queued, the game becomes "wait for timers and occasionally click build." No crises interrupt optimization, no rivals threaten your borders, no new mechanics unlock in the mid-game. The scoreboard creates passive competitive awareness but no actionable tension — you can see Player B is ahead, but you can't do anything about it besides build faster. The match timer provides end-game urgency but not drama.
-
-#### Economy & Production: 6.5/10 (was 6)
-Still the strongest pillar. The VP rebalance slightly improves this score because research output now has meaningful VP weight, making research districts a real investment rather than a luxury. Energy remains a compelling bottleneck. Planet bonuses differentiate economic profiles. The "save up for colony ship vs build districts now" tension is real. Still missing: influence as a resource, building variety beyond districts, any late-game resource sinks, and escalating costs that prevent infinite growth.
-
-#### Exploration & Discovery: 5/10 (unchanged)
-Fog of war remains the foundation. The 2-hop visibility creates genuine frontier excitement. But exploration hasn't changed since R28 — colony ships are still the only way to push into fog, and there's no survey, anomaly, or narrative discovery system. The galaxy is geometry with stats, not a world with stories. Science ships remain the single most impactful unbuilt feature.
-
-#### Multiplayer Fairness: 5.5/10 (was 5)
-Chat, scoreboard, and event ticker have meaningfully improved awareness. The VP rebalance adds strategic diversity (tech rush vs expansion rush), which indirectly improves fairness by giving trailing players a viable catch-up path (invest in research for late VP instead of competing on colonies). Starting positions are symmetric. But there are still no comeback mechanics, no diplomacy, and no way to interfere with a leader. Information is largely symmetric but unexploitable — knowing your rival is ahead doesn't give you tools to respond.
-
-**Overall Score: 5.3/10** (was 5.0 — marginal improvement from VP rebalance opening strategic space)
-
----
-
-### 3. Top 5 Things a Playtester Would Notice
-
-1. **"I can see the other player is winning and there's nothing I can do."** The scoreboard shows VP, colonies, pops, income — and when you're behind, your only option is "build districts faster." No raiding, no sabotage, no diplomacy, no comebacks. The game creates competitive awareness without competitive agency.
-
-2. **"My colonies are just resource farms with no personality."** Five colonies, same build order, same district mix. Planet bonuses add +1-2 resources but don't change decisions. No buildings, no specialization rewards, no events that make Colony #3 feel different from Colony #1. Phase 2 at 4% is showing.
-
-3. **"I researched everything by minute 10 and there's nothing left."** 6 techs at cost 150/500. Even without heavy research investment, all techs complete well before match end. The VP bonuses help, but the experience of having nothing left to research for the second half of the match is deflating.
-
-4. **"I want to scout before I commit a colony ship."** Sending 400 resources into fog with no prior intel feels bad. You're either lucky (great planet) or unlucky (nothing habitable). Science ships would transform this from gambling into planning.
-
-5. **"The game peaks at minute 8 and plateaus."** The opening (build up homeworld) and early expansion (first colony ship) are genuinely engaging. But by minute 8-10, the gameplay loop is fully solved and nothing new emerges. No mid-game event, no rival encounter, no second-tier mechanic unlocking.
-
----
-
-### 4. Recommendations
-
-### R30-1: Colony Crisis Events — The Mid-Game Needs Disruption
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** After establishing 2-3 colonies, the game enters an optimization plateau. Nothing bad ever happens, nothing demands reactive play. Minutes 10-20 are "queue districts, wait for timers."
-**The fix:** Every 500-800 ticks (~50-80 sec) per colony, trigger one of 4 crisis types requiring a choice within 200 ticks (20 sec):
-- **Seismic Activity:** Threatens 1 random district. Choice: Evacuate (lose district but save pops) or Reinforce (spend 100 minerals to save it, 30% chance of failure losing district + 1 pop).
-- **Plague Outbreak:** Pop growth halted, -1 pop per 100 ticks. Choice: Quarantine (growth halted for 300 ticks but no pop loss) or Rush Cure (spend 50 energy + 50 food, 80% success, 20% spreads to another colony).
-- **Power Surge:** Energy grid unstable. Choice: Shut Down (all districts disabled for 100 ticks) or Ride It Out (+50% energy production for 200 ticks, 25% chance of losing a generator district).
-- **Labor Unrest:** 3 random districts go on strike (disabled). Choice: Negotiate (spend 25 influence, districts resume) or Wait It Out (strike ends in 300 ticks).
-**Why it matters:** Crises create stories, force attention management across colonies, and break the optimization monotony. A plague hitting your main colony while you're managing expansion creates the "oh no" moment that's completely absent. Broadcast events let rivals see your crises — creating strategic information and multiplayer drama.
-**Design details:**
-- `colony.crisisState = { type, ticksRemaining, resolved }` in game-engine
-- `resolveCrisis` command handler with choice parameter
-- Unresolved crises auto-resolve with worst outcome (punishes inattention)
-- Crisis immunity for 300 ticks after resolution (no stacking misery)
-- Broadcast crisis events to all players via ticker
-
-### R30-2: T3 Techs — Research Needs a Payoff
-
-**Impact:** High
-**Effort:** Low
-**Category:** Content / Strategic Depth
-
-**The problem:** The VP rebalance made research *worth points*, but completing all 6 techs by minute 10 means research districts produce aimless VP stockpile for the second half. There's no "big payoff" for heavy research investment.
-**The fix:** 3 Tier 3 techs at cost 1000, each game-changing:
-- **Fusion Reactors** (physics, requires Advanced Reactors): Generators also produce +2 alloys each. Eliminates the energy-vs-alloys trade-off.
-- **Genetic Engineering** (society, requires Gene Crops): Pop growth time halved (0.5x multiplier). Explosive late-game population growth.
-- **Automated Mining** (engineering, requires Deep Mining): Mining districts require 0 jobs. Frees pops for other work.
-**Why it matters:** At cost 1000, T3 requires ~83 months with 3 research districts on an Academy World — reachable at ~14 minutes. +20 VP per T3 tech plus the transformative economic effect creates a genuine "tech rush" victory path that plays fundamentally differently from expansion rush. A player who reaches Automated Mining has free mineral production — their pops can all work research/industrial districts.
-**Design details:**
-- T3 techs already specified in design.md — just needs implementation
-- `jobOverride` effect type for Automated Mining (new modifier in `_getTechModifiers`)
-- `districtBonus` with secondary production for Fusion Reactors
-
-### R30-3: Empire Doctrines — The Missing Identity Moment
-
-**Impact:** High
-**Effort:** Low-Medium
-**Category:** Core Mechanic
-
-**The problem:** All empires play identically. The VP rebalance created divergent scoring but not divergent gameplay. A tech-rush player and an expansion-rush player build the same districts in the same order — they just weight research vs. colony ships differently.
-**The fix:** At 3 colonies, a `doctrineAvailable` event fires. Player must choose one of three permanent doctrines:
-- **Expansionist:** Colony ship build time -40%, colony cap 5→7, +2 VP per colony. Strategy: go wide.
-- **Industrialist:** All district build time -25%, +1 alloy per Industrial district. Strategy: tall + alloy stockpile VP.
-- **Scholar:** Research output +25% empire-wide, +5 VP per completed tech (stacks with existing per-tech VP). Strategy: tech rush.
-**Why it matters:** This creates the mid-game pivot point the game desperately needs. At 3 colonies (~minute 8), you stop and make a permanent choice that shapes the rest of the match. The choice is visible on the scoreboard, creating multiplayer reads: "she went Scholar — expect a late-game VP surge from T3 techs."
-**Design details:**
-- `playerState.doctrine = null | 'expansionist' | 'industrialist' | 'scholar'`
-- `chooseDoctrine` command handler, one-time only
-- Modifiers applied in existing `_processConstruction`, `_calcProduction`, `_calcVPBreakdown`
-- Doctrine badge on scoreboard (Tab overlay)
-
-### R30-4: Science Ships — Complete the Explore Pillar
-
-**Impact:** High
-**Effort:** Medium
-**Category:** Core Mechanic
-
-**The problem:** Colony ships (400 resources) are the only way to push into fog. No lightweight scouting, no "peek before you commit." The explore phase of 4X is just gambling.
-**The fix:** Science ships: cheap (100m + 50a), fast (30 ticks/hop), auto-survey on arrival (100 ticks, reveals planets, 20% anomaly chance per planet), max 3 per player. 5 anomaly types (one-time bonuses: +research, +minerals, +alloys, +influence, +planet size).
-**Why it matters:** Creates the scout-then-settle loop that defines 4X exploration. Fog of war becomes gameplay, not just visuals.
-**Design details:** Already well-specified in design.md and R28/R29. Implementation-ready.
-
-### R30-5: Influence Edicts — Make the Dead Resource Live
-
-**Impact:** Medium-High
-**Effort:** Low
-**Category:** Economy / Player Agency
-
-**The problem:** Influence starts at 100 and never changes. Players learn to ignore it. It's a broken promise in the HUD.
-**The fix:** 4 edicts spending influence:
-- **Mineral Rush** (50 influence): +50% mining output for 5 months
-- **Population Drive** (75 influence): +100% pop growth for 5 months
-- **Research Grant** (50 influence): +50% research output for 5 months
-- **Emergency Reserves** (25 influence): Instantly +100 energy, +100 minerals, +100 food
-Max 1 active edict. 100 starting influence = 1-3 strategic uses per game.
-**Why it matters:** Creates "clutch" timing decisions. Population Drive before a new colony, Research Grant when pushing for T3, Emergency Reserves when a colony ship drains you. Finite budget = genuine opportunity cost.
-
-### R30-6: Colony Personality Traits — Reward Specialization
-
-**Impact:** Medium
-**Effort:** Low
-**Category:** Strategic Depth
-
-**The problem:** 5 colonies, same build order. No reward for going all-in on one district type. Planet bonuses are too subtle to drive strategy.
-**The fix:** When a colony has 4+ districts of one type, it earns a trait:
-- **Forge World** (4+ Industrial): +10% alloy production empire-wide, +5 VP
-- **Academy World** (4+ Research): +10% research empire-wide, +5 VP
-- **Mining Colony** (4+ Mining): +10% minerals empire-wide, +5 VP
-- **Breadbasket** (4+ Agriculture): +10% food empire-wide, +5 VP
-- **Power Hub** (4+ Generator): +10% energy empire-wide, +5 VP
-One trait per colony (highest count wins). Stacks across colonies.
-**Why it matters:** Creates empire-level strategy. 3 Forge Worlds = +30% alloys. An Academy World on an Ocean planet (+research bonuses) becomes strategically obvious. The galaxy becomes a puzzle: "Which planets support which specializations?"
-
----
-
-### 5. Balance Snapshot
-
-#### VP Formula Analysis (Post-Rebalance)
-
-| VP Source | Typical 20-min Value | Notes |
-|-----------|---------------------|-------|
-| Pops (x2) | 60-80 VP (30-40 pops) | Still dominant |
-| Districts (x1) | 20-30 VP | Scales with expansion |
-| Alloys (/25) | 4-8 VP | Minor unless hoarding |
-| Research (/50) | 20-35 VP | Doubled — now meaningful |
-| Tech VP (+5/+10) | 30-45 VP (all 6 techs) | Significant — makes tech path viable |
-
-**Verdict:** The rebalance works. A 3-colony tech-focused player (25 pops = 50 VP, 15 districts = 15 VP, all 6 techs = 45 VP, research stockpile = ~25 VP, alloys = ~4 VP) = ~139 VP. A 5-colony expansion player (40 pops = 80 VP, 25 districts = 25 VP, 3 techs = 15 VP, research = ~10 VP, alloys = ~6 VP) = ~136 VP. These are roughly competitive. Tech rush is now viable but not dominant.
-
-**Issue:** Both strategies still feel the same moment-to-moment. The VP math diverges but the gameplay doesn't. Doctrines and colony traits would create the mechanical divergence to match the scoring divergence.
-
-#### Tech Pacing
-| Tier | Cost | 1 Research District | 2 Research Districts | 3 Research (Academy World) |
-|------|------|---------------------|---------------------|---------------------------|
-| T1 | 150 | 37.5 mo (6.3 min) | 18.75 mo (3.1 min) | 12.5 mo (2.1 min) |
-| T2 | 500 | 125 mo (20.8 min) | 62.5 mo (10.4 min) | 41.7 mo (6.9 min) |
-| T3 | 1000 | 250 mo (41.7 min) | 125 mo (20.8 min) | 83.3 mo (13.9 min) |
-
-T3 is only reachable with serious research investment (2-3 districts). This is correct — it rewards commitment.
+### 4. Balance Snapshot
+
+#### Resource Flow
+- **Starting resources** (100E, 300M, 100F, 50A) feel appropriate for a 20-min match
+- **Colony ship cost** (200M + 100F + 100A) is steep — it's ~2/3 of starting minerals + all starting alloys. A player who builds a colony ship first delays their economy by ~60 seconds
+- **Recommendation:** Already planned: reduce colony ship cost. Consider 150M + 75F + 75A to make early expansion less punishing
+
+#### District Balance
+- **Generator** (6E, 1 job, 100M, 300 ticks) — Baseline. Well-tuned.
+- **Mining** (6M, 1 job, 100M, 300 ticks) — Good. Minerals are always useful.
+- **Agriculture** (6F, 1 job, 100M, 300 ticks) — Slightly weak. 6 food supports 6 pops, but you need 1 pop working the district, so net is +5 pops sustained. Fine for early game, but agriculture becomes irrelevant once housing is full.
+- **Industrial** (4A, 3E consumption, 1 job, 200M, 400 ticks) — Strong. Alloys are the military bottleneck. The 3E consumption creates real energy tension.
+- **Research** (4P+4S+4E each, 4E consumption, 1 job, 200M+20E, 400 ticks) — Slightly too expensive in energy. 4E/month consumption means 2 research districts eat 2/3 of a generator's output. This forces aggressive generator building.
+- **Housing** (5 housing, 1E consumption, 0 jobs, 100M, 200 ticks) — Pure housing with no jobs feels like a tax. OK as-is.
+
+**Key issue:** No district is truly weak, which is good. But there's no reason to specialize beyond the trait threshold (4 districts). A balanced colony (1 each + extras) is nearly always better than 4 mining + 4 industrial.
+
+#### Corvette Variant Balance
+| Stat | Interceptor | Gunboat | Sentinel | Base |
+|------|-------------|---------|----------|------|
+| HP | 8 | 15 | 12 | 10 |
+| ATK | 5 | 4 | 3+2regen | 3 |
+| Speed | 30 | 50 | 40 | 40 |
+| Cost/mo | 1E | 2E+1A | 1E+2A | 1E+1A |
+| DPS×HP | 40 | 60 | 36+regen | 30 |
+
+- **Interceptor** is the glass cannon — fastest, deadliest per round, but fragile (8 HP). Good design.
+- **Gunboat** is the stat ball — highest HP×ATK product (60 vs 40/36/30). Slightly overtuned. Its counter-targeting against sentinels works because raw damage overwhelms regen.
+- **Sentinel** is the sustain pick — 2 HP regen/round means it effectively has 12+2N HP over N rounds. Against a 10-round fight, that's 32 effective HP. Good vs low-damage targets (interceptors), bad vs high-burst (gunboats).
+- **Recommendation:** Gunboat attack could drop from 4 to 3.5 (or 3) to tighten the triangle. Currently gunboat is the default-best choice unless you know the enemy has interceptors.
 
 #### Game Length
-- 20-minute default matches are correct for current depth
-- With crises, doctrines, and T3 techs, 25-30 minutes would be appropriate
-- Recommend adding 25-minute option to match timer
+- Match timer options in room settings. Typical target: 20-30 minutes.
+- At normal speed (10Hz), 20 minutes = 12,000 ticks = 120 months.
+- T1 tech at 150 cost with 1 research district (~4 research/track/month after consumption) takes ~38 months (~6 min). Reasonable.
+- T2 tech at 500 cost with 2 research districts (~8/track/month) takes ~63 months (~10 min). Right on schedule for mid-game.
+- T3 tech at 1000 cost requires 3+ research districts or Scholar doctrine. At 12/track/month it takes ~84 months (~14 min). Barely achievable in 20 min. The planned 750 cost (R34) is correct — at 750 cost, it takes ~63 months (~10 min) with 2 research districts, allowing T3 in the final third of a 20-min match.
 
 ---
 
-### 6. Content Wishlist
+### 5. Content Wishlist — Making ColonyGame Distinctive
 
-1. **Galactic Leylines**: Hidden resource veins connecting 3 star systems. Colonize all endpoints → +15% production bonus to all three colonies. Creates an expansion puzzle that rewards galaxy knowledge. Already in design.md — highest-priority stretch content.
+**1. Galactic Auction House (Live Resource Market)**
+Instead of static trade routes, imagine a live auction system where players can post "sell orders" (100 minerals for 50 energy) and others can fill them. Prices fluctuate based on supply/demand. Creates a real economy where resource scarcity drives diplomacy — if everyone is short on alloys, the one player with surplus industrial capacity becomes kingmaker. Reference: Anno 1800's marketplace, EVE Online's player market (vastly simplified).
 
-2. **Colony Siege Mode**: When a rival has a colony within 2 hops, you can "pressure" it by spending 50 alloys to deploy a "blockade marker." Besieged colony produces -25% until the blocker is removed (costs the blocker 10 alloys/month to maintain). No combat needed — economic warfare. Creates multiplayer friction without fleet mechanics.
+**2. Colony DNA — Persistent Genetic Traits Across Games**
+Each colony develops "genetic traits" based on how it was played — a mining colony develops "Deep Root" (+5% mining in future games on similar planets), a research colony develops "Curious" (+5% research). These traits persist in a player profile across matches, creating a meta-progression layer. Reference: Hades' mirror system, Rogue Legacy's family tree.
 
-3. **Precursor Artifact Hunt**: 5 special systems scattered in fog. Survey all 5 with science ships → reveal a size-25 "Precursor Homeworld" with pre-built districts. First to colonize it gets a massive VP spike (+30 VP). Creates a galaxy-spanning treasure hunt intersecting exploration, territory, and racing.
+**3. The Void — Negative-Space Exploration**
+Between star systems, there are "void pockets" — empty spaces on the galaxy map that science ships can probe. Probing takes longer (200 ticks) and has higher risk (30% ship loss), but rewards are unique: void resources that can't be produced (used for wonders or super-weapons), hidden wormholes, or "void entities" that become allies if you communicate (a 3-step puzzle) or enemies if you ignore them.
 
-4. **Dynamic Difficulty Scaling**: In practice mode, after minute 5, introduce AI "pirate raids" that threaten colonies on a timer. Forces defensive play and resource management even in single-player. Creates the external pressure that multiplayer provides.
+**4. Colony Broadcast Radio**
+Each colony with 10+ pops generates a "radio broadcast" visible to all players within 3 hops — it reveals the colony's specialization trait but not its exact production. Creates information asymmetry: you know your neighbor has a Forge World, but not how many alloys they're actually making. Adds flavor through procedural radio messages: "This is Radio Dusthaven, spinning the hits from the desert frontier."
 
-5. **Match Replay Graph**: On game over, show a timeline graph of each player's VP over time. See the moment someone surged ahead, the inflection points, the comebacks. Low effort, high emotional payoff. Players learn from their pacing.
-
----
-
-### 7. Roadmap Alignment
-
-**The Phase 2 gap is now critical.** Phase 1 is at 73% but Phase 2 (Colony Management) is at 4%. The game has a galaxy, fog of war, colony ships, chat, scoreboard — but the colonies themselves remain shallow. The next wave of development should prioritize colony depth (crises, traits, buildings) alongside the exploration loop (science ships).
-
-**Recommended build order for maximum impact:**
-1. Colony crisis events (R30-1) — breaks mid-game monotony, highest pacing impact
-2. T3 techs (R30-2) — completes research endgame, low effort
-3. Empire doctrines (R30-3) — mid-game identity moment, creates strategic divergence
-4. Science ships (R30-4) — completes explore pillar, medium effort
-5. Influence edicts (R30-5) — makes dead resource live, low effort
-6. Colony personality traits (R30-6) — rewards specialization, low effort
-
-**New tasks added to design.md:** See Section 8.
+**5. Time Pressure Drafting**
+At game start, instead of everyone exploring simultaneously, players draft starting positions on the galaxy map in a timed round-robin. Each player has 15 seconds to pick their starting system from the revealed galaxy. First pick gets best choice but last pick gets a bonus (extra starting resources or free tech). Creates asymmetry from minute zero and eliminates the "unfair start" complaint.
 
 ---
 
-### 8. Summary
+### 6. Summary
 
-| Metric | R27 | R28 | R29 | R30 | Delta |
-|--------|-----|-----|-----|-----|-------|
-| Strategic Depth | 5/10 | 5/10 | 4/10 | 4.5/10 | +0.5 |
-| Pacing & Tension | 5/10 | 6/10 | 5/10 | 5/10 | 0 |
-| Economy & Production | 7/10 | 7/10 | 6/10 | 6.5/10 | +0.5 |
-| Exploration & Discovery | 3/10 | 5/10 | 5/10 | 5/10 | 0 |
-| Multiplayer Fairness | 4/10 | 4/10 | 5/10 | 5.5/10 | +0.5 |
-| **Overall** | **4.8/10** | **5.4/10** | **5.0/10** | **5.3/10** | **+0.3** |
+**Overall Score: 6.6/10** — Strong foundation, weak middle. The early game (doctrine choice, colony setup) and late game (endgame crisis, VP sprint) are compelling. The mid-game is an optimization desert that needs disruptive events and social mechanics.
 
-Research VP rebalance moved the needle on strategic viability but not on moment-to-moment gameplay. The math now supports divergent strategies; the game mechanics don't yet deliver divergent experiences. Colony crises, empire doctrines, and T3 techs are the three features that would most transform the player experience.
+**Top 3 Recommendations:**
+1. **Mid-game catalyst events** — Resource Rush, Tech Auction, Border Incident at 30/45/55% match time
+2. **Underdog production bonus** — Already designed, just needs implementation. Biggest bang for buck.
+3. **In-game chat + diplomacy pings** — Transforms parallel solitaire into social experience. Infrastructure exists.
 
-**Critical path:** Colony crises → T3 techs → Empire doctrines → Science ships → Edicts → Colony traits. The first three are the "mid-game rescue" — they give players things to do, think about, and react to between minutes 8 and 20.
+**Most Urgent Balance Fix:** Gunboat attack from 4→3 to tighten the corvette rock-paper-scissors triangle, and implement T3 tech cost reduction from 1000→750.
+
+**Big Idea:** Galactic Auction House — a live resource market where players post buy/sell orders. Turns the economy from a solo optimization puzzle into a multiplayer negotiation game.
 
 ---
 
-*(Reviews R29 and earlier trimmed for space — see git history)*
+## Review #50 — 2026-03-15 — The Three Pillars Stand
+
+**Reviewer:** Game Design Analyst (automated)
+**Build State:** 68/160 tasks complete (43%). Endgame crisis (Galactic Storm/Precursor Awakening at 75% match timer), doctrine choice (3 asymmetric doctrines), diplomatic stances (Neutral/Hostile/Friendly with combat gating), colony occupation, PvP fleet combat with corvettes, NPC raiders, defense platforms, scarcity seasons, 9 techs (3T×3 tracks), colony crises, personality traits, edicts, influence income, science ships, fog of war, colony expansion (5 max), 5 game speeds + pause, match timer with VP win. 1,467 tests all passing. ~33,870 lines.
+
+---
+
+### 1. 4X Design Pillar Scores
+
+| Pillar | Score | Assessment |
+|--------|-------|-----------|
+| **Strategic Depth** | 8/10 | The three-way doctrine choice (Industrialist/Scholar/Expansionist) layered on top of diplomatic stances creates genuine strategic diversity. Players face real opening decisions. The production modifier stacking (doctrine → edict → trait → scarcity → crisis) creates emergent complexity. Fleet composition is still thin (only corvettes), but the guns-vs-butter tension from ship maintenance is well-tuned. Missing: distinct victory conditions (VP timer only), fleet variety, and meaningful mid-game pivots. |
+| **Pacing & Tension** | 7/10 | Strong improvement. The game now has a clear three-act structure: early (doctrine choice + initial build), mid (expansion + tech + raiders), late (endgame crisis + final VP push). Scarcity seasons create periodic urgency. Colony crises add micro-tension. The endgame crisis at 75% timer is an excellent climax mechanic. Weakness: the mid-game (minutes 5-12 in a 20-min match) can become autopilot once colonies are established and before the crisis hits. |
+| **Economy & Production** | 8/10 | Six-resource economy with meaningful trade-offs. Energy as a maintenance tax on everything creates real tension. Alloys as the military currency creates guns-vs-butter. Planet type bonuses make colony placement matter. The trait system (4+ same-district type = +10% empire-wide) rewards specialization without forcing it. Concern: the 6 district types are well-balanced against each other, but the production chain lacks depth — there's no secondary processing (e.g., minerals → alloys → ships is the only chain). |
+| **Exploration & Discovery** | 5/10 | Still the weakest pillar. Science ships can survey systems and find anomalies, fog of war exists, but the reward loop is thin: anomalies give one-time resource bonuses. No anomaly event chains, no narrative discovery, no "what's behind this nebula" moments. The galaxy exists as a network to traverse but not as a world to explore. Surveying feels like checkbox-filling rather than adventure. |
+| **Multiplayer Fairness** | 7/10 | Diplomatic stances with combat gating (must be hostile to attack) prevent grief-rushes. The 30-second doctrine choice prevents spying on opponent picks. VP is diversified across many sources (pops, districts, alloys, research, tech, traits, exploration, military, diplomacy, crisis). Missing: underdog/comeback mechanics (proposed but not implemented), starting position balancing, and ceasefire offramps. |
+
+**Overall Score: 7.0/10** (up from 6.8 in R49)
+
+---
+
+### 2. Top 5 Things a Playtester Would Notice
+
+1. **"I killed their fleet — now what?"** After winning a fleet battle and occupying colonies, there's no path to military victory. The game just continues until the timer runs out. Conquering feels incomplete without a domination win condition.
+
+2. **"All my corvettes look the same."** Fleet combat is binary — throw corvettes at each other, bigger stack wins. No rock-paper-scissors, no tactical decisions, no fleet composition strategy. Every military engagement has the same optimal answer: more corvettes.
+
+3. **"I surveyed everything and got some minerals."** Exploration rewards are underwhelming. After surveying ~10 systems, you've seen all the anomaly types. There's no narrative depth, no surprises, no "I found an ancient artifact that changed my strategy" moments.
+
+4. **"I'm losing and there's nothing I can do about it."** A player who loses their fleet and gets 2 colonies occupied is in a death spiral — production halved, no military, no way to recover. No underdog bonus, no ceasefire offramp, no comeback mechanic.
+
+5. **"The mid-game is kind of boring."** Between minutes 5-12, if you're not being raided, the game is mostly waiting: waiting for tech, waiting for colony ships to build, waiting for pops to grow. Needs more mid-game agency moments and decision points.
+
+---
+
+### 3. Recommendations
+
+### R50-1: Corvette Variants via Tech (Fleet Composition Depth)
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** Only one military unit type (corvette, 10HP/3atk) means fleet combat is a pure numbers game. No tactical decisions in fleet building or engagement.
+**The fix:** Unlock 3 corvette variants via T2 techs. Each variant excels against one other and is weak to the third (rock-paper-scissors triangle):
+- **Interceptor** (Physics T2: Advanced Reactors): 8 HP, 5 attack. Glass cannon — kills fast, dies fast. Strong vs Gunboat (hits hard before Gunboat's HP advantage matters), weak vs Sentinel (Sentinel's regen outlasts its burst).
+- **Gunboat** (Engineering T2: Deep Mining): 15 HP, 4 attack. Tanky brawler. Strong vs Sentinel (out-damages regen), weak vs Interceptor (melted before HP matters).
+- **Sentinel** (Society T2: Gene Crops): 12 HP, 3 attack + 2 HP regen/combat round. Sustain fighter. Strong vs Interceptor (survives burst, regens), weak vs Gunboat (can't out-regen its DPS).
+**Why it matters:** Creates fleet composition as a strategic decision. Scouting enemy fleet becomes valuable. Tech path influences military strategy. Players have a reason to diversify rather than stack.
+**Design details:** Same 100m/50a cost as basic corvette. Variant replaces standard corvette in the build menu once T2 tech is researched. All 3 coexist — you keep existing corvettes but new builds use the variant. Combat targeting: ships prefer to attack the type they're strong against (if available).
+
+### R50-2: Distinct Victory Conditions
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** VP timer is the only endgame. No instant-win conditions means no dramatic "I'm going for the tech victory" moments. Every game ends the same way.
+**The fix:** Add 3 instant-win conditions checked every monthly tick:
+- **Scientific Victory**: Complete all 3 T3 techs + survey 80% of galaxy systems. Rewards tech-focused Scholar doctrine.
+- **Military Victory**: Occupy 3+ enemy colonies simultaneously. Rewards military aggression and the Industrialist's alloy advantage.
+- **Economic Victory**: Stockpile 1000 alloys + 500 influence + have 5 active colony traits. Rewards wide play and the Expansionist doctrine.
+**Why it matters:** Multiple victory paths create mid-game tension ("are they going for science victory?"), enable counter-play, and give each doctrine a natural win condition to aim for. VP timer remains as fallback if no instant win is achieved.
+**Design details:** Check in `_processMonthlyResources`. Show victory progress on scoreboard (3 progress bars). Victory announcement broadcasts to all players. Already spec'd in design.md Phase 7 — elevate priority.
+
+### R50-3: Underdog Production Bonus
+
+**Impact:** High
+**Effort:** Low
+**Category:** Balance
+
+**The problem:** Players who lose colonies to occupation enter a death spiral — halved production, fewer resources, can't rebuild military. No comeback path exists.
+**The fix:** Players controlling fewer colonies than the leader get +15% resource production per colony gap (max +45%, capped at 3 colony gap). Applied as multiplier in `_processMonthlyResources`.
+**Why it matters:** Prevents snowballing from occupation. Keeps losing players engaged — they're behind but can still play. The leader's advantage is real but bounded. Creates dramatic comeback stories.
+**Design details:** Calculate each month: find max colony count across all players, compute deficit for each player. Apply `1 + (deficit * 0.15)` multiplier to all positive production (capped at 1.45). Only active in 2+ player games. Show "Underdog Bonus: +X%" indicator in resource panel. Already spec'd in design.md Phase 6.
+
+### R50-4: Science Ship Expeditions (Exploration Depth)
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Content
+
+**The problem:** After surveying all reachable systems, science ships become idle dead weight. Exploration has no mid-game purpose.
+**The fix:** Three one-time expedition missions for idle science ships:
+- **Deep Space Probe** (cost: 50 energy, 300 ticks): Reveals a random unsurveyed system as surveyed + grants discovery bonus (random: +100 minerals, +50 alloys, or +200 research). Available once per science ship.
+- **Precursor Signal** (cost: 100 energy, 500 ticks): Science ship traces an ancient signal. On completion: discover a hidden system with a unique planet (size 20, guaranteed 2 anomalies). Only 1 per game — first to complete claims it.
+- **Wormhole Mapping** (cost: 75 energy, 400 ticks): Creates a permanent shortcut hyperlane between the science ship's current system and a random system 4+ hops away. Max 1 per player. Strategic galaxy manipulation.
+**Why it matters:** Gives science ships mid-to-late game purpose. Creates exploration events that feel meaningful. Precursor Signal creates a race condition that adds competitive urgency.
+**Design details:** Missions triggered via `startExpedition { shipId, expeditionType }` command. Ship is locked during expedition (can't move). Progress ticks each game tick. Emit events on start/complete. Show progress bar on ship icon in galaxy view.
+
+### R50-5: Cease-fire Negotiations (Diplomatic Offramp)
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Core Mechanic
+
+**The problem:** Once two players go hostile, there's no diplomatic exit. War continues until one side is destroyed or the game ends. No de-escalation path.
+**The fix:** After 600 ticks (60 seconds) of mutual hostility, either player can propose a cease-fire. If accepted within 300 ticks (30 seconds), both go to neutral stance (bypassing cooldown) and each gains +3 VP ("Peace Dividend").
+**Why it matters:** Creates a war-length decision: fight long enough to achieve objectives, but don't overcommit. VP reward for cease-fire makes peace a strategic choice, not just giving up. Prevents hostage situations in 3+ player games.
+**Design details:** Already spec'd in design.md Phase 6. `proposeCeasefire`, `acceptCeasefire` commands. 1200-tick cooldown between cease-fires with same player. Emit events for proposal, acceptance, expiry.
+
+### R50-6: Galactic News Ticker (Narrative Layer)
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Polish / UX
+
+**The problem:** The galaxy feels quiet. Events happen but they're delivered as toast notifications that disappear. No persistent narrative thread connects the session.
+**The fix:** Single-line scrolling text ticker at top-center of game screen. Takes existing gameEvent types and wraps them in procedural flavor text: "BREAKING: [Player] establishes [Colony] in the [System] system", "INDUSTRY: [Colony] completes new [District] district", "ALERT: Raider fleet detected near [System]". 3-4 template variants per event type for variety. 4-second cycle between messages. Max 8 queued.
+**Why it matters:** Makes the galaxy feel alive. Other players' actions become visible and narratively interesting. Creates shared storytelling moments ("did you see that?"). Zero server changes — client-only reformatting of existing event data.
+**Design details:** Already spec'd in design.md Phase 7. Player names colored by player color. System messages in neutral gray. Client-only feature.
+
+### R50-7: Mid-Game Economic Pressure (Galactic Council Votes)
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** Minutes 5-12 can become autopilot once colonies are running and before the endgame crisis hits. Not enough agency moments.
+**The fix:** At 50% match time, a "Galactic Council" forms. Every 3 minutes (1800 ticks), a resolution is proposed to all players with a 60-second voting window. Resolutions from a pool of 4+ options (no repeats): "Mutual Research Pact" (+10% research for all, 3 min), "Economic Stimulus" (+10% minerals for all, 3 min), "Demilitarization Treaty" (ship build times +50% for all, 3 min), "Open Borders" (fog of war +1 hop for all, 3 min). Majority yes = passes.
+**Why it matters:** Creates mid-game interaction between all players. Voting reveals information (who benefits from this?). Demilitarization during an arms race creates tension. Requires diplomatic reading of opponents.
+**Design details:** Already spec'd in design.md Phase 6. Only in 2+ player games. 2-3 votes per match at most. Vote UI as centered modal overlay with countdown.
+
+---
+
+### 4. Balance Snapshot
+
+**Resource Flow (20-minute match, Speed 2):**
+- Starting: 100 energy, 300 minerals, 100 food, 50 alloys, 100 influence
+- Starting production (4 pre-built districts): +6 energy, +6 minerals, +12 food, 0 alloys, 0 research/month
+- First build decision: Mining (more minerals for growth) vs Housing (more pops for production) vs Agriculture (food buffer for growth)
+- Assessment: **Well-balanced opening.** The mineral cost for all basic districts (100m) means ~17 months to earn one build from mining alone. Starting 300m buys 3 quick builds — this is the right amount of early agency.
+
+**District Balance:**
+| District | Cost | Produces | Consumes | Net Value/Month |
+|----------|------|----------|----------|-----------------|
+| Housing | 100m | 5 housing | 1 energy | Unlocks growth |
+| Generator | 100m | 6 energy | — | +6 energy |
+| Mining | 100m | 6 minerals | — | +6 minerals |
+| Agriculture | 100m | 6 food | — | +6 food |
+| Industrial | 200m | 4 alloys | 3 energy | +4 alloys, -3 energy |
+| Research | 200m+20e | 4/4/4 phys/soc/eng | 4 energy | +12 research, -4 energy |
+
+Assessment: **Good tiering.** Basic districts are uniformly costed and productive. Industrial and Research are "tier 2" — double cost, higher-value output, energy-hungry. The energy tax on advanced districts creates genuine tension. One concern: **Industrial output (4 alloys) feels low relative to its energy cost (3/month).** A player building 3 Industrials pays 9 energy/month for 12 alloys — nearly requiring 2 dedicated Generators just to power them. Consider increasing Industrial output to 5 alloys or reducing energy consumption to 2.
+
+**Tech Pacing:**
+- T1 (150 cost): With 1 Research district (4/type/month), T1 in ~38 months (~6.3 min). With 2 districts: ~19 months (~3.2 min).
+- T2 (500 cost): With 2 Research districts (8/type/month), T2 in ~63 months (~10.5 min). Tight for 20-min matches — arrives at ~14 min if started after T1.
+- T3 (1000 cost): With 3 Research districts, T3 in ~83 months (~13.8 min). Realistically, T3 won't complete in a 20-min match unless Scholar doctrine + Research Grant edict. This is intentional — T3 should be a stretch goal.
+- Assessment: **Good pacing.** T1 is attainable early, T2 is a mid-game milestone, T3 requires investment and may never arrive. Scholar doctrine's +25% research and 33% T1 head start makes tech rushing viable but not dominant.
+
+**Military Balance:**
+- Corvette: 100m + 50a, 400 ticks (40 sec), 10 HP, 3 attack, 1e+1a/month maintenance
+- At 4 alloys/month from 1 Industrial, saving for 1 corvette takes ~12.5 months. Building 5 corvettes takes the entire mid-game.
+- Assessment: **Corvettes feel expensive for their impact.** The maintenance cost (1e+1a/month each) means a 5-corvette fleet drains 5 energy + 5 alloys/month — the equivalent of 2.5 Industrial districts. This is a good guns-vs-butter tension point, but the fact that all corvettes are identical limits strategic depth.
+
+**Game Length:**
+- 20-minute default is correct for the current feature set.
+- A typical match arc: 0-3 min (doctrine + opening build), 3-8 min (expand + tech rush), 8-15 min (fleet building + conflicts), 15-20 min (endgame crisis + final push).
+- The 10-min practice mode is too short for meaningful military play but good for colony-only practice.
+- Recommendation: Add 25-minute option as the sweet spot once corvette variants and victory conditions add more late-game content.
+
+**Specific Number Tweaks:**
+1. **Colony ship cost reduction** (already in roadmap): 200m/100f/100a → 150m/50f/75a, build time 600 → 400 ticks. Current cost puts 2nd colony too late.
+2. **Industrial alloy output**: Consider 4 → 5 alloys to make Industrial more attractive vs. Research. Currently Research (4/4/4 = 12 total research units) outvalues Industrial (4 alloys) in VP terms.
+3. **Defense platform repair**: 10 → 15 HP/month (already in roadmap). Sequential raider attacks currently destroy players who can't rebuild fast enough.
+
+---
+
+### 5. Content Wishlist (Aspirational)
+
+1. **Galactic Wonder Race**: 3 one-off megastructures (Dyson Sphere, Galactic Library, Ring World) that any player can attempt but only the first to complete claims. Cost: 1000+ resources over multiple months. +20 VP each. Creates visible long-term goals and dramatic race moments when two players compete for the same wonder. (Inspired by Civ VI world wonders)
+
+2. **Colony Atmosphere Evolution**: As colonies develop, Three.js scene evolves — 25% capacity adds particle effects (dust for Desert, snow for Arctic), 50% adds city glow on the horizon (PointLight), 100% shifts the skybox from dark space to planet-appropriate atmosphere color. Makes colony progression *feel* different at each stage without any gameplay changes. Pure visual storytelling.
+
+3. **Secret Rival Objectives**: At game start, each player receives a hidden objective targeting another player: "Control more colonies than [Player X]" (+10 VP), "Out-research [Player Y]" (+10 VP), etc. Round-robin assignment ensures everyone targets someone different. Revealed at game end. Creates invisible competitive tension — you don't know who's gunning for you.
+
+4. **Dynamic Scarcity Cascades**: When a scarcity season hits (e.g., mineral scarcity), players who are net importers of that resource from trade routes get double-hit while self-sufficient players are insulated. Creates incentive for economic independence alongside the benefits of trade. Makes scarcity seasons more strategic and less random.
+
+5. **Spectator Replay Time-Lapse**: After match ends, auto-play a 30-second fast-forward showing colony districts appearing, pop counters climbing, fleets moving. Compressed story of the match. "One more game" emotional hook. Uses existing state snapshots.
+
+---
+
+### 6. Priority Order (R50)
+
+Build order for `/develop`:
+
+1. **Corvette variants via tech (Phase 5, R50-1)** — Interceptor/Gunboat/Sentinel unlock at T2, rock-paper-scissors fleet composition. Biggest missing gameplay piece.
+2. **Underdog production bonus (Phase 6, R50-3)** — +15% per colony gap (cap +45%). Quick balance fix preventing death spirals.
+3. **Distinct victory conditions (Phase 7, R50-2)** — Scientific/Military/Economic instant-win. Transforms endgame.
+4. **VP formula rebalance (Phase 1, R49-4)** — battle VP 5→3, survey VP surveyed/3, colony-founded VP +5/colony, alloy VP alloys/20. Quick number fix.
+5. **Cease-fire negotiations (Phase 6, R50-5)** — Propose after 600 ticks, +3 VP Peace Dividend. Quick diplomatic offramp.
+6. **Galactic news ticker (Phase 7, R50-6)** — Client-only flavor text on existing events. Zero server effort.
+7. **Colony ship cost/time reduction (Phase 1, existing)** — 150m/50f/75a, 400-tick build. Expansion pacing fix.
+8. **Science ship expeditions (Phase 3, R50-4)** — Deep Space Probe/Precursor Signal/Wormhole Mapping. Mid-game exploration depth.
+
+---
+
+## Review #49 — 2026-03-15 — The Endgame Question
+
+**Reviewer:** Game Design Analyst (automated)
+**Build State:** 87/210 tasks complete (41%). Doctrine choice (3 asymmetric doctrines with 30-second selection), diplomatic stances (Neutral/Hostile/Friendly, combat/occupation gating, production bonus, diplomacy VP), colony procedural naming, colony occupation, ship maintenance, PvP fleet combat, corvettes, NPC raiders, defense platforms, scarcity seasons, 9 techs (3T×3 tracks), colony crises, personality traits, edicts, influence income, science ships, fog of war, colony expansion (5 max), 5 game speeds + pause, match timer with VP win. 1,406 tests all passing. ~32,100 lines.
+
+---
+
+### 1. 4X Design Pillar Scores
+
+| Pillar | Score | Assessment |
+|--------|-------|-----------|
+| **Strategic Depth** | 8/10 | Doctrine choice is a landmark addition. Three asymmetric starting paths (Industrialist/Scholar/Expansionist) create genuinely different openings with cascading consequences — Industrialist's +25% mining/industrial vs Scholar's research head start vs Expansionist's cheap colony ships. Combined with diplomatic stances (war costs influence, friendly gives +10% production), there's now a 3×3 matrix of doctrine-diplomacy strategies. Still missing: fleet composition variety (only corvettes), distinct victory paths (VP timer is the only endgame), and an endgame crisis to prevent late-game autopilot. |
+| **Pacing & Tension** | 6/10 | The early game is now excellent — doctrine choice creates an immediate meaningful decision, and the 30-second timer adds pressure. Mid-game has colony crises, scarcity seasons, and raider attacks providing periodic disruption. But the **late game is the weakest phase**: once you've built your colonies and picked your techs, the last 5 minutes of a 20-minute match feel like watching numbers tick up. No endgame crisis, no escalating threat, no climactic moment. The match just... ends. This is the single biggest experience gap. |
+| **Economy & Production** | 8.5/10 | The resource system is remarkably deep for a browser 4X. Six resources with real trade-offs: energy powers everything but generators produce no VP; alloys are needed for ships but Industrial districts are expensive; food is mandatory but produces no VP. Doctrine modifiers add another layer (+25% mining for Industrialist, -10% research penalty). Colony traits (+10% per specialist colony), edicts (temporary boosts), planet type bonuses, and scarcity seasons all stack multiplicatively. Ship maintenance creates genuine guns-vs-butter tension. The economy is the game's strongest pillar. |
+| **Exploration & Discovery** | 5/10 | Science ships survey systems, anomalies provide resource rewards, fog of war creates information asymmetry. But exploration feels like a checkbox exercise rather than an adventure. Anomalies are static one-time rewards (no event chains, no narrative), surveyed systems rarely change your strategy, and there's no "I found something amazing" moment. The galaxy is a resource container, not a place to discover stories. Surface anomalies on the colony grid (planned but unimplemented) would help, but the galaxy itself needs mystery. |
+| **Multiplayer Fairness** | 7/10 | Starting positions are balanced via galaxy generation (equal distance between players). Doctrine choice adds asymmetry but all three are competitive. Scarcity seasons affect everyone equally. However: no underdog bonus exists yet (the player who falls behind stays behind), no catch-up mechanics, and occupation can create a death spiral (occupied colony at 50% production makes recovery nearly impossible). First-mover advantage in expansion is strong — the player who gets their second colony first snowballs. |
+
+**Overall Score: 6.9/10** (up from 6.6 in R48)
+
+---
+
+### 2. The Biggest Gaps (Playtester Perspective)
+
+**1. The match ends with a whimper, not a bang.** A 20-minute match reaches its climax around minute 15 when all the VP-generating systems are running. The last 5 minutes are autopilot — you've already made all your meaningful decisions, and you're watching numbers climb. There's no endgame crisis, no dramatic final showdown, no "last stand" moment. This is the #1 thing a playtester would notice.
+
+**2. Only one ship type.** Corvettes are the only military unit. Every fleet battle is symmetric — more corvettes wins. There's no rock-paper-scissors, no fleet composition puzzle, no tech-unlocked ship upgrades. Military strategy is just "build more corvettes than the other player."
+
+**3. No comeback mechanic.** If you lose a fleet battle or have a colony occupied, you're at a strict disadvantage with no way to claw back. The occupied colony produces 50% less, your resources are drained, and the attacker gains VP. There's no rubber-banding, no desperation play, no underdog bonus.
+
+**4. Colony grid is spatially flat.** You click an empty tile, pick a district type, done. The grid has no spatial puzzle — district placement doesn't matter. No adjacency bonuses, no anomalies to build around, no terrain variation. The planned surface anomalies would transform this from a list into a puzzle.
+
+**5. Diplomacy is binary.** You can be neutral, hostile, or friendly. There's no negotiation, no trade deals, no peace treaties after war. The diplomatic stance system is a foundation, but it lacks the "deal-making" that makes multiplayer 4X social.
+
+---
+
+### 3. Recommendations
+
+### R49-1: Endgame Crisis — The Climactic Moment
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** The last 25% of every match is autopilot. No escalation, no drama, no shared moment.
+**The fix:** At 75% match timer elapsed, trigger a galaxy-wide crisis. Two variants (random):
+- **Galactic Storm** — all production reduced by 25% for remainder of match. Rewards stockpilers, punishes thin margins.
+- **Precursor Awakening** — hostile super-fleet (60 HP, 15 attack) spawns at galaxy edge and moves toward nearest colony. +15 VP for killing it, -5 VP and occupation if it reaches an undefended colony. 100-tick advance warning.
+**Why it matters:** Every great 4X match needs a climax. Stellaris has the crisis, Civ has the late-game world congress. This creates a shared "oh no" moment that forces adaptation and creates stories.
+**Design details:**
+- Only activates with match timer enabled
+- 100-tick (10 second) warning before trigger
+- Galactic Storm: simple 0.75 multiplier on all production in `_calcProduction`
+- Precursor: reuses existing raider infrastructure for movement/combat
+- Already specified in design.md Phase 7 — needs implementation
+
+### R49-2: Corvette Variants via Tech
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Core Mechanic / Content
+
+**The problem:** Military is one-dimensional. More corvettes = win. No fleet composition decisions.
+**The fix:** Three corvette variants unlocked by T2 techs, each with a rock-paper-scissors role:
+- **Interceptor** (Physics T2: Advanced Reactors) — 8 HP, 5 attack, fast (30 ticks/hop). Beats Gunboats (attacks first), loses to Sentinels.
+- **Gunboat** (Engineering T2: Deep Mining) — 15 HP, 4 attack, slow (50 ticks/hop). Beats Sentinels (outlasts them), loses to Interceptors.
+- **Sentinel** (Society T2: Gene Crops) — 12 HP, 3 attack + 2 HP regen/round, medium (40 ticks/hop). Beats Interceptors (sustains through damage), loses to Gunboats.
+**Why it matters:** Fleet composition becomes a strategic puzzle. Your tech path determines your military options. Scouting enemy tech choices matters. Creates counter-play.
+**Design details:**
+- Same alloy cost as corvettes (100 minerals, 50 alloys)
+- Build time: 500 ticks (slightly longer than corvettes)
+- Combat targeting: each type prioritizes its counter (Interceptors focus Gunboats, etc.)
+- Max 10 military ships total (across all types)
+- Tech unlock creates the strategic lock-in — you can only build what you've researched
+
+### R49-3: Underdog Production Bonus
+
+**Impact:** High
+**Effort:** Low
+**Category:** Balance
+
+**The problem:** Falling behind creates a death spiral. Occupation at 50% production with no comeback mechanic.
+**The fix:** Players controlling fewer colonies than the leader get +15% resource production per colony gap (max +45%). Applied in `_processMonthlyResources` as a multiplier on all positive production.
+**Why it matters:** Prevents snowballing without punishing the leader. A 1-colony player vs a 3-colony leader gets +30% production — meaningful but not overwhelming. The leader still has more total output, just not proportionally more.
+**Design details:**
+- Only active in 2+ player games
+- Calculate each month: `deficit = max(0, leaderColonies - myColonies)`
+- Multiplier: `min(1.45, 1 + deficit * 0.15)`
+- Show "Underdog Bonus: +X%" indicator in resource panel
+- Inspired by Mario Kart's rubber-banding — subtle but keeps everyone in the game
+
+### R49-4: VP Formula Rebalance for Multiple Victory Paths
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Balance
+
+**The problem:** VP formula favors economic play. Military aggression (5 VP per battle won) is overshadowed by peaceful building. No distinct "military victory" or "explorer victory" path.
+**The fix:**
+- Reduce `FLEET_BATTLE_WON_VP` from 5 to 3 (less swing per fight)
+- Change survey VP: `Math.floor(surveyed / 3)` instead of `/5` (exploration rewarded more)
+- Add colony-founded VP: +5 VP per colony (expansion rewarded directly)
+- Change alloy VP: `alloys / 20` instead of `/25` (economic stockpiling more valuable)
+**Why it matters:** Creates three competitive VP paths: Military (fight + occupy), Economic (tall colonies + traits + alloy hoarding), Explorer (survey + expand wide). Players can see which path their doctrine supports.
+**Design details:**
+- Industrialist → Economy path (mining/industrial bonuses → alloy stockpile)
+- Scholar → Tech path (research → high-tier techs at +30 VP each)
+- Expansionist → Explore/Expand path (cheap colony ships → colony VP + survey VP)
+- Already specified in design.md — needs implementation
+
+### R49-5: Surface Anomalies on Colony Grid
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Core Mechanic
+
+**The problem:** Colony building is a flat list — pick a type, click any empty tile. No spatial decision-making.
+**The fix:** When creating a colony, randomly place 1-3 tile anomalies:
+- **Mineral Vein** (+50% output to mining district on this tile)
+- **Thermal Vent** (+50% output to generator on this tile)
+- **Fertile Soil** (+50% output to agriculture on this tile)
+- **Ancient Ruins** (excavate for +500 research or preserve for +2 influence/month)
+- **Alien Artifact** (+200 alloys or +300 research, one-time choice)
+**Why it matters:** Transforms district placement from "pick any empty slot" into a spatial puzzle. Players must consider where they place districts to maximize anomaly bonuses. Each colony becomes unique.
+**Design details:**
+- Already specified in design.md Phase 1 — needs implementation
+- Track as `colony.anomalies = [{ tileIndex, type, resolved }]`
+- Production bonuses in `_calcProduction` per district matching anomaly tile
+- `resolveAnomaly` command for one-time choices
+- 3D rendering: glowing crystals on ground tiles (can be deferred)
+
+### R49-6: Cease-Fire Negotiations
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Diplomacy / Content
+
+**The problem:** Once war starts, there's no diplomatic off-ramp. War persists until the match ends.
+**The fix:** After 600 ticks of war, either player can propose a cease-fire. If accepted within 300 ticks, both go neutral (bypassing cooldown) and each gains +3 VP ("Peace Dividend").
+**Why it matters:** Creates a real diplomatic moment — do you keep fighting for occupation VP, or take the peace dividend? Makes wars feel like they have a narrative arc.
+**Design details:**
+- Track `_ceasefireProposals = Map<key, { proposerId, targetId, tick }>`
+- 300-tick acceptance window, then expires
+- 1200-tick cooldown between ceasefires for same pair
+- +3 VP "Peace Dividend" on acceptance (for both players)
+- Broadcast `ceasefireProposed`, `ceasefireAccepted`, `ceasefireExpired` events
+
+### R49-7: Science Ship Expeditions
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Exploration / Content
+
+**The problem:** Science ships survey systems, collect anomaly rewards, then sit idle. Exploration feels "done" too early.
+**The fix:** Once surveying is complete, science ships can embark on 3 expedition types (one-time per galaxy):
+- **Deep Space Probe** — send to galaxy edge, 200-tick journey, returns with +200 of a random resource
+- **Precursor Signal** — investigate specific system, 150-tick duration, 50% chance of +500 research or +100 alloys
+- **Wormhole Mapping** — reveals all unsurveyed systems within 3 hops of the ship's current position
+**Why it matters:** Keeps science ships relevant after surveying. Creates ongoing exploration value and resource injection in mid-late game.
+**Design details:**
+- `embarkExpedition` command: validates ship is idle, expedition type exists, not already completed galaxy-wide
+- Expeditions are one-time per player (not repeatable)
+- Science ship is "busy" during expedition (can't survey or move)
+- Emit `expeditionComplete` event with results
+
+---
+
+### 4. Balance Snapshot
+
+**Resource Flow Analysis (20-minute match, normal speed):**
+
+| Metric | Current Value | Assessment |
+|--------|--------------|-----------|
+| Starting minerals | 300 | Slightly generous — allows 2 basic + 1 basic district immediately. Consider reducing to 250 for opening tension. |
+| Starting alloys | 50 | No sink until colony ships or corvettes. Reduce to 0 or 25. |
+| Starting influence | 100 | Adequate — supports 4 stance changes or 2 edicts. |
+| Mining output/month | 6 minerals | Good — pays for a basic district in 17 months (~2.8 min). |
+| Industrial output/month | 4 alloys | Good — corvette alloy cost (50) takes 12.5 months. |
+| Research output/month | 4/4/4 per type | Good — T1 tech (150 cost) in 37.5 months (~6 min) with 1 district. |
+| Colony ship cost | 200m/100f/100a | **Too expensive** — second colony arrives at ~17.5 min in 20-min match. Reduce to 150m/50f/75a (already in design.md). |
+| Colony ship build time | 600 ticks | **Too slow** — 60 seconds. Reduce to 400 ticks (already in design.md). |
+
+**Colony Balance:**
+- Housing: necessary evil, no VP, pure enabler. Fine.
+- Generator: produces no VP directly, required for energy. Consider +1 VP per generator (already in design.md).
+- Mining: workhorse, feeds construction. Balanced.
+- Agriculture: mandatory for growth, low VP contribution. Fine — food enables pops which give VP.
+- Industrial: 200 mineral cost is appropriate for 4 alloys/month output. Good.
+- Research: 200 mineral + 20 energy cost. Best VP producer via tech completions (+30 VP for T3). Strong but gated by cost.
+
+**Military Balance:**
+- Corvette (10 HP, 3 attack, 100m/50a cost, 1e+1a/month maintenance) — the only unit. Battles last 3-4 rounds typically. Two equal-sized fleets: ~50% chance each. **Needs variants for depth.**
+- Defense platform (50 HP, 15 attack) vs Raider (30 HP, 8 attack) — platform wins in ~2 rounds. Effective deterrent. Balanced.
+
+**Doctrine Balance (new):**
+- Industrialist (+25% mining/industrial, -10% research, +1 mining district): Strong early economy, slower tech. Best for military-economy path.
+- Scholar (+25% research, -10% mining, T1 33% done): Fastest to T3 techs (+30 VP each = 90 VP potential). Best for tech-rush.
+- Expansionist (-10% alloys, +2 pops, -25% colony ship cost/time): Best for wide play. Second colony arrives ~3 min earlier. Best for explorer path.
+- Assessment: **Well-balanced.** Each doctrine naturally supports a different VP path. No dominant choice.
+
+**Game Length:**
+- 10-min practice match: ~6000 ticks at normal speed. Tight — barely time for T1 tech + second colony.
+- 20-min multiplayer match: ~12000 ticks. Good pacing if colony ship costs are reduced. T2 tech reachable, T3 aspirational.
+- Recommended default: 20 min (current). Add 25-min option (already in design.md) once endgame crisis exists.
+
+---
+
+### 5. Content Wishlist — Making ColonyGame Distinctive
+
+**1. Galactic Wonder Race.** Three wonders that can only be built once galaxy-wide (Dyson Sphere, Galactic Library, Ring World). First to complete claims it. Creates a dramatic race in mid-late game. +20 VP each. Already in design.md as stretch goal — worth promoting.
+
+**2. Secret Rival Objectives.** At game start, assign each player a hidden objective targeting another specific player ("Control more colonies than Player X", "Out-research Player Y"). Evaluated at game end for +10 VP bonus. Creates invisible competition and gives purpose to watching opponent stats. Makes every game personal.
+
+**3. Colony Crisis Cascading.** When a plague hits one colony, neighboring colonies (within 2 hops) get a "Quarantine Warning" — pay 20 food to prevent, or 30% chance it spreads. Creates inter-colony narrative connections and geographic strategy for colony placement. Already in design.md as stretch.
+
+**4. Dynamic Colony Atmosphere.** As a colony develops past 25%/50%/100% capacity, the Three.js scene changes — particle effects (dust, snow, rain), city glow on the horizon, skybox color shift from dark space to planet-appropriate atmosphere. Makes colony progression visible at the environmental level. Already in design.md as stretch.
+
+**5. Galactic Council Votes.** At 50% match time, a "Galactic Council" forms. Every 3 minutes, a resolution is proposed (Mutual Research Pact, Demilitarization Treaty). Players vote yes/no, majority wins. Creates diplomatic interaction without formal alliance treaties. Already in design.md.
+
+---
+
+### 6. Recommended Build Order for /develop
+
+**(1) Endgame crisis event** (Phase 7, R49-1) — the single highest-impact feature for game feel
+**(2) VP formula rebalance** (Phase 1, R49-4) — low-effort balance fix that creates viable strategy paths
+**(3) Underdog production bonus** (Phase 6, R49-3) — prevents snowballing, keeps all players engaged
+**(4) Corvette variants via tech** (Phase 5, R49-2) — transforms military from one-dimensional to strategic
+**(5) Surface anomalies server logic** (Phase 1, R49-5) — makes colony building a spatial puzzle
+**(6) Cease-fire negotiations** (Phase 6, R49-6) — diplomatic depth with minimal code
+**(7) Colony ship cost/time reduction** (Phase 1, existing) — critical timing fix for expansion pacing
+**(8) Science ship expeditions** (Phase 3, R49-7) — keeps exploration relevant in mid-late game
+
+---
+
+## Review #48 — 2026-03-15 — The Social Contract
+
+**Reviewer:** Game Design Analyst (automated)
+**Build State:** 85/207 tasks complete (41%). Diplomatic stances (Neutral/Hostile/Friendly, influence costs, cooldowns, combat gating, occupation gating, friendly production bonus, diplomacy VP), colony procedural naming (60 themed names, 6 planet types), colony occupation (300-tick takeover, 50% penalty, liberation), ship maintenance, PvP fleet combat, corvettes, NPC raiders, defense platforms, scarcity seasons, 9 techs (3T×3 tracks), colony crises, personality traits, edicts, influence income, science ships, fog of war, colony expansion (5 max), 5 game speeds + pause, match timer with VP win. 1,327 tests all passing. ~30,578 lines.
+
+---
+
+### 1. 4X Design Pillar Scores
+
+| Pillar | Score | Assessment |
+|--------|-------|-----------|
+| **Strategic Depth** | 7.5/10 | Diplomatic stances are a transformative addition. Declaring war now costs 25 influence and locks both players into hostility for 600 ticks — aggression becomes an economic and strategic commitment, not a free action. Friendly stance creates a coalition metagame: the +10% production bonus for nearby allies makes geographic diplomacy matter. War/peace/alliance decisions layer on top of the existing economy-vs-military tension. Still missing: asymmetric starts (doctrine choice), fleet composition (only corvettes), and distinct victory paths. |
+| **Pacing & Tension** | 6/10 | Diplomacy adds a mid-game inflection point that didn't exist before. "Player A just declared war on Player B" is a galaxy-shaking event that forces all players to reassess. The cooldown timer creates windows of vulnerability and safety. But the early game (0-5 min) is still autopilot with identical starts, and the endgame still lacks a crisis climax. The game's arc is now: slow build → diplomatic maneuvering → military escalation → flat timer expiry. The middle got better; the bookends haven't. |
+| **Economy & Production** | 8/10 | Best pillar, now even stronger. Influence finally has a real recurring sink: 25 per stance change means an aggressive player who declares war on 2 opponents spends 50 influence (half the starting stockpile). The friendly production bonus (+10% near allies) makes diplomacy economically meaningful — it's not just about avoiding war, it's about growing faster. Energy remains the tightest constraint, correctly gating military expansion. The economy rewards planning across all timeframes. |
+| **Exploration & Discovery** | 5/10 | Unchanged. Science ships, fog of war, anomalies remain functional but shallow. Post-survey dead zone persists. Diplomacy doesn't help here — exploration needs its own content injection (expeditions, anomaly chains). Colony founding is still expensive/late. This pillar is now the weakest relative to the rest. |
+| **Multiplayer Fairness** | 6/10 | Biggest jump. Diplomacy provides deterrence (declaring war is costly), de-escalation (switch to neutral after cooldown), and coalition formation (2v1 with production bonus makes ganging up on the leader viable). Asymmetric VP from friendly stances (+5/+10 VP) rewards diplomatic players. The occupation death spiral now has a diplomatic answer: ally with a third player for production bonus to fund liberation. Still missing: underdog production bonus, starting variety, and comeback mechanics beyond diplomacy. |
+
+**Overall Score: 6.5/10** (up from 5.8 in R47 — diplomacy is the biggest single-feature jump in the game's history)
+
+---
+
+### 2. Top 5 Things a Playtester Would Notice
+
+1. **"Every game starts exactly the same for 5 minutes"** — Same planet, same 4 districts, same 8 pops. No doctrine, no faction, no starting planet variety. This is now the #1 gap — diplomacy solved the multiplayer interaction problem but the autopilot opening is more glaring by contrast.
+
+2. **"The game just... ends"** — Timer expires, VP tallied, done. No endgame crisis, no climax, no dramatic finale. With diplomacy creating mid-game drama, the flat ending is even more disappointing. The game peaks at minute 12 and flatlines.
+
+3. **"My science ships are dead weight after surveying"** — Post-survey, science ships sit idle bleeding energy. No expeditions, no research missions. The exploration pillar is now the weakest part of the game, starved of mid-to-late game content.
+
+4. **"There's only corvettes"** — Fleet composition is nonexistent. Military strategy is "build more corvettes." No destroyers, no variants, no tactical decisions in fleet construction. Combat feels one-dimensional despite the solid damage/retreat mechanics.
+
+5. **"I can't tell what strategy to pursue for VP"** — Military VP still dominates. A single battle + occupation swings 13+ VP (5 battle + 3 attacker + -5 defender). Survey VP is 1 per 5 systems = negligible. Colony founding gives 0 direct VP. Economic and explorer strategies feel like consolation prizes.
+
+---
+
+### 3. Recommendations
+
+### R48-1: Doctrine Choice at Game Start — Break the Autopilot
+
+**Impact:** High
+**Effort:** Low
+**Category:** Core Mechanic / Replayability
+
+**The problem:** The #1 playtester complaint. Minutes 0-5 are identical across all games and all players. The optimal build order is solved. No player expression until tech research at minute 4.
+
+**The fix:** 3 doctrines (30-second selection before game starts):
+- **Industrialist** — +25% Mining/Industrial output, start with extra Mining district (5 total), -10% research output
+- **Scholar** — +25% Research output, T1 tech starts 33% complete in all 3 tracks, -10% mineral output
+- **Expansionist** — Colony ships 25% cheaper and 25% faster build, start with 10 pops (not 8), -10% alloy output
+
+**Why it matters:** Instantly creates 3 distinct opening strategies. Industrialist rushes economy, Scholar races T2 tech, Expansionist pushes early second colony. In multiplayer, scouting opponent doctrine via scoreboard informs military timing. Each doctrine has a -10% penalty preventing dominance. Reference: Endless Space 2 factions, Stellaris empire ethics.
+
+**Design details:** Already fully specified in design.md Phase 4. Server adds 30-second `doctrineSelect` phase between game launch and first tick. Public on scoreboard. Random if no pick.
+
+### R48-2: Endgame Crisis — Create a Climax
+
+**Impact:** High
+**Effort:** Medium
+**Category:** Pacing / Tension
+
+**The problem:** The game peaks in the middle (diplomatic maneuvering, fleet battles) and flatlines to a timer expiry. The last 3-5 minutes feel identical to minutes 8-12. No narrative climax.
+
+**The fix:** At 75% match timer elapsed, one of two crises triggers (100-tick advance warning):
+- **Galactic Storm** — All production reduced 25% for remainder. Economy players with stockpiles shine. Margin players collapse. Simple 0.75 multiplier in `_calcProduction`.
+- **Precursor Awakening** — Hostile mega-fleet (60 HP, 15 attack) spawns at galaxy edge, moves toward nearest colony every 30 ticks. +15 VP for destroying it. If it reaches undefended colony: occupies it. Reuses existing raider + occupation infrastructure.
+
+**Why it matters:** Every memorable 4X session has "the crisis." This creates the lean-forward moment where alliances matter (friendly players fight it together), stockpiles matter, and the match gets a story to tell afterward. Reference: Stellaris endgame crisis, Civ VI emergency system.
+
+**Design details:** Already specified in design.md Phase 7. Only activates with match timer enabled. Precursor fleet can be engaged by multiple players (whoever lands the killing blow gets VP).
+
+### R48-3: VP Formula Rebalance — Make All Strategies Viable
+
+**Impact:** High
+**Effort:** Low (number tweaks)
+**Category:** Balance
+
+**The problem:** Military VP dominates. Battle VP (5/win) + occupation VP (3 attacker, -5 defender = 8 swing) easily outpaces exploration (1 VP per 5 systems) and colony founding (0 direct VP). Diplomatic VP (+5/+10 per friendly) is the only non-military category that competes. Economic and explorer strategies are VP-disadvantaged.
+
+**The fix:**
+- Survey VP: `surveyed / 5` → `surveyed / 3` (67% increase). 15 surveyed systems = 5 VP instead of 3.
+- Colony ownership VP: +5 VP per colony owned (new `coloniesVP` in breakdown). 3 colonies = 15 VP.
+- Alloy VP: `alloys / 25` → `alloys / 20` (25% increase). 200 alloys = 10 VP instead of 8.
+- Battle VP: 5 → 3 per battle won. Combat is already rewarded through occupation VP.
+
+**Why it matters:** Three viable VP strategies emerge: **Military** (fight + occupy + occupation VP), **Economic** (tall colonies + traits + alloy stockpile + colony-founded VP), **Explorer** (survey + expand + colony VP). Diplomacy (friendly VP) layers on top of any strategy. A peaceful 3-colony player with good traits now competes with a militarist who won 2 battles and occupied 1 colony.
+
+**Design details:** Already specified in design.md Phase 1. Update `_calcVPBreakdown`, `_triggerGameOver`, client scoreboard. 4 constant/formula changes + test updates.
+
+### R48-4: Underdog Production Bonus — Prevent Snowballing
+
+**Impact:** Medium-High
+**Effort:** Low
+**Category:** Balance / Multiplayer Fairness
+
+**The problem:** Occupation creates a death spiral. Losing a colony halves its production AND costs 5 VP. The defender can't fund a liberation fleet because their economy is crippled. Diplomacy helps (ally for +10% bonus) but isn't enough to close a 50% production gap.
+
+**The fix:** Players with fewer colonies than the leader get +15% resource production per colony gap (cap at +45%). Applied in `_processMonthlyResources` as a multiplier on all positive production. Show "Underdog Bonus: +X%" in resource panel.
+
+**Why it matters:** Keeps all players engaged even when behind. A player who loses 1 colony to occupation gets +15% production — partially offsetting the 50% penalty on the occupied colony. Combined with friendly alliance bonus (+10%), they're at ~75% effective production instead of 50%. Snowballing is checked without eliminating the leader's advantage. Reference: Mario Kart rubber-banding, Stellaris war exhaustion.
+
+**Design details:** Already specified in design.md Phase 6. Calculate monthly: max colonies across all players, deficit per player, apply `1 + (deficit * 0.15)` capped at 1.45. Only in 2+ player games.
+
+### R48-5: Corvette Variants via Tech — Fleet Composition
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Core Mechanic / Strategic Depth
+
+**The problem:** Only one military ship class. Fleet strategy is "build more corvettes." No rock-paper-scissors counter-play, no fleet composition decisions. Military depth is shallow despite solid combat mechanics.
+
+**The fix:** 3 corvette variants unlocked by existing T2 techs (no new tech tree needed):
+- **Interceptor** (T2 Physics: Advanced Reactors) — 6 HP, 5 attack, 25 ticks/hop. Fast raiders. Beat gunboats in speed, lose to sentinels in HP.
+- **Gunboat** (T2 Engineering: Deep Mining) — 15 HP, 5 attack, 55 ticks/hop. Slow heavy hitters. Beat sentinels in damage, lose to interceptors who flee.
+- **Sentinel** (T2 Society: Gene Crops) — 20 HP, 1 attack, 40 ticks/hop. Garrison ships. High HP absorbs damage. Perfect for occupation defense. Beat interceptors in durability, lose to gunboats.
+
+Same build cost as base corvette (100M + 50A). Base corvette remains available (10 HP, 3 attack, 40 ticks/hop) — the balanced option. Max total military ships stays at 10.
+
+**Why it matters:** Creates a fleet composition metagame. "Opponent built interceptors → I need sentinels to survive raids." Tech path now informs military strategy, connecting the tech tree to combat. No new ship infrastructure needed — variants are just different stat profiles on the existing corvette system.
+
+**Design details:** Add `buildCorvetteVariant` command (or extend `buildCorvette` with `variant` parameter). Track variant type on ship object. Variants share combat resolution with base corvette (just different HP/attack/speed values). Add to client ship build UI as additional buttons when tech is completed.
+
+### R48-6: Starting Planet Variety — Free Replayability
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Replayability
+
+**The problem:** Every player starts on a Continental planet. Planet bonuses exist (Desert +2 mining, Arctic +1 research per district, etc.) but are irrelevant because the starting planet is always the same.
+
+**The fix:** Random habitable type per player on game start. In multiplayer fairness mode (default): all players get the same random type and size. Planet bonuses already create naturally different openings: desert leans mining, tropical leans food, arctic leans research.
+
+**Why it matters:** Instant replayability from existing code. "I got an Arctic start, so I'm going Scholar doctrine + research rush." Planet type + doctrine choice = 18 distinct opening configurations (6 types × 3 doctrines).
+
+**Design details:** Already specified in design.md Phase 1. Modify `_initStartingColonies` to randomize planet type. Size range 12-20 with fairness mode option.
+
+### R48-7: Science Ship Expeditions — Fill the Exploration Dead Zone
+
+**Impact:** Medium
+**Effort:** Medium
+**Category:** Content / Exploration
+
+**The problem:** After surveying the galaxy (~8 minutes), science ships are pure liability. The exploration pillar is now the weakest part of the game. Minutes 8-20 have zero exploration content.
+
+**The fix:** After surveying 5+ systems, science ships unlock "expeditions" — timed missions to distant systems:
+- **Deep Space Probe** (600 ticks): +200 random resource, +3 VP. Safe, reliable.
+- **Precursor Signal** (900 ticks): 70% chance +500 research + 5 VP, 30% ship lost. High risk/reward.
+- **Wormhole Mapping** (600 ticks): temporary fast-travel between 2 owned systems for 1200 ticks, +2 VP. Tactical utility.
+
+**Why it matters:** Transforms science ships from survey-and-idle into permanent exploration assets. Creates ongoing decisions: safe probe vs risky signal vs tactical wormhole. Explorer strategy becomes viable across the entire match. Reference: Stellaris archaeological sites.
+
+**Design details:** Already specified in design.md Phase 3. Add `sendExpedition` command. Track expedition state on ship. Ship unavailable during expedition. Max 1 per ship.
+
+### R48-8: War Weariness — Prevent Permanent Occupation Farming
+
+**Impact:** Medium
+**Effort:** Low
+**Category:** Balance
+
+**The problem:** Occupation VP has no time decay. A player who occupies a colony at minute 8 gets the full +3 VP and -5 VP penalty on the defender for the entire remaining match. This incentivizes early aggression and permanent occupation rather than strategic warfare.
+
+**The fix:** After 500 ticks (50 seconds) of continuous occupation, the attacker's occupation VP decays by 1 per 200 ticks. At 900 ticks, occupation VP reaches 0. Defender's penalty also decays on the same schedule. Creates a "take, hold, profit, then move on" pattern rather than permanent parking.
+
+**Why it matters:** Complements diplomacy — it costs 25 influence to go to war, but the occupation VP window is limited. Combined with the 600-tick diplomatic cooldown, this creates natural "war seasons" and "peace seasons." Prevents the degenerate strategy of parking corvettes on an enemy colony forever. Reference: Stellaris war exhaustion forcing peace.
+
+**Design details:** Track `occupationStartTick` on colony. In `_calcVPBreakdown`, compute VP as `max(0, OCCUPATION_ATTACKER_VP - decay)`. No constants change — just a decay formula. Add occupation decay tests.
+
+---
+
+### 4. Balance Snapshot
+
+**Resource Flow (Starting State):**
+- Start: 100E, 300M, 100F, 50A, 100I — 8 pops, 4 districts (1G, 1M, 2Ag)
+- Monthly: +6E(gen) -1E(housing) = +5E net, +6M, +12F -8F(pops) = +4F net, 0A
+- First district: immediate (100M from 300 stockpile). Second at ~17 seconds.
+- **Assessment:** Opening economy is healthy. Unchanged from R47.
+
+**Diplomacy Economy (NEW):**
+- Starting influence: 100. Income: +2/colony/month + 1/trait.
+- War declaration: 25 influence. 2 wars = 50 influence = half the starting stockpile.
+- At 2 colonies with 1 trait: +5 influence/month → 25 influence every 5 months (50 seconds).
+- Friendly bonus: +10% production on nearby colonies = ~1-3 extra resources/month per colony.
+- **Assessment:** Influence economy is now correctly tight. Going to war with 2 players is expensive. Diplomatic aggression is gated but achievable. The 600-tick cooldown (60 seconds) means stance changes are rare and strategic.
+
+**VP Distribution (20-min match, updated with diplomacy):**
+- Peaceful economist with 1 ally: ~98 VP (economy) + 10 VP (mutual friendly) = ~108 VP
+- Militarist (2 battles, 1 occupation): ~83 VP (economy) + 10 VP (battles) + 3 VP (occupation) - 2 VP (ships lost) = ~94 VP
+- **Assessment:** Diplomacy VP closes the gap somewhat. But with current VP formula, military player also benefits from occupation VP penalty on defender (-5 VP). Net military advantage is ~6-8 VP including the defender's loss. R48-3 VP rebalance + R48-8 war weariness would bring this into equilibrium.
+
+**New VP Targets (post-R48-3 rebalance):**
+- Explorer (15 surveyed, 3 colonies, 1 trait): 5 VP (survey) + 15 VP (colonies) + 10 VP (trait) + ~70 VP (economy) = ~100 VP
+- Economist (2 colonies, 2 traits, 300 alloys): 20 VP (traits) + 15 VP (alloys) + ~85 VP (pops+districts+tech) = ~120 VP
+- Militarist (2 battles, 1 occupation): 6 VP (battles) + 3 VP (occupation) + ~83 VP (economy) = ~92 VP
+- Diplomat (2 mutual allies): 20 VP (diplomacy) + ~90 VP (boosted economy from 10% bonus) = ~110 VP
+- **Assessment:** All four strategies become competitive. Tall economy is slightly favored, which is correct for a 4X — economic mastery should be the baseline skill.
+
+**Specific Number Tweaks:**
+1. Survey VP: `surveyed/5` → `surveyed/3`
+2. Colony ownership VP: +5 per colony (new)
+3. Alloy VP: `alloys/25` → `alloys/20`
+4. Battle VP: 5 → 3
+5. Occupation VP: add decay after 500 ticks (new)
+6. Defense platform repair: 10 → 15 HP/month (already in roadmap)
+7. Colony ship cost reduction (already in roadmap)
+
+---
+
+### 5. Content Wishlist (Aspirational)
+
+1. **"Diplomatic Incidents"** — Random events that test alliances. "Border skirmish: your scouts encountered [Ally]'s patrol. Smooth it over (spend 10 influence) or let tensions rise (friendly → neutral automatically)." Creates drama in peaceful games. Makes alliances feel alive rather than set-and-forget. Stellaris does this with opinion modifiers and faction demands.
+
+2. **"Galactic Leylines"** — Hidden resource veins connecting 2-3 star systems. Controlling all endpoints grants +15% production bonus. Discovered by colonizing endpoint systems. Creates an expansion puzzle beyond "settle the biggest planet." Strongly endorsed from R47.
+
+3. **"Tech Espionage via Friendly Stance"** — When mutual-friendly with a player, gain +25% progress on techs they've already completed. Creates a reason to befriend the Scholar player. Information asymmetry: you know what techs your ally has (visible on scoreboard), but not what they're researching. Endless Space 2's influence system is a reference.
+
+4. **"Cease-fire Negotiations"** — When two hostile players have been at war for 600+ ticks, either can propose a cease-fire. If accepted, both go to neutral and gain +3 VP each ("Peace Dividend"). Creates an incentive to end wars and a diplomatic offramp. Currently, hostility has no off-ramp besides waiting for cooldown + spending influence.
+
+5. **"Galactic Wonders Race"** — 3 megastructures only one player can build (Dyson Sphere, Library, Ring World). Already in design.md. Endorsed as the flagship late-game feature.
+
+---
+
+### 6. Priority Order (R48)
+
+Diplomacy is shipped. The game now has a social contract. The critical gaps are: **opening variety** (autopilot first 5 minutes), **endgame drama** (flat timer expiry), and **VP balance** (military dominance). All recommendations target these plus deepening what exists.
+
+1. **Doctrine choice (R48-1)** — Breaks the solved opening. Highest impact-to-effort ratio. Low effort, massive replayability.
+2. **Endgame crisis (R48-2)** — Creates the climax the game desperately needs. Medium effort, reuses raider infrastructure.
+3. **VP rebalance (R48-3)** — Number tweaks enabling diverse strategies. Low effort, high impact on strategic diversity.
+4. **Underdog bonus (R48-4)** — Prevents snowballing, keeps all players engaged. Low effort.
+5. **Corvette variants (R48-5)** — Fleet composition decisions. Medium effort but transforms military pillar.
+6. **Starting planet variety (R48-6)** — Free replayability from existing planet bonus code. Low effort.
+7. **Science ship expeditions (R48-7)** — Fills exploration dead zone. Medium effort.
+8. **War weariness (R48-8)** — Prevents occupation farming. Low effort, important balance complement.
+
+---
+
+*Earlier reviews truncated for brevity. See git history for full archive.*

@@ -225,8 +225,9 @@ function generateHyperlanes(systems, rng) {
     const visited = new Set();
     const queue = [start];
     visited.add(start);
-    while (queue.length > 0) {
-      const node = queue.shift();
+    let qi = 0;
+    while (qi < queue.length) {
+      const node = queue[qi++];
       for (const neighbor of adjacency[node]) {
         if (!visited.has(neighbor)) {
           visited.add(neighbor);
