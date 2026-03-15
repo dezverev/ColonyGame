@@ -701,7 +701,7 @@
     {
       const shipBtn = document.createElement('div');
       shipBtn.className = 'build-option build-option-ship';
-      const shipCost = { minerals: 200, food: 100, alloys: 100 };
+      const shipCost = { minerals: 175, food: 75, alloys: 75 };
       let canAffordShip = true;
       const costParts = [];
       for (const [res, amt] of Object.entries(shipCost)) {

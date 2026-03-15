@@ -2067,3 +2067,32 @@ Each entry records an iteration of automated development.
 - No build time, no cost — represents salvaged colony ship materials, keeps the mechanic invisible and frictionless
 
 **Next:** Colony ship cost + time reduction (Phase 1, R58-2) — cost {minerals:175, food:75, alloys:75}, build time 450 ticks, consolidates R41+R53 tasks. Then distinct victory conditions (Phase 7, R58-3) — Scientific/Military/Economic instant-win paths.
+
+---
+
+## Entry 59 — 2026-03-15 — Colony Ship Cost & Build Time Reduction
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- **Colony ship cost reduction:** Reduced COLONY_SHIP_COST from {minerals:200, food:100, alloys:100} to {minerals:175, food:75, alloys:75}. Total resource cost drops from 400 to 325 (−19%). Makes second colony more accessible in 20-minute matches.
+- **Colony ship build time reduction:** Reduced COLONY_SHIP_BUILD_TIME from 600 to 450 ticks (60→45 seconds). Combined with cost reduction, targets second colony arrival at ~10-12 minutes instead of ~14-15 minutes.
+- Consolidates R41 (cost reduction) and R53 (build time reduction) into a single change.
+
+**Files changed:**
+- `server/game-engine.js` — updated COLONY_SHIP_COST and COLONY_SHIP_BUILD_TIME constants
+- `src/public/js/app.js` — updated hardcoded colony ship cost in client build menu
+- `src/tests/colony-ships.test.js` — updated 3 hardcoded assertions to use constants (cost values, build time, refund amounts)
+- `src/tests/colony-ship-balance.test.js` — **new** 8 tests (cost values, build time, total cost, exact tick completion, boundary affordability, floor-rounded refund, Expansionist doctrine interaction)
+- `devguide/design.md` — marked R41/R57 cost+time task and R53 build time task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1834 total (8 new, 3 existing updated). All passing.
+
+**Key decisions:**
+- Went with R57's more aggressive 450-tick target over R53's conservative 500 — 45 seconds feels snappy without trivializing expansion
+- Updated hardcoded test assertions to use exported constants where possible, making future balance tweaks easier
+- Client cost is hardcoded in app.js (not received from server) — updated to match server constants
+
+**Next:** Distinct victory conditions (Phase 7, R59-2) — Scientific/Military/Economic instant-win paths checked monthly. Then buildings layer (Phase 2, R59-3) — Research Lab, Foundry, Shield Generator unlocked at pop thresholds.

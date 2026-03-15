@@ -36,11 +36,11 @@ function getFirstColony(engine, playerId) {
 
 describe('Colony Ship Constants', () => {
   it('should have correct colony ship cost', () => {
-    assert.deepStrictEqual(COLONY_SHIP_COST, { minerals: 200, food: 100, alloys: 100 });
+    assert.deepStrictEqual(COLONY_SHIP_COST, { minerals: 175, food: 75, alloys: 75 });
   });
 
   it('should have correct build time', () => {
-    assert.strictEqual(COLONY_SHIP_BUILD_TIME, 600);
+    assert.strictEqual(COLONY_SHIP_BUILD_TIME, 450);
   });
 
   it('should have correct hop ticks', () => {
@@ -82,9 +82,9 @@ describe('buildColonyShip command', () => {
 
     engine.handleCommand(1, { type: 'buildColonyShip', colonyId: colony.id });
 
-    assert.strictEqual(state.resources.minerals, mineralsBefore - 200);
-    assert.strictEqual(state.resources.food, foodBefore - 100);
-    assert.strictEqual(state.resources.alloys, alloysBefore - 100);
+    assert.strictEqual(state.resources.minerals, mineralsBefore - COLONY_SHIP_COST.minerals);
+    assert.strictEqual(state.resources.food, foodBefore - COLONY_SHIP_COST.food);
+    assert.strictEqual(state.resources.alloys, alloysBefore - COLONY_SHIP_COST.alloys);
   });
 
   it('should reject if not enough minerals', () => {
@@ -195,9 +195,9 @@ describe('Colony ship cancellation', () => {
     const result = engine.handleCommand(1, { type: 'demolish', colonyId: colony.id, districtId: queueItem.id });
     assert.ok(result.ok);
 
-    assert.strictEqual(state.resources.minerals, mineralsBefore + 100); // 200/2
-    assert.strictEqual(state.resources.food, foodBefore + 50); // 100/2
-    assert.strictEqual(state.resources.alloys, alloysBefore + 50); // 100/2
+    assert.strictEqual(state.resources.minerals, mineralsBefore + Math.floor(COLONY_SHIP_COST.minerals / 2));
+    assert.strictEqual(state.resources.food, foodBefore + Math.floor(COLONY_SHIP_COST.food / 2));
+    assert.strictEqual(state.resources.alloys, alloysBefore + Math.floor(COLONY_SHIP_COST.alloys / 2));
     assert.strictEqual(colony.buildQueue.length, 0);
   });
 });

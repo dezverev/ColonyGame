@@ -57,8 +57,8 @@ const COLONY_TRAITS = {
 };
 
 // Colony ship constants
-const COLONY_SHIP_COST = { minerals: 200, food: 100, alloys: 100 };
-const COLONY_SHIP_BUILD_TIME = 600; // 60 seconds at 10Hz
+const COLONY_SHIP_COST = { minerals: 175, food: 75, alloys: 75 };
+const COLONY_SHIP_BUILD_TIME = 450; // 45 seconds at 10Hz
 const COLONY_SHIP_HOP_TICKS = 50;   // 5 seconds per hyperlane hop
 const MAX_COLONIES = 5;
 const COLONY_SHIP_STARTING_POPS = 2;
