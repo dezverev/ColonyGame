@@ -21,6 +21,9 @@
     crisisResolved: 'warning',
     edictActivated: 'positive',
     edictExpired: 'warning',
+    scarcityWarning: 'warning',
+    scarcityStarted: 'crisis',
+    scarcityEnded: 'positive',
   };
 
   function formatGameEvent(msg) {
@@ -63,6 +66,18 @@
         return 'Edict activated: ' + (d.edictName || d.edictType) + (d.instant ? ' — resources granted!' : '');
       case 'edictExpired':
         return 'Edict expired: ' + (d.edictName || d.edictType);
+      case 'scarcityWarning': {
+        const rName = (d.resource || 'resource').charAt(0).toUpperCase() + (d.resource || 'resource').slice(1);
+        return 'WARNING: ' + rName + ' scarcity approaching — production will drop 30%!';
+      }
+      case 'scarcityStarted': {
+        const rName = (d.resource || 'resource').charAt(0).toUpperCase() + (d.resource || 'resource').slice(1);
+        return 'SCARCITY: ' + rName + ' production reduced 30% galaxy-wide!';
+      }
+      case 'scarcityEnded': {
+        const rName = (d.resource || 'resource').charAt(0).toUpperCase() + (d.resource || 'resource').slice(1);
+        return rName + ' scarcity has ended — production restored.';
+      }
       default:
         return null;
     }

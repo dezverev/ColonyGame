@@ -435,6 +435,18 @@
         return `<span style="color:#e74c3c">⚠ ${msg.crisisLabel || 'Crisis'}</span> on ${player}'s ${msg.colonyName || 'colony'}!`;
       case 'crisisResolved':
         return `${player}'s ${msg.colonyName || 'colony'}: ${msg.outcome || 'crisis resolved'}`;
+      case 'scarcityWarning': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#f39c12">\u26A0 ${rn} scarcity approaching — brace for -30% production!</span>`;
+      }
+      case 'scarcityStarted': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#e74c3c">\u26A0 ${rn} SCARCITY — production reduced 30% galaxy-wide!</span>`;
+      }
+      case 'scarcityEnded': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#2ecc71">${rn} scarcity ended — production restored.</span>`;
+      }
       default:
         return null;
     }
@@ -842,6 +854,20 @@
     // VP display
     if (player && statusVP) {
       statusVP.textContent = 'VP: ' + (player.vp || 0);
+    }
+
+    // Scarcity indicator
+    const scarcityEl = document.getElementById('scarcity-indicator');
+    if (scarcityEl) {
+      if (gameState.activeScarcity) {
+        const sr = gameState.activeScarcity.resource;
+        const rName = sr.charAt(0).toUpperCase() + sr.slice(1);
+        const secsLeft = Math.max(0, Math.ceil(gameState.activeScarcity.ticksRemaining / 10));
+        scarcityEl.textContent = rName + ' Scarcity (' + secsLeft + 's)';
+        scarcityEl.classList.remove('hidden');
+      } else {
+        scarcityEl.classList.add('hidden');
+      }
     }
 
     // Status bar

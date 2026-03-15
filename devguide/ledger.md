@@ -1382,3 +1382,41 @@ Each entry records an iteration of automated development.
 - Impact: at 8 starting pops, VP unchanged (16). At 40 pops, 70 VP vs old 80. At 100 pops, 130 VP vs old 200 — 35% reduction. Multiple strategies now viable
 
 **Next:** Starting condition draft "Opening Hands" (game-designer R38-3) or scarcity seasons (R38-7)
+
+---
+
+## Entry 40 — 2026-03-14 — Scarcity Seasons (Galaxy-Wide Resource Pressure)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Galaxy-wide scarcity seasons: every 800-1200 ticks (randomized), one commodity resource (energy/minerals/food) gets -30% production for 300 ticks (30 seconds)
+- 100-tick advance warning broadcast before scarcity starts, giving players time to stockpile or activate Emergency Reserves edict
+- Resource rotation: same resource cannot be hit twice in a row
+- `_processScarcitySeason()` method called every tick — handles warning phase, scarcity start, countdown, and end
+- SCARCITY_MULTIPLIER (0.70) applied in `_calcProduction` after edict bonuses, before crisis effects
+- `_invalidateAllProductionCaches()` method invalidates all colony production caches on scarcity start/end
+- Three broadcast events: `scarcityWarning`, `scarcityStarted`, `scarcityEnded` — all broadcast to all players
+- Active scarcity state included in `getState()` and `getPlayerState()` serialization for client HUD
+- Client: toast notifications for all three scarcity events, ticker display with colored warnings, HUD indicator showing active scarcity countdown
+
+**Files changed:**
+- `server/game-engine.js` — SCARCITY_RESOURCES/SCARCITY_MIN_INTERVAL/SCARCITY_MAX_INTERVAL/SCARCITY_DURATION/SCARCITY_WARNING_TICKS/SCARCITY_MULTIPLIER constants, constructor init (_activeScarcity, _lastScarcityResource, _nextScarcityTick, _scarcityWarned), _randomScarcityInterval, _pickScarcityResource, _processScarcitySeason, _invalidateAllProductionCaches methods, scarcity multiplier in _calcProduction, activeScarcity in getState/getPlayerState, constants in module.exports
+- `src/public/js/toast-format.js` — scarcityWarning/scarcityStarted/scarcityEnded in TOAST_TYPE_MAP and formatGameEvent
+- `src/public/js/app.js` — scarcity events in _formatTickerEvent, scarcity HUD indicator in _updateHUD
+- `src/public/index.html` — scarcity-indicator span in status bar
+- `src/tests/scarcity-seasons.test.js` — **new** 31 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 887 total (31 new: 2 constants, 3 initialization, 3 warning phase, 4 active scarcity lifecycle, 5 production multiplier, 2 resource rotation, 2 scheduling, 2 cache invalidation, 1 multiplayer, 4 state serialization, 2 edict interaction, 1 full lifecycle integration). All passing (1 pre-existing failure in game-engine.test.js:549 unrelated).
+
+**Key decisions:**
+- Scarcity multiplier applied after edict bonuses but before crisis effects (power surge) — scarcity stacks multiplicatively with edicts, creating interesting interaction (e.g., Mineral Rush during mineral scarcity partially offsets the penalty)
+- Only commodity resources (energy/minerals/food) affected — alloys and research are strategic, not commodity; scarcity on them would feel punishing rather than interesting
+- Warning resource is pre-picked and stored as `_pendingScarcityResource` so the same resource from the warning is used when scarcity starts
+- `_invalidateAllProductionCaches` is a new method separate from `_invalidatePlayerProductionCaches` — scarcity affects ALL players, not per-player
+- Scarcity is galaxy-wide (not per-colony) to create shared economic weather that drives trade/diplomacy decisions
+
+**Next:** Starting condition draft "Opening Hands" (game-designer R38-3), NPC raider fleets (R39-1), or military outposts (R39-2)

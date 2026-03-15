@@ -151,6 +151,14 @@ const INFLUENCE_BASE_INCOME = 2;  // +2 influence/colony/month (capital building
 const INFLUENCE_TRAIT_INCOME = 1; // +1 influence/month per colony with a personality trait
 const INFLUENCE_CAP = 200;        // Max influence stockpile
 
+// Scarcity season constants
+const SCARCITY_RESOURCES = ['energy', 'minerals', 'food']; // commodity resources only
+const SCARCITY_MIN_INTERVAL = 800;   // minimum ticks between scarcity seasons
+const SCARCITY_MAX_INTERVAL = 1200;  // maximum ticks between scarcity seasons
+const SCARCITY_DURATION = 300;       // 30 seconds at 10Hz
+const SCARCITY_WARNING_TICKS = 100;  // 10 seconds advance warning
+const SCARCITY_MULTIPLIER = 0.70;    // -30% production during scarcity
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -296,6 +304,12 @@ class GameEngine {
 
     // Colony crisis tracking — crisisState stored on colony objects, nextCrisisTick for scheduling
     this._crisisRng = 0; // simple counter for deterministic-ish crisis type picking
+
+    // Scarcity season tracking
+    this._activeScarcity = null; // { resource, ticksRemaining } when active
+    this._lastScarcityResource = null; // prevent same resource twice in a row
+    this._nextScarcityTick = this._randomScarcityInterval(); // first scarcity scheduled
+    this._scarcityWarned = false; // true after warning broadcast, before scarcity starts
 
     this._initPlayerStates();
 
@@ -635,6 +649,14 @@ class GameEngine {
       }
     }
 
+    // Scarcity season: -30% production for the affected resource
+    if (this._activeScarcity) {
+      const sr = this._activeScarcity.resource;
+      if (production[sr] > 0) {
+        production[sr] = Math.round(production[sr] * SCARCITY_MULTIPLIER * 100) / 100;
+      }
+    }
+
     // Power surge energy boost: +50% energy production during energyBoostTicks
     if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
       production.energy = Math.round(production.energy * 1.5 * 100) / 100;
@@ -731,6 +753,67 @@ class GameEngine {
       this._dirtyPlayers.add(playerId);
     }
     this._invalidateStateCache();
+  }
+
+  // Generate a random interval for the next scarcity season
+  _randomScarcityInterval() {
+    return SCARCITY_MIN_INTERVAL + Math.floor(Math.random() * (SCARCITY_MAX_INTERVAL - SCARCITY_MIN_INTERVAL + 1));
+  }
+
+  // Pick a scarcity resource, avoiding the last one used
+  _pickScarcityResource() {
+    const candidates = SCARCITY_RESOURCES.filter(r => r !== this._lastScarcityResource);
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+
+  // Process scarcity seasons — called every tick
+  _processScarcitySeason() {
+    // Active scarcity: count down and end when done
+    if (this._activeScarcity) {
+      this._activeScarcity.ticksRemaining--;
+      if (this._activeScarcity.ticksRemaining <= 0) {
+        const endedResource = this._activeScarcity.resource;
+        this._activeScarcity = null;
+        // Invalidate all production caches — multiplier removed
+        this._invalidateAllProductionCaches();
+        this._invalidateStateCache();
+        // Broadcast scarcity ended
+        this._emitEvent('scarcityEnded', null, { resource: endedResource }, true);
+        // Schedule next scarcity
+        this._nextScarcityTick = this.tickCount + this._randomScarcityInterval();
+        this._scarcityWarned = false;
+      }
+      return;
+    }
+
+    // Warning phase: broadcast warning 100 ticks before start
+    if (!this._scarcityWarned && this.tickCount >= this._nextScarcityTick - SCARCITY_WARNING_TICKS) {
+      const resource = this._pickScarcityResource();
+      this._pendingScarcityResource = resource;
+      this._scarcityWarned = true;
+      this._emitEvent('scarcityWarning', null, { resource }, true);
+    }
+
+    // Start scarcity when scheduled tick arrives
+    if (this.tickCount >= this._nextScarcityTick) {
+      const resource = this._pendingScarcityResource || this._pickScarcityResource();
+      this._activeScarcity = { resource, ticksRemaining: SCARCITY_DURATION };
+      this._lastScarcityResource = resource;
+      this._pendingScarcityResource = null;
+      // Invalidate all production caches — multiplier now applies
+      this._invalidateAllProductionCaches();
+      this._invalidateStateCache();
+      // Broadcast scarcity started
+      this._emitEvent('scarcityStarted', null, { resource, duration: SCARCITY_DURATION }, true);
+    }
+  }
+
+  // Invalidate production caches for ALL colonies (scarcity affects everyone)
+  _invalidateAllProductionCaches() {
+    for (const [, colony] of this.colonies) {
+      colony._cachedProduction = null;
+    }
+    this._summaryCacheTick = -1;
   }
 
   // Process construction queues
@@ -2089,6 +2172,9 @@ class GameEngine {
     // Pop growth every tick
     this._processPopGrowth();
 
+    // Scarcity season processing every tick
+    this._processScarcitySeason();
+
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
@@ -2219,8 +2305,7 @@ class GameEngine {
           }
           colony.buildQueue.splice(qIdx, 1);
           this._dirtyPlayers.add(playerId);
-          this._cachedState = null;
-          this._cachedStateJSON = null;
+          this._invalidateStateCache();
           return { ok: true };
         }
 
@@ -2552,6 +2637,9 @@ class GameEngine {
     }
     state.gameSpeed = this._gameSpeed;
     state.paused = this._paused;
+    if (this._activeScarcity) {
+      state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    }
     this._cachedState = state;
     return state;
   }
@@ -2631,6 +2719,9 @@ class GameEngine {
     }
     state.gameSpeed = this._gameSpeed;
     state.paused = this._paused;
+    if (this._activeScarcity) {
+      state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    }
 
     return state;
   }
@@ -2728,4 +2819,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, generateGalaxy, assignStartingSystems };
