@@ -36,6 +36,16 @@ const PLANET_BONUSES = {
   arid:        { generator: { energy: 1 }, industrial: { alloys: 1 } },
 };
 
+// Procedural colony names by planet type (8-10 per type)
+const COLONY_NAMES = {
+  continental: ['New Terra', 'Verdania', 'Haven Prime', 'Greenreach', 'Temperate Landing', 'Concordia', 'Meadowfall', 'Gaia Station', 'Heartland', 'Equinox'],
+  ocean:       ['Tidecrest', 'Pelagius', 'Deepreach', 'Aquara', 'Wavecrest', 'Marinus', 'Thalassa', 'Coral Haven', 'Riptide', 'Abyssal'],
+  tropical:    ['Verdant Isle', 'Canopy Prime', 'Emerald Haven', 'Monsoon Landing', 'Jungleheart', 'Tropica', 'Palmshade', 'Viridian', 'Fernfall', 'Lushwater'],
+  arctic:      ['New Helsinki', 'Frostheim', 'Boreas Station', 'Glacial Reach', 'Tundra Prime', 'Icefall', 'Crystalpeak', 'Winterhold', 'Snowbound', 'Polaris'],
+  desert:      ['Dusthaven', 'Sunward', 'Dune Prime', 'Sandreach', 'Scorchfield', 'Mirage Station', 'Aridus', 'Sunstone', 'Drywind', 'Oasis Landing'],
+  arid:        ['Dryhaven', 'Rustfield', 'Mesa Prime', 'Steppereach', 'Ashwind', 'Redstone Landing', 'Dustwalker', 'Thornfield', 'Crackland', 'Ironflat'],
+};
+
 // Colony personality traits: 4+ districts of same type earns a trait
 // Only one trait per colony (highest count wins, ties broken by order below)
 const COLONY_TRAITS = {
@@ -296,6 +306,7 @@ class GameEngine {
     this.tickInterval = null;
     this.tickCount = 0;
     this._idCounter = 0;
+    this._usedColonyNames = new Set(); // track used procedural names to avoid duplicates
     this.playerStates = new Map();
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
@@ -386,6 +397,22 @@ class GameEngine {
     return `e${++this._idCounter}`;
   }
 
+  _generateColonyName(planetType) {
+    const names = COLONY_NAMES[planetType] || COLONY_NAMES.continental;
+    for (let i = 0; i < names.length; i++) {
+      if (!this._usedColonyNames.has(names[i])) {
+        this._usedColonyNames.add(names[i]);
+        return names[i];
+      }
+    }
+    // All names used — fallback with numeric suffix
+    let n = 1;
+    while (this._usedColonyNames.has(`Colony ${planetType}-${n}`)) n++;
+    const fallback = `Colony ${planetType}-${n}`;
+    this._usedColonyNames.add(fallback);
+    return fallback;
+  }
+
   _initPlayerStates() {
     let colorIndex = 0;
     for (const [playerId, player] of this.room.players) {
@@ -429,7 +456,8 @@ class GameEngine {
         }
       }
 
-      const colony = this._createColony(playerId, systemName + ' Colony', planet, systemId);
+      const colonyName = this._generateColonyName(planet.type);
+      const colony = this._createColony(playerId, colonyName, planet, systemId);
       colony.isStartingColony = true;
       // Start with 4 pre-built districts (instant, no construction time)
       this._addBuiltDistrict(colony, 'generator');
@@ -2452,7 +2480,8 @@ class GameEngine {
     system.owner = ship.ownerId;
 
     // Create colony with reduced starting pops (2 instead of 8)
-    const colony = this._createColony(ship.ownerId, system.name + ' Colony', {
+    const colonyName = this._generateColonyName(planet.type);
+    const colony = this._createColony(ship.ownerId, colonyName, {
       size: planet.size,
       type: planet.type,
       habitability: planet.habitability,
@@ -3916,4 +3945,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, generateGalaxy, assignStartingSystems };

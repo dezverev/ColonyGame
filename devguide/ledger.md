@@ -1631,4 +1631,33 @@ Each entry records an iteration of automated development.
 
 **Next:** Colony procedural naming (Phase 7, R45-6) — 30-minute task with outsized emotional payoff per game-designer R45 priority order
 
-**Next:** Colony occupation after fleet combat (R44-2) — winning battles should change the map
+---
+
+## Entry 47 — 2026-03-14 — Colony Procedural Naming
+
+**Phase:** 7 (Polish & Content)
+**Status:** Complete
+
+**What was built:**
+- Procedural colony naming system: `COLONY_NAMES` lookup table with 10 curated names per habitable planet type (continental, ocean, tropical, arctic, desert, arid)
+- `_generateColonyName(planetType)` method picks unused names sequentially, tracks used names via `_usedColonyNames` Set to prevent duplicates across the entire game
+- Fallback naming (`Colony <type>-N`) when all curated names for a type are exhausted
+- Starting colonies and colony-ship-founded colonies both use procedural names instead of the old `systemName + ' Colony'` pattern
+- Unknown planet types gracefully fall back to continental name list
+
+**Files changed:**
+- `server/game-engine.js` — `COLONY_NAMES` constant (60 names across 6 types), `_usedColonyNames` Set in constructor, `_generateColonyName` method, updated `_initStartingColonies` and colony ship founding to use procedural names, added `COLONY_NAMES` to module.exports
+- `src/tests/colony-naming.test.js` — **new** 17 tests
+- `src/tests/game-engine.test.js` — updated 1 existing test (colony name derivation) to match procedural naming
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1230 total (17 new: 4 constant validation, 7 name generation, 3 starting colony names, 2 colony ship founding, 1 serialization). All passing.
+
+**Key decisions:**
+- Names are assigned in list order (not random) — deterministic and simpler to test; randomization adds no gameplay value since players don't see the list
+- Used-name tracking is global (not per-type) — prevents any name appearing on two colonies even across different planet types
+- Fallback format `Colony <type>-N` is intentionally bland — signals to the designer that more names should be added rather than masking the exhaustion
+- No rename command added — the spec mentions it as a future possibility; this iteration focuses on procedural generation only
+
+**Next:** Diplomatic stances (Phase 6, R46-2) — minimum viable multiplayer social layer with Neutral/Hostile/Friendly stance-based combat gating

@@ -2573,15 +2573,14 @@ describe('GameEngine — Match Timer Edge Cases', () => {
 // ── Galaxy–Colony Integration ──
 
 describe('GameEngine — Galaxy–Colony Integration', () => {
-  it('colony name is derived from starting system name', () => {
+  it('colony name is a procedural name from planet type list', () => {
+    const { COLONY_NAMES } = require('../../server/game-engine');
     const engine = new GameEngine(makeRoom(1), { tickRate: 10, galaxySeed: 42 });
     const colony = Array.from(engine.colonies.values())[0];
-    const systemId = colony.systemId;
-    const system = engine.galaxy.systems[systemId];
-    assert.ok(colony.name.startsWith(system.name),
-      `Colony name "${colony.name}" should start with system name "${system.name}"`);
-    assert.ok(colony.name.endsWith('Colony'),
-      `Colony name "${colony.name}" should end with "Colony"`);
+    const planetType = colony.planet.type;
+    const validNames = COLONY_NAMES[planetType];
+    assert.ok(validNames.includes(colony.name),
+      `Colony name "${colony.name}" should be from ${planetType} name list`);
   });
 
   it('starting planet is marked colonized with correct owner in galaxy data', () => {
