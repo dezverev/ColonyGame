@@ -4058,7 +4058,7 @@ class GameEngine {
       case 'selectDoctrine': {
         const { doctrineType } = cmd;
         if (!doctrineType) return { error: 'Missing doctrineType' };
-        if (!DOCTRINE_DEFS[doctrineType]) return { error: 'Invalid doctrine type' };
+        if (!Object.prototype.hasOwnProperty.call(DOCTRINE_DEFS, doctrineType)) return { error: 'Invalid doctrine type' };
 
         const state = this.playerStates.get(playerId);
         if (!state) return { error: 'Player not found' };

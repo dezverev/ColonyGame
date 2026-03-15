@@ -418,6 +418,7 @@ describe('GameEngine — Pop Growth', () => {
 
   it('no growth before reaching growth threshold', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     const pb = calcPlanetBonus(colony);
     const foodSurplus = 12 + pb.food - 8;
@@ -433,6 +434,7 @@ describe('GameEngine — Pop Growth', () => {
 
   it('growth is blocked by housing cap', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     // Set pops to housing cap (10) to test blocking
     colony.pops = 10;
@@ -1613,6 +1615,7 @@ describe('GameEngine — Mini Tech Tree', () => {
 
   it('Frontier Medicine reduces pop growth time by 25%', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     const pb = calcPlanetBonus(colony);
     colony.pops = 8;
