@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, COLONY_SHIP_STARTING_POPS } = require('../../server/game-engine');
+const { GameEngine, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, COLONY_SHIP_STARTING_POPS, DISTRICT_DEFS } = require('../../server/game-engine');
 
 // Helper: create a game engine with 1 player
 function makeEngine(opts = {}) {
@@ -187,5 +187,104 @@ describe('Colony established bonus', () => {
     if (!result2) return;
     assert.strictEqual(result2.newColony.districts.length, 1);
     assert.strictEqual(result2.newColony.districts[0].type, 'mining');
+  });
+
+  it('bonus district should count toward district cap for subsequent builds', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    const { newColony } = result;
+    // Bonus district occupies 1 slot — totalDistricts should reflect it
+    const totalBefore = engine._totalDistricts(newColony);
+    assert.strictEqual(totalBefore, 1, 'Total districts should include the bonus mining district');
+
+    // Planet size determines cap; districts.length (1) should count toward it
+    assert.ok(newColony.planet.size >= 1, 'Planet size should be at least 1');
+    assert.ok(totalBefore <= newColony.planet.size, 'Bonus district should fit within planet size');
+  });
+
+  it('bonus district should NOT increment playerBuiltDistricts counter', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    // playerBuiltDistricts tracks player-initiated builds for early-build discount
+    // The bonus district is automatic — it should NOT count
+    assert.strictEqual(result.newColony.playerBuiltDistricts, 0,
+      'Bonus district should not count as player-built');
+  });
+
+  it('should preserve early-build discount after bonus district', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    const { newColony } = result;
+    // playerBuiltDistricts is 0, so the next 3 player-built districts get 50% build time
+    assert.strictEqual(newColony.playerBuiltDistricts, 0);
+
+    // Build a player district on the new colony
+    const state = engine.playerStates.get(1);
+    state.resources.minerals = 500;
+    state.resources.energy = 500;
+    engine.handleCommand(1, { type: 'buildDistrict', colonyId: newColony.id, districtType: 'generator' });
+
+    // Should have queued successfully
+    assert.strictEqual(newColony.buildQueue.length, 1, 'Should queue a generator district');
+    // Build time should be discounted (50% of base)
+    const baseBuildTime = DISTRICT_DEFS.generator.buildTime;
+    assert.strictEqual(newColony.buildQueue[0].ticksRemaining, Math.floor(baseBuildTime * 0.5),
+      'First player-built district should get 50% build time discount');
+  });
+
+  it('should include bonus district in getPlayerStateJSON broadcast payload', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    const json = engine.getPlayerStateJSON(1);
+    const parsed = JSON.parse(json);
+    const newColonyState = parsed.colonies.find(c => c.systemId === result.targetSysId);
+    assert.ok(newColonyState, 'Broadcast JSON should include new colony');
+    assert.strictEqual(newColonyState.districts.length, 1, 'JSON colony should have 1 district');
+    assert.strictEqual(newColonyState.districts[0].type, 'mining', 'JSON district should be mining');
+  });
+
+  it('bonus district should have a valid unique ID', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    const district = result.newColony.districts[0];
+    assert.ok(typeof district.id === 'string', 'District should have a string ID');
+    assert.ok(district.id.length > 0, 'District ID should be non-empty');
+
+    // ID should be unique — not colliding with starting colony districts
+    const startingColony = getFirstColony(engine, 1);
+    const startingIds = startingColony.districts.map(d => d.id);
+    assert.ok(!startingIds.includes(district.id),
+      'Bonus district ID should not collide with starting colony district IDs');
+  });
+
+  it('new colony should have isStartingColony=false after bonus district', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    assert.strictEqual(result.newColony.isStartingColony, false,
+      'Founded colony should not be marked as starting colony');
+  });
+
+  it('bonus district should produce net positive minerals in serialized state', () => {
+    const engine = makeEngine();
+    const result = foundNewColony(engine, 1);
+    if (!result) return;
+
+    const state = engine.getPlayerState(1);
+    const newColonyState = state.colonies.find(c => c.systemId === result.targetSysId);
+    assert.ok(newColonyState, 'Serialized state should include new colony');
+    assert.ok(newColonyState.netProduction.minerals > 0,
+      'New colony should show positive net mineral production from bonus district');
   });
 });
