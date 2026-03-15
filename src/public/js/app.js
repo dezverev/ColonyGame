@@ -356,6 +356,12 @@
   const researchTracks = document.getElementById('research-tracks');
   const researchPanelClose = document.getElementById('research-panel-close');
 
+  // ── Edict panel refs ──
+  const edictPanel = document.getElementById('edict-panel');
+  const edictActive = document.getElementById('edict-active');
+  const edictOptions = document.getElementById('edict-options');
+  const edictPanelClose = document.getElementById('edict-panel-close');
+
   // ── Scoreboard refs ──
   const scoreboard = document.getElementById('scoreboard');
   const scoreboardBody = document.getElementById('scoreboard-body');
@@ -1287,6 +1293,67 @@
     return times[type] || 300;
   }
 
+  // ── Edict panel ──
+  const EDICT_UI = {
+    mineralRush: { name: 'Mineral Rush', description: '+50% mining output for 5 months', cost: 50 },
+    populationDrive: { name: 'Population Drive', description: '+100% pop growth for 5 months', cost: 75 },
+    researchGrant: { name: 'Research Grant', description: '+50% research output for 5 months', cost: 50 },
+    emergencyReserves: { name: 'Emergency Reserves', description: '+100 energy, minerals, food (instant)', cost: 25 },
+  };
+
+  function _toggleEdictPanel() {
+    if (!edictPanel) return;
+    if (edictPanel.classList.contains('hidden')) {
+      _renderEdictPanel();
+      edictPanel.classList.remove('hidden');
+    } else {
+      edictPanel.classList.add('hidden');
+    }
+  }
+
+  function _renderEdictPanel() {
+    const player = _getMyPlayer();
+    if (!player) return;
+
+    const influence = Math.floor(player.resources.influence);
+
+    // Active edict display
+    if (player.activeEdict) {
+      const def = EDICT_UI[player.activeEdict.type];
+      edictActive.innerHTML = '<div class="edict-active-label">Active: <strong>' +
+        (def ? def.name : player.activeEdict.type) + '</strong> (' +
+        player.activeEdict.monthsRemaining + ' months left)</div>';
+      edictActive.classList.remove('hidden');
+    } else {
+      edictActive.classList.add('hidden');
+    }
+
+    // Edict options
+    edictOptions.innerHTML = '';
+    for (const [type, def] of Object.entries(EDICT_UI)) {
+      const opt = document.createElement('div');
+      opt.className = 'edict-option';
+      const canAfford = influence >= def.cost;
+      const hasActive = !!player.activeEdict;
+      const disabled = !canAfford || (hasActive && type !== 'emergencyReserves');
+      // Emergency Reserves is instant — blocked only if another edict is active
+      const blocked = hasActive;
+      if (disabled || blocked) opt.classList.add('disabled');
+
+      opt.innerHTML = '<div class="edict-name">' + def.name + '</div>' +
+        '<div class="edict-desc">' + def.description + '</div>' +
+        '<div class="edict-cost">Cost: ' + def.cost + ' influence</div>';
+
+      if (!disabled && !blocked) {
+        opt.addEventListener('click', () => {
+          send({ type: 'activateEdict', edictType: type });
+          edictPanel.classList.add('hidden');
+        });
+      }
+      edictOptions.appendChild(opt);
+    }
+  }
+
   // ── Scoreboard ──
   function _toggleScoreboard() {
     if (!scoreboard) return;
@@ -1418,6 +1485,9 @@
   if (researchPanelClose) researchPanelClose.addEventListener('click', () => {
     researchPanel.classList.add('hidden');
   });
+  if (edictPanelClose) edictPanelClose.addEventListener('click', () => {
+    edictPanel.classList.add('hidden');
+  });
   if (scoreboardClose) scoreboardClose.addEventListener('click', () => {
     scoreboard.classList.add('hidden');
   });
@@ -1437,6 +1507,9 @@
     if (e.key === 'r' || e.key === 'R') {
       _toggleResearchPanel();
     }
+    if (e.key === 'e' || e.key === 'E') {
+      _toggleEdictPanel();
+    }
     if (e.key === 'Tab') {
       e.preventDefault();
       _toggleScoreboard();
@@ -1444,6 +1517,9 @@
     if (e.key === 'Escape') {
       if (researchPanel && !researchPanel.classList.contains('hidden')) {
         researchPanel.classList.add('hidden');
+      }
+      if (edictPanel && !edictPanel.classList.contains('hidden')) {
+        edictPanel.classList.add('hidden');
       }
       if (scoreboard && !scoreboard.classList.contains('hidden')) {
         scoreboard.classList.add('hidden');

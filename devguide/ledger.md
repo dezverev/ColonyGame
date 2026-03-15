@@ -1268,3 +1268,44 @@ Each entry records an iteration of automated development.
 - T3 cost of 1000 requires heavy research investment: with 1 Research district (12/month across 3 tracks = 4 per track), T3 takes ~250 months (~42 min). Players need 2-3 Research districts to complete T3 in a 20-min match
 
 **Next:** Colony planet context rendering (game-designer R33 priority #2) or influence economy/edicts (R33 priority #3)
+
+---
+
+## Entry 37 — 2026-03-14 — Edict System (Influence Spending)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Empire-wide edict system: 4 edicts that spend influence for temporary bonuses
+- Mineral Rush (50 influence, +50% mining output for 5 months)
+- Population Drive (75 influence, +100% pop growth for 5 months)
+- Research Grant (50 influence, +50% research output for 5 months)
+- Emergency Reserves (25 influence, instantly grants +100 energy/minerals/food)
+- Monthly edict processing: duration countdown, expiry with event notification
+- Edict production modifiers integrated into `_calcProduction` (after trait bonuses)
+- Edict growth modifiers integrated into `_processPopGrowth` (after tech modifiers)
+- `activateEdict` command with full validation (influence check, active edict check, type check)
+- Client UI: edict panel (E key toggle), shows active edict status and all available edicts
+- Toast notifications for edict activation and expiry
+- Edict state serialized in per-player gameState
+
+**Files changed:**
+- `server/game-engine.js` — EDICT_DEFS constant, activeEdict in playerState, _processEdicts monthly, activateEdict command, edict modifiers in _calcProduction and _processPopGrowth, activeEdict in getPlayerState, EDICT_DEFS export
+- `server/server.js` — added activateEdict to command routing
+- `src/public/index.html` — edict panel HTML
+- `src/public/js/app.js` — edict panel refs, EDICT_UI definitions, _toggleEdictPanel, _renderEdictPanel, E key shortcut, Escape handling, close button wiring
+- `src/public/js/toast-format.js` — edictActivated and edictExpired toast formatting
+- `src/public/css/style.css` — edict panel and option styling
+- `src/tests/game-engine.test.js` — 13 new edict tests
+- `devguide/design.md` — marked edict system complete
+
+**Tests:** 753 total (all passing). 13 new edict tests covering: activation, influence deduction, rejection (insufficient funds, already active, unknown type, missing params), emergency reserves instant grant, mineral rush production boost, research grant production boost, population drive growth bonus, edict expiry with event, edictActivated event, state serialization, sequential edict activation, EDICT_DEFS export.
+
+**Key decisions:**
+- Instant edicts (Emergency Reserves) don't count as "active" — can activate a duration edict right after
+- Edict production modifiers apply multiplicatively after trait bonuses but before crisis modifiers
+- One active edict at a time (as specified) — creates strategic timing decisions
+- Influence remains a finite resource (starting 100, no income yet) — edict choices are irreversible and meaningful
+
+**Next:** VP formula rebalance with diminishing pop returns (game-designer R34 priority #2), or influence generation from colony traits (R31) to create renewable edict fuel

@@ -19,6 +19,8 @@
     colonyTraitEarned: 'positive',
     crisisStarted: 'crisis',
     crisisResolved: 'warning',
+    edictActivated: 'positive',
+    edictExpired: 'warning',
   };
 
   function formatGameEvent(msg) {
@@ -57,6 +59,10 @@
         return 'CRISIS: ' + (d.crisisLabel || 'Unknown') + ' on ' + (d.colonyName || 'colony') + '!';
       case 'crisisResolved':
         return (d.colonyName || 'Colony') + ': ' + (d.outcome || 'Crisis resolved');
+      case 'edictActivated':
+        return 'Edict activated: ' + (d.edictName || d.edictType) + (d.instant ? ' — resources granted!' : '');
+      case 'edictExpired':
+        return 'Edict expired: ' + (d.edictName || d.edictType);
       default:
         return null;
     }

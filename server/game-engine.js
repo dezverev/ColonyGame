@@ -115,6 +115,38 @@ const CRISIS_TYPES = {
 
 const CRISIS_TYPE_KEYS = Object.keys(CRISIS_TYPES);
 
+// Edict definitions: empire-wide temporary bonuses that spend influence
+const EDICT_DEFS = {
+  mineralRush: {
+    name: 'Mineral Rush',
+    description: '+50% mining output for 5 months',
+    cost: 50,
+    duration: 5, // months
+    effect: { type: 'productionBonus', resource: 'minerals', multiplier: 1.5 },
+  },
+  populationDrive: {
+    name: 'Population Drive',
+    description: '+100% pop growth speed for 5 months',
+    cost: 75,
+    duration: 5,
+    effect: { type: 'growthBonus', multiplier: 0.5 }, // halves growth ticks = double speed
+  },
+  researchGrant: {
+    name: 'Research Grant',
+    description: '+50% research output for 5 months',
+    cost: 50,
+    duration: 5,
+    effect: { type: 'productionBonus', resource: 'research', multiplier: 1.5 },
+  },
+  emergencyReserves: {
+    name: 'Emergency Reserves',
+    description: 'Instantly grants +100 energy, +100 minerals, +100 food',
+    cost: 25,
+    duration: 0, // instant — no ongoing effect
+    effect: { type: 'instant', grants: { energy: 100, minerals: 100, food: 100 } },
+  },
+};
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -302,6 +334,7 @@ class GameEngine {
         currentResearch: { physics: null, society: null, engineering: null },
         researchProgress: {},
         completedTechs: [],
+        activeEdict: null, // { type, monthsRemaining } or null
       });
     }
   }
@@ -583,6 +616,21 @@ class GameEngine {
       }
     }
 
+    // Edict production bonuses (multiplicative, after trait bonuses)
+    const playerEdict = this.playerStates.get(colony.ownerId)?.activeEdict;
+    if (playerEdict) {
+      const edictDef = EDICT_DEFS[playerEdict.type];
+      if (edictDef && edictDef.effect.type === 'productionBonus') {
+        if (edictDef.effect.resource === 'minerals' && production.minerals > 0) {
+          production.minerals = Math.round(production.minerals * edictDef.effect.multiplier * 100) / 100;
+        } else if (edictDef.effect.resource === 'research') {
+          if (production.physics > 0) production.physics = Math.round(production.physics * edictDef.effect.multiplier * 100) / 100;
+          if (production.society > 0) production.society = Math.round(production.society * edictDef.effect.multiplier * 100) / 100;
+          if (production.engineering > 0) production.engineering = Math.round(production.engineering * edictDef.effect.multiplier * 100) / 100;
+        }
+      }
+    }
+
     // Power surge energy boost: +50% energy production during energyBoostTicks
     if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
       production.energy = Math.round(production.energy * 1.5 * 100) / 100;
@@ -630,6 +678,26 @@ class GameEngine {
     }
     this._invalidateStateCache();
     this._vpCacheTick = -1; // resources changed — VP depends on alloys/research
+  }
+
+  // Process edict duration countdown (called monthly)
+  _processEdicts() {
+    for (const [playerId, state] of this.playerStates) {
+      if (!state.activeEdict) continue;
+      state.activeEdict.monthsRemaining--;
+      if (state.activeEdict.monthsRemaining <= 0) {
+        const edictDef = EDICT_DEFS[state.activeEdict.type];
+        this._emitEvent('edictExpired', playerId, {
+          edictType: state.activeEdict.type,
+          edictName: edictDef ? edictDef.name : state.activeEdict.type,
+        });
+        state.activeEdict = null;
+        // Invalidate production caches — edict modifiers changed
+        this._invalidatePlayerProductionCaches(playerId);
+        this._invalidateStateCache();
+      }
+      this._dirtyPlayers.add(playerId);
+    }
   }
 
   // Process construction queues
@@ -762,6 +830,14 @@ class GameEngine {
       const techMods = this._getTechModifiers(playerState);
       if (techMods.growth !== 1) {
         growthTarget = Math.floor(growthTarget * techMods.growth);
+      }
+
+      // Apply edict growth bonus (Population Drive: halves growth ticks)
+      if (playerState.activeEdict) {
+        const edictDef = EDICT_DEFS[playerState.activeEdict.type];
+        if (edictDef && edictDef.effect.type === 'growthBonus') {
+          growthTarget = Math.floor(growthTarget * edictDef.effect.multiplier);
+        }
       }
 
       colony.growthProgress++;
@@ -1971,6 +2047,7 @@ class GameEngine {
       this._processEnergyDeficit();
       this._processResearch();
       this._processPopStarvation();
+      this._processEdicts();
     }
 
     // Flush events — send per-player event messages
@@ -2300,6 +2377,54 @@ class GameEngine {
         return this.resolveCrisis(playerId, colonyId, choiceId);
       }
 
+      case 'activateEdict': {
+        const { edictType } = cmd;
+        if (!edictType || typeof edictType !== 'string') return { error: 'Missing edictType' };
+
+        const edictDef = EDICT_DEFS[edictType];
+        if (!edictDef) return { error: 'Unknown edict type' };
+
+        const state = this.playerStates.get(playerId);
+        if (!state) return { error: 'Player not found' };
+
+        // Only one active edict at a time
+        if (state.activeEdict) return { error: 'An edict is already active' };
+
+        // Check influence cost
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < edictDef.cost) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence
+        state.resources.influence -= edictDef.cost;
+
+        if (edictDef.duration === 0) {
+          // Instant edict (Emergency Reserves) — apply grants immediately
+          for (const [resource, amount] of Object.entries(edictDef.effect.grants)) {
+            state.resources[resource] = (state.resources[resource] || 0) + amount;
+          }
+          this._emitEvent('edictActivated', playerId, {
+            edictType,
+            edictName: edictDef.name,
+            instant: true,
+          });
+        } else {
+          // Duration edict — set active
+          state.activeEdict = { type: edictType, monthsRemaining: edictDef.duration };
+          // Invalidate production caches since edict modifiers affect production
+          this._invalidatePlayerProductionCaches(playerId);
+          this._emitEvent('edictActivated', playerId, {
+            edictType,
+            edictName: edictDef.name,
+            duration: edictDef.duration,
+          });
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -2399,6 +2524,7 @@ class GameEngine {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
+      activeEdict: player.activeEdict,
       vp: this._calcVictoryPoints(playerId),
       ...mySummary,
     };
@@ -2550,4 +2676,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, generateGalaxy, assignStartingSystems };
