@@ -333,6 +333,8 @@ class GameEngine {
     this._summaryCache = new Map(); // playerId -> summary, tick-scoped
     this._summaryCacheTick = -1;
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
+    this._traitBonusesCache = new Map(); // playerId -> bonuses — cleared on colony trait change
+    this._cachedShipData = null; // cached serialized ship arrays (shared across all players)
     this._gameOver = false; // true after game ends
 
     // Game speed & pause
@@ -530,6 +532,7 @@ class GameEngine {
     this._cachedState = null;
     this._cachedStateJSON = null;
     this._cachedPlayerJSON.clear();
+    this._cachedShipData = null;
   }
 
   _invalidateColonyCache(colony) {
@@ -537,6 +540,7 @@ class GameEngine {
     colony._cachedJobs = null;
     colony._cachedProduction = null;
     colony._cachedTrait = undefined; // undefined = not computed, null = no trait
+    this._traitBonusesCache.delete(colony.ownerId); // empire-wide trait bonuses depend on colony traits
     this._dirtyPlayers.add(colony.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1; // VP depends on colonies — invalidate
@@ -546,6 +550,7 @@ class GameEngine {
   // Invalidate production caches for ALL colonies of a player.
   // Needed when trait bonuses change — they're empire-wide and affect all colonies.
   _invalidatePlayerProductionCaches(playerId) {
+    this._traitBonusesCache.delete(playerId);
     const colonyIds = this._playerColonies.get(playerId) || [];
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
@@ -619,7 +624,10 @@ class GameEngine {
 
   // Calculate empire-wide trait bonuses for a player (sum across all colonies)
   // Returns { resource: multiplier } e.g. { alloys: 0.20 } for 2 Forge Worlds
+  // Cached per player — invalidated when any colony's trait changes (_invalidateColonyCache)
   _calcTraitBonuses(playerId) {
+    const cached = this._traitBonusesCache.get(playerId);
+    if (cached) return cached;
     const colonyIds = this._playerColonies.get(playerId) || [];
     const bonuses = {};
     for (const colonyId of colonyIds) {
@@ -631,6 +639,7 @@ class GameEngine {
         bonuses[resource] = (bonuses[resource] || 0) + amount;
       }
     }
+    this._traitBonusesCache.set(playerId, bonuses);
     return bonuses;
   }
 
@@ -3735,6 +3744,40 @@ class GameEngine {
     return this._cachedStateJSON;
   }
 
+  // Cached serialized ship arrays — shared across all players per broadcast cycle.
+  // Client only needs path[0] (next hop) for interpolation, not the full remaining path.
+  _getSerializedShipData() {
+    if (this._cachedShipData) return this._cachedShipData;
+    this._cachedShipData = {
+      colonyShips: this._colonyShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+      })),
+      scienceShips: this._scienceShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+        surveying: s.surveying || false,
+        surveyProgress: s.surveyProgress || 0,
+      })),
+      militaryShips: this._militaryShips.map(s => ({
+        id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+        targetSystemId: s.targetSystemId,
+        path: s.path && s.path.length > 0 ? [s.path[0]] : [],
+        hopProgress: s.hopProgress,
+        hp: s.hp, attack: s.attack,
+      })),
+      raiders: this._raiders.map(r => ({
+        id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
+        hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
+      })),
+    };
+    return this._cachedShipData;
+  }
+
   // Per-player state: only this player's resources and colonies + minimal other-player summary
   getPlayerState(playerId) {
     const player = this.playerStates.get(playerId);
@@ -3784,31 +3827,11 @@ class GameEngine {
 
     const state = { tick: this.tickCount, players: [me, ...others], colonies: coloniesArr };
 
-    // Include colony ships (own + visible others)
-    state.colonyShips = this._colonyShips.map(s => ({
-      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
-      targetSystemId: s.targetSystemId,
-      path: s.path || [],
-      hopProgress: s.hopProgress,
-    }));
-
-    // Include science ships
-    state.scienceShips = this._scienceShips.map(s => ({
-      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
-      targetSystemId: s.targetSystemId,
-      path: s.path || [],
-      hopProgress: s.hopProgress,
-      surveying: s.surveying || false,
-      surveyProgress: s.surveyProgress || 0,
-    }));
-    // Include military ships (corvettes) — all players see all military ships
-    state.militaryShips = this._militaryShips.map(s => ({
-      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
-      targetSystemId: s.targetSystemId,
-      path: s.path || [],
-      hopProgress: s.hopProgress,
-      hp: s.hp, attack: s.attack,
-    }));
+    // Ship data is identical for all players — cache serialized arrays
+    const shipData = this._getSerializedShipData();
+    state.colonyShips = shipData.colonyShips;
+    state.scienceShips = shipData.scienceShips;
+    state.militaryShips = shipData.militaryShips;
     // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
     state.surveyedSystems = {};
     const mySurveyed = this._surveyedSystems.get(playerId);
@@ -3826,11 +3849,7 @@ class GameEngine {
     if (this._activeScarcity) {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
     }
-    // Include raider fleets (all players see all raiders)
-    state.raiders = this._raiders.map(r => ({
-      id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
-      hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
-    }));
+    state.raiders = shipData.raiders;
 
     return state;
   }
