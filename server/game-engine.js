@@ -433,6 +433,9 @@ class GameEngine {
     this._endgameCrisis = null;      // null | { type: 'galacticStorm' | 'precursorAwakening', triggered: true }
     this._endgameCrisisWarned = false;
     this._endgameCrisisTriggered = false;
+    // Pre-compute trigger threshold (constant after construction)
+    this._endgameCrisisTriggerTicks = this._matchTimerEnabled
+      ? Math.floor(this._matchTicksTotal * (1 - ENDGAME_CRISIS_TRIGGER)) : 0;
     this._precursorFleet = null;     // { id, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._precursorDestroyedBy = null; // playerId who destroyed precursor fleet
     this._precursorOccupiedColonies = new Set(); // colony IDs occupied by precursor
@@ -1207,8 +1210,8 @@ class GameEngine {
     // Only activate with match timer enabled
     if (!this._matchTimerEnabled || this._endgameCrisisTriggered) return;
 
-    // Trigger when 75% of match time has elapsed (25% remaining)
-    const triggerAtRemaining = Math.floor(this._matchTicksTotal * (1 - ENDGAME_CRISIS_TRIGGER));
+    // Use pre-computed trigger threshold
+    const triggerAtRemaining = this._endgameCrisisTriggerTicks;
 
     // Warning: 100 ticks before trigger (when remaining drops below threshold + warning ticks)
     if (!this._endgameCrisisWarned && this._matchTicksRemaining <= triggerAtRemaining + ENDGAME_CRISIS_WARNING_TICKS) {
