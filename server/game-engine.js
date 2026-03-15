@@ -159,6 +159,14 @@ const SCARCITY_DURATION = 300;       // 30 seconds at 10Hz
 const SCARCITY_WARNING_TICKS = 100;  // 10 seconds advance warning
 const SCARCITY_MULTIPLIER = 0.70;    // -30% production during scarcity
 
+// Corvette (military ship) constants
+const CORVETTE_COST = { minerals: 100, alloys: 50 };
+const CORVETTE_BUILD_TIME = 400;     // 40 seconds at 10Hz
+const CORVETTE_HOP_TICKS = 40;      // 4 seconds per hyperlane hop
+const CORVETTE_HP = 10;
+const CORVETTE_ATTACK = 3;
+const MAX_CORVETTES = 10;           // max per player
+
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
 const RAIDER_MAX_INTERVAL = 3000;   // maximum ticks between raider spawns (~5 min)
@@ -283,6 +291,7 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
     this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
@@ -1231,6 +1240,27 @@ class GameEngine {
             shipId,
             playerName: ownerName,
           }, true);
+        } else if (item.type === 'corvette') {
+          // Spawn corvette at colony's system
+          const shipId = this._nextId();
+          this._militaryShips.push({
+            id: shipId,
+            ownerId: colony.ownerId,
+            systemId: colony.systemId,
+            targetSystemId: null,
+            path: [],
+            hopProgress: 0,
+            hp: CORVETTE_HP,
+            attack: CORVETTE_ATTACK,
+          });
+          const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+          this._emitEvent('constructionComplete', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+            districtType: 'corvette',
+            shipId,
+            playerName: ownerName,
+          }, true);
         } else {
           const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
@@ -1978,6 +2008,40 @@ class GameEngine {
     if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
+  // Process military ship (corvette) movement each tick
+  _processMilitaryShipMovement() {
+    for (const ship of this._militaryShips) {
+      if (!ship.path || ship.path.length === 0) continue;
+
+      ship.hopProgress++;
+      // Throttle dirty marking to every 5 ticks for ship movement animation
+      if (this.tickCount % 5 === 0) {
+        this._dirtyPlayers.add(ship.ownerId);
+      }
+
+      if (ship.hopProgress >= CORVETTE_HOP_TICKS) {
+        // Arrived at next system in path
+        ship.systemId = ship.path.shift();
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(ship.ownerId);
+
+        if (ship.path.length === 0) {
+          // Arrived at final destination — clear target
+          ship.targetSystemId = null;
+        }
+      }
+    }
+
+    // Ship state was mutated — clear cached JSON for fresh broadcasts
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+  }
+
+  // Remove a military ship by reference (in-place splice, no new array)
+  _removeMilitaryShip(ship) {
+    const idx = this._militaryShips.indexOf(ship);
+    if (idx !== -1) this._militaryShips.splice(idx, 1);
+  }
+
   // Remove a colony ship by reference (in-place splice, no new array)
   _removeColonyShip(ship) {
     const idx = this._colonyShips.indexOf(ship);
@@ -2272,7 +2336,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0 };
       return empty;
     }
 
@@ -2324,7 +2388,11 @@ class GameEngine {
     const raidersDestroyed = this._raidersDestroyed.get(playerId) || 0;
     const raidersVP = raidersDestroyed * RAIDER_DESTROY_VP;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP;
+    // Military VP: +1 per corvette owned
+    const corvettes = this._militaryShips.filter(s => s.ownerId === playerId).length;
+    const militaryVP = corvettes;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -2334,6 +2402,7 @@ class GameEngine {
       traits: traitCount, traitsVP,
       surveyed, surveyedVP,
       raidersDestroyed, raidersVP,
+      corvettes, militaryVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -2535,6 +2604,9 @@ class GameEngine {
     // Process colony ship movement every tick
     this._processColonyShipMovement();
 
+    // Process military ship (corvette) movement every tick
+    this._processMilitaryShipMovement();
+
     // Process science ship movement and surveying every tick
     this._processScienceShipMovement();
 
@@ -2674,7 +2746,7 @@ class GameEngine {
         const qIdx = colony.buildQueue.findIndex(q => q.id === districtId);
         if (qIdx !== -1) {
           const qItem = colony.buildQueue[qIdx];
-          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : qItem.type === 'scienceShip' ? SCIENCE_SHIP_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
+          const costTable = qItem.type === 'colonyShip' ? COLONY_SHIP_COST : qItem.type === 'scienceShip' ? SCIENCE_SHIP_COST : qItem.type === 'corvette' ? CORVETTE_COST : (DISTRICT_DEFS[qItem.type] || {}).cost;
           if (costTable) {
             const player = this.playerStates.get(playerId);
             for (const [resource, amount] of Object.entries(costTable)) {
@@ -2836,6 +2908,84 @@ class GameEngine {
         const surveyed = this._surveyedSystems.get(playerId);
         if (surveyed && surveyed.has(targetSysId)) {
           return { error: 'System already surveyed' };
+        }
+
+        // Find path via BFS
+        const path = this._findPath(ship.systemId, targetSysId);
+        if (!path) return { error: 'No path to target system' };
+
+        ship.targetSystemId = targetSysId;
+        ship.path = path;
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'buildCorvette': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Check corvette cap (owned + building)
+        const ownedCorvettes = this._militaryShips.filter(s => s.ownerId === playerId).length;
+        let buildingCorvettes = 0;
+        for (const [, c] of this.colonies) {
+          if (c.ownerId === playerId) {
+            for (const q of c.buildQueue) {
+              if (q.type === 'corvette') buildingCorvettes++;
+            }
+          }
+        }
+        if (ownedCorvettes + buildingCorvettes >= MAX_CORVETTES) {
+          return { error: `Corvette cap reached (max ${MAX_CORVETTES})` };
+        }
+
+        // Check build queue
+        if (colony.buildQueue.length >= 3) {
+          return { error: 'Build queue full (max 3)' };
+        }
+
+        // Check resources
+        const corvState = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(CORVETTE_COST)) {
+          if (!Number.isFinite(corvState.resources[resource]) || corvState.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(CORVETTE_COST)) {
+          corvState.resources[resource] -= amount;
+        }
+
+        const corvId = this._nextId();
+        colony.buildQueue.push({ id: corvId, type: 'corvette', ticksRemaining: CORVETTE_BUILD_TIME });
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true, id: corvId };
+      }
+
+      case 'sendFleet': {
+        const { shipId, targetSystemId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
+
+        const targetSysId = Number(targetSystemId);
+        const ship = this._militaryShips.find(s => s.id === shipId && s.ownerId === playerId);
+        if (!ship) return { error: 'Corvette not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+
+        // Validate target system exists
+        if (!this.galaxy || !this.galaxy.systems[targetSysId]) {
+          return { error: 'Invalid target system' };
+        }
+
+        // Cannot send to current system
+        if (ship.systemId === targetSysId) {
+          return { error: 'Already at target system' };
         }
 
         // Find path via BFS
@@ -3040,6 +3190,14 @@ class GameEngine {
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
     }));
+    // Include military ships (corvettes)
+    state.militaryShips = this._militaryShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path || [],
+      hopProgress: s.hopProgress,
+      hp: s.hp, attack: s.attack,
+    }));
     // Surveyed systems per player
     state.surveyedSystems = {};
     for (const [pid, sysSet] of this._surveyedSystems) {
@@ -3087,10 +3245,11 @@ class GameEngine {
       vp: this._calcVictoryPoints(playerId),
       techs: (player.completedTechs || []).length,
       raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
+      corvettes: this._militaryShips.filter(s => s.ownerId === playerId).length,
       ...mySummary,
     };
 
-    // Other players: name/color + VP + summary + techs/raiders for scoreboard (no resources)
+    // Other players: name/color + VP + summary + techs/raiders/corvettes for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
@@ -3100,6 +3259,7 @@ class GameEngine {
         vp: this._calcVictoryPoints(p.id),
         techs: (p.completedTechs || []).length,
         raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
+        corvettes: this._militaryShips.filter(s => s.ownerId === p.id).length,
         ...summary,
       });
     }
@@ -3131,6 +3291,14 @@ class GameEngine {
       hopProgress: s.hopProgress,
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
+    }));
+    // Include military ships (corvettes) — all players see all military ships
+    state.militaryShips = this._militaryShips.map(s => ({
+      id: s.id, ownerId: s.ownerId, systemId: s.systemId,
+      targetSystemId: s.targetSystemId,
+      path: s.path || [],
+      hopProgress: s.hopProgress,
+      hp: s.hp, attack: s.attack,
     }));
     // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
     state.surveyedSystems = {};
@@ -3261,4 +3429,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, generateGalaxy, assignStartingSystems };

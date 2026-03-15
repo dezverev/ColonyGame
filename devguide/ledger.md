@@ -1487,3 +1487,41 @@ Each entry records an iteration of automated development.
 - Used `(p.completedTechs || []).length` for null safety since `completedTechs` could theoretically be undefined
 
 **Next:** In-game chat + diplomacy pings (R41-3), colony ship cost reduction (R41-balance), or starting planet variety
+
+---
+
+## Entry 43 — 2026-03-14 — Corvette Ship Class (First Military Unit)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- First military ship type: Corvette — cost 100 minerals + 50 alloys, 400-tick build time (40s), 10 HP, 3 attack
+- `buildCorvette` command: validates colony ownership, resource availability, build queue capacity, and corvette cap (max 10 per player including those building)
+- `sendFleet` command: orders a corvette to move to any target system via BFS-pathed hyperlane navigation at 40 ticks/hop
+- Military ship movement processing in tick loop (`_processMilitaryShipMovement`): hop progress, system transitions, dirty player marking with 5-tick throttle
+- VP integration: +1 VP per corvette owned, tracked as `corvettes` and `militaryVP` in VP breakdown
+- State serialization: `militaryShips` array in both `getState()` and `getPlayerState()`, corvette count in player scoreboard fields
+- Build queue cancellation with 50% resource refund (follows existing pattern)
+- Client: corvette build button in colony build menu (red swatch, shows stats and cost), fleet count indicator in HUD status bar, "Fleet" column in live scoreboard and game-over scoreboard
+- Galaxy map: corvette rendering as cone geometry with player-colored material, smooth hyperlane transit animation at 40 ticks/hop, mesh pooling and recycling
+
+**Files changed:**
+- `server/game-engine.js` — 6 new constants (CORVETTE_*), `_militaryShips` array in constructor, corvette spawn in `_processConstruction`, `buildCorvette` and `sendFleet` command handlers, `_processMilitaryShipMovement` and `_removeMilitaryShip` methods, corvette in build queue refund cost table, `militaryShips` in getState/getPlayerState serialization, `corvettes` field in player state, corvettes/militaryVP in VP breakdown, updated module.exports
+- `src/public/js/galaxy-view.js` — corvette geometry/material cache, corvetteMeshes/corvettePool arrays, `updateCorvettes` function, corvette animation in `_animateShips`, cleanup in `_clearGalaxy`, exported in GalaxyView object
+- `src/public/js/app.js` — corvette build button in build menu, `updateCorvettes` call in galaxy view update, fleet indicator HUD update, "Fleet" column in live scoreboard and game-over scoreboard
+- `src/public/index.html` — fleet-indicator span in status bar
+- `src/tests/corvette.test.js` — **new** 34 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1043 total (34 new: 5 constants, 1 initialization, 7 build command, 2 construction completion, 7 sendFleet command, 3 movement, 3 VP integration, 6 state serialization, 1 build queue cancellation, 2 _removeMilitaryShip, 4 edge cases). All passing (1 pre-existing failure in game-engine.test.js:549 unrelated).
+
+**Key decisions:**
+- Corvette uses the same BFS pathfinding and hop-based movement as colony/science ships — consistent pattern, no new movement system needed
+- Military ships visible to all players (no fog restriction) — seeing enemy fleets is essential for PvP military tension
+- Max 10 corvettes per player — large enough to feel powerful, small enough to keep serialization compact
+- Corvette VP is +1 each (not higher) — military should contribute to VP but not dominate over economic development
+- Cone geometry distinguishes corvettes visually from the octahedron shapes used for colony/science ships and raiders
+
+**Next:** Basic fleet combat (game-designer R34) — auto-resolve when hostile military ships occupy the same system. This completes the "Exterminate" pillar

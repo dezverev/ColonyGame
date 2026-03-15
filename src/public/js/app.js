@@ -182,6 +182,9 @@
             if (window.GalaxyView.updateRaiders) {
               window.GalaxyView.updateRaiders(gameState.raiders);
             }
+            if (window.GalaxyView.updateCorvettes) {
+              window.GalaxyView.updateCorvettes(gameState.militaryShips);
+            }
             // Refresh open system panel so survey results appear
             if (systemPanel && !systemPanel.classList.contains('hidden')) {
               const sel = window.GalaxyView.getSelectedSystem();
@@ -650,6 +653,48 @@
       buildMenuOptions.appendChild(sciBtn);
     }
 
+    // Corvette (military ship) build option
+    {
+      const corvBtn = document.createElement('div');
+      corvBtn.className = 'build-option build-option-ship';
+      const corvCost = { minerals: 100, alloys: 50 };
+      let canAffordCorv = true;
+      const corvCostParts = [];
+      for (const [res, amt] of Object.entries(corvCost)) {
+        corvCostParts.push(`${amt} ${res}`);
+        if (!myPlayer || myPlayer.resources[res] < amt) canAffordCorv = false;
+      }
+      // Check corvette cap (10 max, including building)
+      const myCorvettes = gameState && gameState.militaryShips ? gameState.militaryShips.filter(s => s.ownerId === gameState.yourId) : [];
+      let corvBuildingCount = 0;
+      if (gameState) {
+        const myCols = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        for (const c of myCols) {
+          for (const q of (c.buildQueue || [])) {
+            if (q.type === 'corvette') corvBuildingCount++;
+          }
+        }
+      }
+      const atCorvCap = myCorvettes.length + corvBuildingCount >= 10;
+      if (!canAffordCorv || queueFull || atCorvCap) corvBtn.classList.add('disabled');
+
+      corvBtn.innerHTML =
+        '<div class="build-option-swatch" style="background:#ff4444"></div>' +
+        '<div class="build-option-name">Corvette</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK)</div>' +
+        `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
+
+      corvBtn.addEventListener('click', () => {
+        if (corvBtn.classList.contains('disabled')) return;
+        if (!myColony) return;
+        send({ type: 'buildCorvette', colonyId: myColony.id });
+        _hideAllPanels();
+        if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+      });
+
+      buildMenuOptions.appendChild(corvBtn);
+    }
+
     buildMenu.classList.remove('hidden');
   }
 
@@ -888,6 +933,13 @@
       } else {
         raiderEl.classList.add('hidden');
       }
+    }
+
+    // Fleet indicator
+    const fleetEl = document.getElementById('fleet-indicator');
+    if (fleetEl && gameState.militaryShips) {
+      const myFleet = gameState.militaryShips.filter(s => s.ownerId === gameState.yourId);
+      fleetEl.textContent = myFleet.length > 0 ? ('\u2694 Fleet: ' + myFleet.length) : '';
     }
 
     // Status bar
@@ -1425,7 +1477,7 @@
 
     const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
     let html = `<div class="scoreboard-month">Month ${month}</div>`;
-    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
@@ -1437,6 +1489,7 @@
         `<td>${p.colonyCount || 0}</td>` +
         `<td>${p.totalPops || 0}</td>` +
         `<td>${p.techs || 0}</td>` +
+        `<td>${p.corvettes || 0}</td>` +
         `<td>${p.raidersDestroyed || 0}</td>` +
         `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
         `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
@@ -1460,7 +1513,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Raiders</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1471,6 +1524,7 @@
         `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
         `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
         `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
+        `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
         `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';

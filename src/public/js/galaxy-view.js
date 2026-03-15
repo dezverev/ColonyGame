@@ -25,9 +25,12 @@
   let scienceShipPool = [];    // reusable science ship mesh pool
   let raiderMeshes = [];       // active raider marker meshes
   let raiderPool = [];         // reusable raider mesh pool
+  let corvetteMeshes = [];     // active corvette marker meshes
+  let corvettePool = [];       // reusable corvette mesh pool
   let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
   let _lastScienceShipData = null;
   let _lastRaiderData = null;
+  let _lastCorvetteData = null;
 
   // Must match server/game-engine.js SPEED_INTERVALS exactly
   const SPEED_INTERVALS = { 1: 200, 2: 100, 3: 50, 4: 33, 5: 20 };
@@ -165,6 +168,12 @@
     _matCache.raider = new THREE.MeshBasicMaterial({
       color: 0xff2222, transparent: true, opacity: 0.9,
     });
+
+    // Corvette (military ship): small cone shape, aggressive red-orange
+    _geoCache.corvette = new THREE.ConeGeometry(1.8, 4.0, 4);
+    _matCache.corvette = new THREE.MeshBasicMaterial({
+      color: 0xff4444, transparent: true, opacity: 0.9,
+    });
   }
 
   // ── Build galaxy scene ──
@@ -236,6 +245,10 @@
     raiderMeshes = [];
     for (const mesh of raiderPool) scene.remove(mesh);
     raiderPool = [];
+    for (const mesh of corvetteMeshes) scene.remove(mesh);
+    corvetteMeshes = [];
+    for (const mesh of corvettePool) scene.remove(mesh);
+    corvettePool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -642,6 +655,37 @@
     }
   }
 
+  function updateCorvettes(ships) {
+    if (!scene || !galaxyData) return;
+    _lastCorvetteData = ships;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (ships) for (const s of ships) activeIds.add('m' + s.id);
+    corvetteMeshes = _recycleStaleMeshes(corvetteMeshes, activeIds, corvettePool);
+
+    if (!ships || ships.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of corvetteMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    corvetteMeshes = [];
+
+    for (const ship of ships) {
+      const shipKey = 'm' + ship.id;
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'corvette', _getPlayerColor(ship.ownerId), meshByKey, corvettePool);
+      const sys = galaxyData.systems[ship.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; corvettePool.push(mesh); continue; }
+
+      mesh.userData.shipData = ship;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x - 3, (sys.y || 0) + 3, sys.z + 3);
+      }
+      corvetteMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -862,6 +906,20 @@
       mesh.rotation.y = now * 0.003;
     }
 
+    // Corvettes (military ships)
+    for (const mesh of corvetteMeshes) {
+      const ship = mesh.userData.shipData;
+      if (!ship) continue;
+      const pos = _extrapolateTransitPos(ship, 40, 3, mesh.userData._updateTime || now, now);
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        const sys = galaxyData.systems[ship.systemId];
+        if (sys) mesh.position.set(sys.x - 3, (sys.y || 0) + 3, sys.z + 3);
+      }
+      mesh.rotation.y = now * 0.003;
+    }
+
     // Raiders
     for (const mesh of raiderMeshes) {
       const raider = mesh.userData.shipData;
@@ -922,6 +980,7 @@
     updateColonyShips,
     updateScienceShips,
     updateRaiders,
+    updateCorvettes,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,
