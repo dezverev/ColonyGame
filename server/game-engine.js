@@ -615,7 +615,7 @@ class GameEngine {
     for (let hop = 0; hop < FRIENDLY_HOP_RANGE; hop++) {
       const next = [];
       for (const sysId of frontier) {
-        const neighbors = this._adjacency[sysId];
+        const neighbors = this._adjacency.get(sysId);
         if (!neighbors) continue;
         for (const nId of neighbors) {
           if (visited.has(nId)) continue;
