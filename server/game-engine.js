@@ -296,7 +296,9 @@ class GameEngine {
     this.colonies = new Map(); // colonyId -> colony
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
+    this._colonyShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
     this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._scienceShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
     this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
     this._militaryShipsById = new Map(); // shipId -> ship — O(1) find by ID
@@ -750,8 +752,8 @@ class GameEngine {
 
       // Ship maintenance costs
       const corvetteCount = this._playerCorvetteCount(playerId);
-      const idleColonyShips = this._colonyShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0)).length;
-      const idleScienceShips = this._scienceShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0) && !s.surveying).length;
+      const idleColonyShips = this._countIdleCivilianShips(playerId, 'colony');
+      const idleScienceShips = this._countIdleCivilianShips(playerId, 'science');
       const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
 
       state.resources.energy -= corvetteCount * CORVETTE_MAINTENANCE.energy + civilianMaintenance;
@@ -1245,14 +1247,18 @@ class GameEngine {
         if (item.type === 'colonyShip') {
           // Spawn colony ship at colony's system
           const shipId = this._nextId();
-          this._colonyShips.push({
+          const colonyShip = {
             id: shipId,
             ownerId: colony.ownerId,
             systemId: colony.systemId,
             targetSystemId: null,
             path: [],
             hopProgress: 0,
-          });
+          };
+          this._colonyShips.push(colonyShip);
+          let cArr = this._colonyShipsByPlayer.get(colony.ownerId);
+          if (!cArr) { cArr = []; this._colonyShipsByPlayer.set(colony.ownerId, cArr); }
+          cArr.push(colonyShip);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
@@ -1264,7 +1270,7 @@ class GameEngine {
         } else if (item.type === 'scienceShip') {
           // Spawn science ship at colony's system
           const shipId = this._nextId();
-          this._scienceShips.push({
+          const sciShip = {
             id: shipId,
             ownerId: colony.ownerId,
             systemId: colony.systemId,
@@ -1273,7 +1279,11 @@ class GameEngine {
             hopProgress: 0,
             surveying: false,
             surveyProgress: 0,
-          });
+          };
+          this._scienceShips.push(sciShip);
+          let sArr = this._scienceShipsByPlayer.get(colony.ownerId);
+          if (!sArr) { sArr = []; this._scienceShipsByPlayer.set(colony.ownerId, sArr); }
+          sArr.push(sciShip);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
@@ -2262,10 +2272,27 @@ class GameEngine {
     return arr ? arr.length : 0;
   }
 
+  // Count idle civilian ships for a player using per-player index — O(ships_owned) not O(all_ships)
+  _countIdleCivilianShips(playerId, type) {
+    const ships = type === 'colony'
+      ? this._colonyShipsByPlayer.get(playerId)
+      : this._scienceShipsByPlayer.get(playerId);
+    if (!ships) return 0;
+    let count = 0;
+    for (const s of ships) {
+      if (s.path && s.path.length > 0) continue;
+      if (type === 'science' && s.surveying) continue;
+      count++;
+    }
+    return count;
+  }
+
   // Remove a colony ship by reference (in-place splice, no new array)
   _removeColonyShip(ship) {
     const idx = this._colonyShips.indexOf(ship);
     if (idx !== -1) this._colonyShips.splice(idx, 1);
+    const pArr = this._colonyShipsByPlayer.get(ship.ownerId);
+    if (pArr) { const pi = pArr.indexOf(ship); if (pi !== -1) pArr.splice(pi, 1); }
   }
 
   // Found a new colony when colony ship arrives
@@ -2508,6 +2535,8 @@ class GameEngine {
   _removeScienceShip(ship) {
     const idx = this._scienceShips.indexOf(ship);
     if (idx !== -1) this._scienceShips.splice(idx, 1);
+    const pArr = this._scienceShipsByPlayer.get(ship.ownerId);
+    if (pArr) { const pi = pArr.indexOf(ship); if (pi !== -1) pArr.splice(pi, 1); }
   }
 
   // Get district output multipliers from completed techs (cached per player)
@@ -3017,7 +3046,7 @@ class GameEngine {
 
         // Check colony cap
         const playerColonyCount = (this._playerColonies.get(playerId) || []).length;
-        const inFlightShips = this._colonyShips.filter(s => s.ownerId === playerId).length;
+        const inFlightShips = (this._colonyShipsByPlayer.get(playerId) || []).length;
         if (playerColonyCount + inFlightShips >= MAX_COLONIES) {
           return { error: `Colony cap reached (max ${MAX_COLONIES})` };
         }
@@ -3053,7 +3082,7 @@ class GameEngine {
         if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
 
         const targetSysId = Number(targetSystemId);
-        const ship = this._colonyShips.find(s => s.id === shipId && s.ownerId === playerId);
+        const ship = (this._colonyShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
         if (!ship) return { error: 'Colony ship not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
 
@@ -3071,7 +3100,7 @@ class GameEngine {
 
         // Check colony cap (including in-flight ships)
         const colCount = (this._playerColonies.get(playerId) || []).length;
-        const flyingShips = this._colonyShips.filter(s => s.ownerId === playerId && s.id !== shipId && s.path && s.path.length > 0).length;
+        const flyingShips = (this._colonyShipsByPlayer.get(playerId) || []).filter(s => s.id !== shipId && s.path && s.path.length > 0).length;
         if (colCount + flyingShips + 1 > MAX_COLONIES) {
           return { error: `Colony cap reached (max ${MAX_COLONIES})` };
         }
@@ -3096,7 +3125,7 @@ class GameEngine {
         if (colony.ownerId !== playerId) return { error: 'Not your colony' };
 
         // Check science ship cap
-        const ownedScienceShips = this._scienceShips.filter(s => s.ownerId === playerId).length;
+        const ownedScienceShips = (this._scienceShipsByPlayer.get(playerId) || []).length;
         const buildingShips = [];
         for (const [, c] of this.colonies) {
           if (c.ownerId === playerId) {
@@ -3140,7 +3169,7 @@ class GameEngine {
         if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
 
         const targetSysId = Number(targetSystemId);
-        const ship = this._scienceShips.find(s => s.id === shipId && s.ownerId === playerId);
+        const ship = (this._scienceShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
         if (!ship) return { error: 'Science ship not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
         if (ship.surveying) return { error: 'Ship is currently surveying' };
@@ -3465,8 +3494,8 @@ class GameEngine {
 
     // Subtract ship maintenance from income display
     const corvetteCount = this._playerCorvetteCount(playerId);
-    const idleColonyShips = this._colonyShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0)).length;
-    const idleScienceShips = this._scienceShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0) && !s.surveying).length;
+    const idleColonyShips = this._countIdleCivilianShips(playerId, 'colony');
+    const idleScienceShips = this._countIdleCivilianShips(playerId, 'science');
     const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
     income.energy -= corvetteCount * CORVETTE_MAINTENANCE.energy + civilianMaintenance;
     income.alloys -= corvetteCount * CORVETTE_MAINTENANCE.alloys;

@@ -375,8 +375,7 @@ describe('Ship maintenance — income display', () => {
     const summaryWith = engine._getPlayerSummary('p1');
 
     // Remove science ship and recheck
-    const idx = engine._scienceShips.indexOf(sciShip);
-    engine._scienceShips.splice(idx, 1);
+    engine._removeScienceShip(sciShip);
     engine._summaryCacheTick = -1;
     const summaryWithout = engine._getPlayerSummary('p1');
 
