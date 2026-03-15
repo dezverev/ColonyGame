@@ -1372,6 +1372,12 @@ class GameEngine {
   _processCatalystEvents() {
     if (!this._matchTimerEnabled || this._gameOver) return;
 
+    // Fast exit: all events fired and no active rush/auction/incident in progress
+    if (this._catalystResourceRushFired && this._catalystTechAuctionFired && this._catalystBorderIncidentFired
+        && !this._resourceRushOwner && !this._auctionBids && !this._incidentPlayers) {
+      return;
+    }
+
     const elapsed = this._matchTicksTotal - this._matchTicksRemaining;
     const pct = elapsed / this._matchTicksTotal;
 
@@ -1430,33 +1436,31 @@ class GameEngine {
     for (const [, sysSet] of this._surveyedSystems) {
       for (const sid of sysSet) allSurveyed.add(sid);
     }
-    // Also exclude systems with colonies
+    // Also exclude systems with colonies (collect colonized set in one pass)
+    const colonySystems = new Set();
     for (const [, colony] of this.colonies) {
       allSurveyed.add(colony.systemId);
+      colonySystems.add(colony.systemId);
     }
 
+    let sys;
     const candidates = this.galaxy.systems.filter(s => !allSurveyed.has(s.id));
     if (candidates.length === 0) {
       // All systems surveyed — pick a random unclaimed system instead
-      const colonySystems = new Set();
-      for (const [, colony] of this.colonies) colonySystems.add(colony.systemId);
       const unclaimedSystems = this.galaxy.systems.filter(s => !colonySystems.has(s.id));
       if (unclaimedSystems.length === 0) return; // no valid system
-      const sys = unclaimedSystems[Math.floor(Math.random() * unclaimedSystems.length)];
-      this._resourceRushSystem = sys.id;
+      sys = unclaimedSystems[Math.floor(Math.random() * unclaimedSystems.length)];
     } else {
-      const sys = candidates[Math.floor(Math.random() * candidates.length)];
-      this._resourceRushSystem = sys.id;
+      sys = candidates[Math.floor(Math.random() * candidates.length)];
     }
+    this._resourceRushSystem = sys.id;
 
     const resources = ['energy', 'minerals', 'food', 'alloys'];
     this._resourceRushResource = resources[Math.floor(Math.random() * resources.length)];
     this._resourceRushOwner = null;
     this._resourceRushTicksLeft = 0;
 
-    // Find system name for display
-    const rushSys = this.galaxy.systems.find(s => s.id === this._resourceRushSystem);
-    const sysName = rushSys ? rushSys.name : 'Unknown System';
+    const sysName = sys.name || 'Unknown System';
 
     this._emitEvent('resourceRush', null, {
       systemId: this._resourceRushSystem,
