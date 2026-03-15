@@ -48,27 +48,34 @@ describe('Corvette deep — multi-hop movement', () => {
     const ship = buildAndCompleteCorvette(engine);
     const startSys = ship.systemId;
 
-    // Find a system that is 2+ hops away
+    // Find a system that is 2+ BFS hops away by walking adjacency
     const adj1 = engine._adjacency.get(startSys);
     assert.ok(adj1 && adj1.length > 0, 'need at least one adjacent system');
-    const mid = adj1[0];
-    const adj2 = engine._adjacency.get(mid);
-    const farTarget = adj2.find(s => s !== startSys);
-    if (!farTarget) return; // degenerate galaxy, skip
+    let farTarget = null;
+    for (const mid of adj1) {
+      const adj2 = engine._adjacency.get(mid) || [];
+      const candidate = adj2.find(s => s !== startSys && !adj1.includes(s));
+      if (candidate) { farTarget = candidate; break; }
+    }
+    if (!farTarget) return; // degenerate galaxy — all neighbors share edges
 
     const result = engine.handleCommand('p1', {
       type: 'sendFleet', shipId: ship.id, targetSystemId: farTarget,
     });
     assert.ok(result.ok);
-    assert.ok(ship.path.length >= 2, 'path should span at least 2 hops');
+    assert.ok(ship.path.length >= 2, `path should span at least 2 hops, got ${ship.path.length}`);
 
-    // After 1 hop the ship should be at the intermediate system
-    for (let i = 0; i < CORVETTE_HOP_TICKS; i++) engine.tick();
-    assert.strictEqual(ship.systemId, mid, 'ship should be at intermediate system after first hop');
-    assert.ok(ship.path.length >= 1, 'path should still have remaining hops');
+    // Snapshot the BFS path before movement consumes it
+    const fullPath = [...ship.path];
 
-    // After 2nd hop the ship should be at final destination
+    // After 1 hop the ship should be at the first waypoint
     for (let i = 0; i < CORVETTE_HOP_TICKS; i++) engine.tick();
+    assert.strictEqual(ship.systemId, fullPath[0], 'ship should be at first waypoint after first hop');
+
+    // Tick through all remaining hops
+    for (let hop = 1; hop < fullPath.length; hop++) {
+      for (let i = 0; i < CORVETTE_HOP_TICKS; i++) engine.tick();
+    }
     assert.strictEqual(ship.systemId, farTarget, 'ship should be at final destination');
     assert.strictEqual(ship.path.length, 0);
     assert.strictEqual(ship.targetSystemId, null);
@@ -88,6 +95,9 @@ describe('Corvette deep — multi-hop movement', () => {
       type: 'sendFleet', shipId: ship.id, targetSystemId: farTarget,
     });
 
+    // Snapshot the first waypoint from BFS path (may differ from manual adjacency walk)
+    const firstWaypoint = ship.path[0];
+
     // Tick to just before arrival at intermediate
     for (let i = 0; i < CORVETTE_HOP_TICKS - 1; i++) engine.tick();
     assert.strictEqual(ship.hopProgress, CORVETTE_HOP_TICKS - 1);
@@ -95,7 +105,7 @@ describe('Corvette deep — multi-hop movement', () => {
     // One more tick — arrive and reset
     engine.tick();
     assert.strictEqual(ship.hopProgress, 0, 'hop progress should reset after arriving at intermediate');
-    assert.strictEqual(ship.systemId, mid);
+    assert.strictEqual(ship.systemId, firstWaypoint);
   });
 });
 

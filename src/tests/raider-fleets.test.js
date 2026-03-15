@@ -85,23 +85,21 @@ describe('NPC Raider Fleets — initialization', () => {
 
 describe('NPC Raider Fleets — spawning', () => {
   it('raider spawns after scheduled tick', () => {
-    const engine = createEngine();
-    const events = [];
-    engine.onEvent = (evts) => events.push(...evts);
-
-    // Use _processRaiderSpawning directly to avoid side effects from full tick()
-    engine._nextRaiderTick = 1;
-    engine.tickCount = 1;
-    engine._processRaiderSpawning();
-
-    // Check that a raider spawned (may fail if galaxy topology has no path — retry once)
-    if (engine._raiders.length === 0) {
-      // Topology may have caused no-path; try once more with fresh schedule
+    // Retry with different engines to handle galaxies where edge→colony has no path
+    let spawned = false;
+    for (let attempt = 0; attempt < 5 && !spawned; attempt++) {
+      const engine = createEngine();
+      engine._nextRaiderTick = 1;
+      engine.tickCount = 1;
       engine._processRaiderSpawning();
+
+      if (engine._raiders.length >= 1) {
+        spawned = true;
+        const spawnEvent = engine._pendingEvents.find(e => e.eventType === 'raiderSpawned');
+        assert.ok(spawnEvent, 'raiderSpawned event should have been emitted');
+      }
     }
-    assert.ok(engine._raiders.length >= 1, 'Raider should have spawned');
-    const spawnEvent = engine._pendingEvents.find(e => e.eventType === 'raiderSpawned');
-    assert.ok(spawnEvent, 'raiderSpawned event should have been emitted');
+    assert.ok(spawned, 'Raider should have spawned in at least one of 5 galaxy topologies');
   });
 
   it('raider has correct initial properties', () => {
