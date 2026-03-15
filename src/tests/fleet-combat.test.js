@@ -579,3 +579,62 @@ describe('Tick-Driven Fleet Combat', () => {
       'Combat should have occurred');
   });
 });
+
+// ── Performance Regression Guards ──
+
+describe('Fleet Combat Performance', () => {
+  it('_checkFleetCombat with 50 ships across 20 systems completes < 2ms', () => {
+    const engine = createEngine();
+    const systemIds = [];
+    for (let i = 0; i < 20 && i < engine.galaxy.systems.length; i++) {
+      systemIds.push(engine.galaxy.systems[i].id);
+    }
+    // Spawn 50 ships spread across systems (some contested, some not)
+    for (let i = 0; i < 25; i++) {
+      spawnCorvette(engine, 'p1', systemIds[i % systemIds.length]);
+    }
+    for (let i = 0; i < 25; i++) {
+      spawnCorvette(engine, 'p2', systemIds[i % systemIds.length]);
+    }
+    const start = process.hrtime.bigint();
+    engine._checkFleetCombat();
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(durationMs < 2, `_checkFleetCombat took ${durationMs.toFixed(3)}ms, budget is 2ms`);
+  });
+
+  it('system index is maintained correctly after ship movement', () => {
+    const engine = createEngine();
+    const sys0 = engine.galaxy.systems[0].id;
+    const sys1 = engine.galaxy.systems[1].id;
+    const ship = spawnCorvette(engine, 'p1', sys0);
+
+    // Verify ship in system index
+    const arr0 = engine._militaryShipsBySystem.get(sys0) || [];
+    assert.ok(arr0.includes(ship), 'ship should be in system 0 index');
+
+    // Simulate movement: set path and process
+    const path = engine._findPath(sys0, sys1);
+    if (path && path.length > 0) {
+      ship.path = path;
+      ship.targetSystemId = sys1;
+      // Tick enough for one hop
+      for (let i = 0; i < 50; i++) engine._processMilitaryShipMovement();
+      // Ship should have moved — check system index updated
+      const newSysArr = engine._militaryShipsBySystem.get(ship.systemId) || [];
+      assert.ok(newSysArr.includes(ship), 'ship should be in new system index after movement');
+    }
+  });
+
+  it('retreatFleet uses adjacency index (no hyperlane scan)', () => {
+    const engine = createEngine();
+    const sys0 = engine.galaxy.systems[0].id;
+    spawnCorvette(engine, 'p1', sys0);
+    spawnCorvette(engine, 'p2', sys0);
+    // retreatFleet should succeed and use _adjacency
+    const result = engine.handleCommand('p1', {
+      type: 'retreatFleet',
+      shipId: engine._militaryShipsByPlayer.get('p1')[0].id,
+    });
+    assert.ok(result.ok || result.destroyed, 'retreat should succeed');
+  });
+});

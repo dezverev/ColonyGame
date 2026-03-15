@@ -297,6 +297,7 @@ class GameEngine {
     this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
     this._militaryShipsById = new Map(); // shipId -> ship — O(1) find by ID
+    this._militaryShipsBySystem = new Map(); // systemId -> ship[] — O(1) combat/presence checks
     this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
@@ -2029,9 +2030,19 @@ class GameEngine {
       }
 
       if (ship.hopProgress >= CORVETTE_HOP_TICKS) {
+        // Update system index before changing systemId
+        const oldSysArr = this._militaryShipsBySystem.get(ship.systemId);
+        if (oldSysArr) {
+          const si = oldSysArr.indexOf(ship);
+          if (si !== -1) oldSysArr.splice(si, 1);
+        }
         // Arrived at next system in path
         ship.systemId = ship.path.shift();
         ship.hopProgress = 0;
+        // Add to new system index
+        let newSysArr = this._militaryShipsBySystem.get(ship.systemId);
+        if (!newSysArr) { newSysArr = []; this._militaryShipsBySystem.set(ship.systemId, newSysArr); }
+        newSysArr.push(ship);
         this._dirtyPlayers.add(ship.ownerId);
 
         if (ship.path.length === 0) {
@@ -2047,28 +2058,28 @@ class GameEngine {
 
   // Check all systems for fleet combat after movement processing
   _checkFleetCombat() {
-    // Collect systems with ships from multiple players
-    const systemPlayers = new Map(); // systemId -> Set of ownerIds
-    for (const ship of this._militaryShips) {
-      if (ship.path && ship.path.length > 0) continue; // in transit
-      let owners = systemPlayers.get(ship.systemId);
-      if (!owners) { owners = new Set(); systemPlayers.set(ship.systemId, owners); }
-      owners.add(ship.ownerId);
-    }
-
-    for (const [systemId, owners] of systemPlayers) {
-      if (owners.size >= 2) {
-        this._resolveFleetCombat(systemId);
+    // Use system index — only check systems that have ships
+    for (const [systemId, ships] of this._militaryShipsBySystem) {
+      if (ships.length < 2) continue;
+      // Check if idle ships from multiple owners exist
+      let firstOwner = null;
+      let contested = false;
+      for (const ship of ships) {
+        if (ship.path && ship.path.length > 0) continue; // in transit
+        if (firstOwner === null) { firstOwner = ship.ownerId; }
+        else if (ship.ownerId !== firstOwner) { contested = true; break; }
+      }
+      if (contested) {
+        this._resolveFleetCombat(systemId, ships);
       }
     }
   }
 
   // Resolve combat in a system between all hostile players' ships
-  _resolveFleetCombat(systemId) {
-    // Gather all idle ships at this system, grouped by owner
+  _resolveFleetCombat(systemId, shipsInSystem) {
+    // Gather idle ships at this system, grouped by owner (using pre-filtered list)
     const shipsByOwner = new Map();
-    for (const ship of this._militaryShips) {
-      if (ship.systemId !== systemId) continue;
+    for (const ship of shipsInSystem) {
       if (ship.path && ship.path.length > 0) continue;
       let arr = shipsByOwner.get(ship.ownerId);
       if (!arr) { arr = []; shipsByOwner.set(ship.ownerId, arr); }
@@ -2164,7 +2175,7 @@ class GameEngine {
     // Invalidate VP cache
     this._vpCacheTick = -1;
 
-    // Emit combatResult to all players
+    // Emit combatResult to all players (result is not mutated, no need to spread-copy)
     const result = {
       systemId, systemName, winnerId, losses,
       survivors: {},
@@ -2173,7 +2184,7 @@ class GameEngine {
       result.survivors[ownerId] = (shipsByOwner.get(ownerId) || []).length;
     }
     for (const [pid] of this.playerStates) {
-      this._emitEvent('combatResult', pid, { ...result });
+      this._emitEvent('combatResult', pid, result);
     }
 
     // Mark all combatants dirty
@@ -2190,6 +2201,9 @@ class GameEngine {
     let arr = this._militaryShipsByPlayer.get(ship.ownerId);
     if (!arr) { arr = []; this._militaryShipsByPlayer.set(ship.ownerId, arr); }
     arr.push(ship);
+    let sysArr = this._militaryShipsBySystem.get(ship.systemId);
+    if (!sysArr) { sysArr = []; this._militaryShipsBySystem.set(ship.systemId, sysArr); }
+    sysArr.push(ship);
   }
 
   // Remove a military ship by reference and update indices
@@ -2202,8 +2216,12 @@ class GameEngine {
       const pi = arr.indexOf(ship);
       if (pi !== -1) arr.splice(pi, 1);
     }
+    const sysArr = this._militaryShipsBySystem.get(ship.systemId);
+    if (sysArr) {
+      const si = sysArr.indexOf(ship);
+      if (si !== -1) sysArr.splice(si, 1);
+    }
     this._vpCacheTick = -1; // VP depends on corvette count
-    this._invalidateStateCache();
   }
 
   // Get corvette count for a player — O(1)
@@ -2239,10 +2257,10 @@ class GameEngine {
       return;
     }
 
-    // Check system control — enemy corvettes block colonization
-    const enemyMilitary = this._militaryShips.some(s =>
-      s.systemId === ship.targetSystemId && s.ownerId !== ship.ownerId &&
-      (!s.path || s.path.length === 0)
+    // Check system control — enemy corvettes block colonization (use system index)
+    const sysShips = this._militaryShipsBySystem.get(ship.targetSystemId) || [];
+    const enemyMilitary = sysShips.some(s =>
+      s.ownerId !== ship.ownerId && (!s.path || s.path.length === 0)
     );
     if (enemyMilitary) {
       this._emitEvent('colonyShipFailed', ship.ownerId, {
@@ -3204,37 +3222,29 @@ class GameEngine {
         if (!ship || ship.ownerId !== playerId) return { error: 'Corvette not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
 
-        // Must be in a system with enemy ships
-        const hasEnemies = this._militaryShips.some(s =>
-          s.systemId === ship.systemId && s.ownerId !== playerId &&
-          (!s.path || s.path.length === 0)
-        );
-        if (!hasEnemies) return { error: 'No enemies to retreat from' };
-
-        // Find adjacent system via hyperlanes
-        if (!this.galaxy) return { error: 'No galaxy' };
-        const adjacentSystems = [];
-        for (const hl of this.galaxy.hyperlanes) {
-          if (hl[0] === ship.systemId) adjacentSystems.push(hl[1]);
-          else if (hl[1] === ship.systemId) adjacentSystems.push(hl[0]);
+        // Must be in a system with enemy ships (use system index)
+        const shipsHere = this._militaryShipsBySystem.get(ship.systemId) || [];
+        const enemyShips = [];
+        for (const s of shipsHere) {
+          if (s.ownerId !== playerId && (!s.path || s.path.length === 0)) {
+            enemyShips.push(s);
+          }
         }
+        if (enemyShips.length === 0) return { error: 'No enemies to retreat from' };
+
+        // Find adjacent system via cached adjacency list
+        const adjacentSystems = this._adjacency.get(ship.systemId) || [];
         if (adjacentSystems.length === 0) return { error: 'No adjacent system to retreat to' };
 
         // Pick first adjacent system (prefer one without enemy ships)
         let retreatTarget = adjacentSystems[0];
         for (const sysId of adjacentSystems) {
-          const hasEnemyShips = this._militaryShips.some(s =>
-            s.systemId === sysId && s.ownerId !== playerId &&
-            (!s.path || s.path.length === 0)
+          const sysShips = this._militaryShipsBySystem.get(sysId) || [];
+          const hasEnemyShips = sysShips.some(s =>
+            s.ownerId !== playerId && (!s.path || s.path.length === 0)
           );
           if (!hasEnemyShips) { retreatTarget = sysId; break; }
         }
-
-        // Enemy corvettes get 1 free attack during retreat
-        const enemyShips = this._militaryShips.filter(s =>
-          s.systemId === ship.systemId && s.ownerId !== playerId &&
-          (!s.path || s.path.length === 0)
-        );
         let retreatDamage = 0;
         for (const es of enemyShips) {
           retreatDamage += es.attack;
@@ -3247,6 +3257,7 @@ class GameEngine {
           this._shipsLost.set(playerId, lost);
           this._removeMilitaryShip(ship);
           this._vpCacheTick = -1;
+          this._invalidateStateCache();
           this._emitEvent('combatResult', playerId, {
             systemId: ship.systemId,
             systemName: (this.galaxy.systems[ship.systemId] || {}).name || `System ${ship.systemId}`,

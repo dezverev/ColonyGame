@@ -975,17 +975,28 @@
 
   // ── Combat Flash ──
   const _combatFlashes = []; // { mesh, startTime, duration }
+  const _combatFlashPool = []; // reusable flash meshes
 
   function showCombatFlash(systemId) {
     if (!scene || !galaxyData || !galaxyData.systems[systemId]) return;
     const sys = galaxyData.systems[systemId];
-    const THREE = window.THREE;
-    if (!THREE) return;
-    const geo = new THREE.SphereGeometry(4, 16, 12);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
-    const mesh = new THREE.Mesh(geo, mat);
+    if (typeof THREE === 'undefined') return;
+    // Shared geometry + per-flash material (opacity varies, needs own material)
+    if (!_geoCache.combatFlash) {
+      _geoCache.combatFlash = new THREE.SphereGeometry(4, 16, 12);
+    }
+    let mesh;
+    if (_combatFlashPool.length > 0) {
+      mesh = _combatFlashPool.pop();
+      mesh.material.opacity = 0.8;
+      mesh.scale.setScalar(1);
+      mesh.visible = true;
+    } else {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+      mesh = new THREE.Mesh(_geoCache.combatFlash, mat);
+      scene.add(mesh);
+    }
     mesh.position.set(sys.x, sys.y || 0, sys.z);
-    scene.add(mesh);
     _combatFlashes.push({ mesh, startTime: performance.now(), duration: 1500 });
   }
 
@@ -995,9 +1006,8 @@
       const f = _combatFlashes[i];
       const elapsed = now - f.startTime;
       if (elapsed >= f.duration) {
-        scene.remove(f.mesh);
-        f.mesh.geometry.dispose();
-        f.mesh.material.dispose();
+        f.mesh.visible = false;
+        _combatFlashPool.push(f.mesh);
         _combatFlashes.splice(i, 1);
       } else {
         const t = elapsed / f.duration;
