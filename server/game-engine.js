@@ -3853,7 +3853,8 @@ class GameEngine {
     }
   }
 
-  // Auto-chain: find nearest unsurveyed system within 3 hops and dispatch
+  // Auto-chain: find nearest unsurveyed system within 3 hops and dispatch.
+  // Single BFS with parent tracking — no redundant _findPath call.
   _autoChainSurvey(ship) {
     if (!ship.autoSurvey) return false;
     if (!this.galaxy) return false;
@@ -3862,7 +3863,8 @@ class GameEngine {
     const adj = this._adjacency;
     const maxDepth = 3;
 
-    // BFS from ship's current position, max 3 hops
+    // BFS from ship's current position, max 3 hops, tracking parents for path reconstruction
+    const parent = new Map();
     const visited = new Set([ship.systemId]);
     let frontier = [ship.systemId];
     for (let depth = 1; depth <= maxDepth; depth++) {
@@ -3872,18 +3874,23 @@ class GameEngine {
         for (const neighbor of neighbors) {
           if (visited.has(neighbor)) continue;
           visited.add(neighbor);
+          parent.set(neighbor, sysId);
 
-          // Found an unsurveyed system — dispatch to it
+          // Found an unsurveyed system — reconstruct path and dispatch
           if (!surveyed.has(neighbor)) {
-            const path = this._findPath(ship.systemId, neighbor);
-            if (path && path.length > 0) {
-              ship.targetSystemId = neighbor;
-              ship.path = path;
-              ship.hopProgress = 0;
-              this._dirtyPlayers.add(ship.ownerId);
-              this._invalidateStateCache();
-              return true;
+            const path = [];
+            let node = neighbor;
+            while (node !== ship.systemId) {
+              path.push(node);
+              node = parent.get(node);
             }
+            path.reverse();
+            ship.targetSystemId = neighbor;
+            ship.path = path;
+            ship.hopProgress = 0;
+            this._dirtyPlayers.add(ship.ownerId);
+            this._invalidateStateCache();
+            return true;
           }
           nextFrontier.push(neighbor);
         }
