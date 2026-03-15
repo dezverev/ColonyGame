@@ -1309,3 +1309,38 @@ Each entry records an iteration of automated development.
 - Influence remains a finite resource (starting 100, no income yet) — edict choices are irreversible and meaningful
 
 **Next:** VP formula rebalance with diminishing pop returns (game-designer R34 priority #2), or influence generation from colony traits (R31) to create renewable edict fuel
+
+---
+
+## Entry 38 — 2026-03-14 — Influence Income from Colonies
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- Renewable influence income: each colony generates +2 influence/month base income (capital building)
+- Trait bonus: each colony with an active personality trait generates +1 influence/month bonus
+- Influence cap at 200 to prevent late-game stockpiling
+- `_processInfluenceIncome()` method called monthly after edicts, iterates player colonies and adds base + trait income
+- Influence income included in `_getPlayerSummary` income object for client display
+- Client HUD: influence resource bar now shows net income rate (+N/month) matching other resources
+- Constants: `INFLUENCE_BASE_INCOME` (2), `INFLUENCE_TRAIT_INCOME` (1), `INFLUENCE_CAP` (200) exported
+
+**Files changed:**
+- `server/game-engine.js` — INFLUENCE_BASE_INCOME/INFLUENCE_TRAIT_INCOME/INFLUENCE_CAP constants, `_processInfluenceIncome` method, influence income in `_getPlayerSummary`, wired into monthly tick loop, constants in module.exports
+- `src/public/js/app.js` — `influenceNet` in resBar, influence income display in `_updateHUD` from player summary
+- `src/public/index.html` — added `res-influence-net` span to influence resource bar item
+- `src/tests/influence-income.test.js` — **new** 19 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 772 total (19 new: 3 constants, 3 base income from 1/2/3 colonies, 3 trait bonus income, 3 cap enforcement, 5 edge cases including 0 colonies/monthly tick integration/multiplayer/summary, 1 serialization). All passing.
+
+**Key decisions:**
+- Influence income processed after edicts in the monthly tick — edicts deduct first, then income arrives, preventing exploit where income offsets same-month edict cost
+- Income added to `_getPlayerSummary` so the client can show the rate without separate calculation — consistent with how energy/mineral/food/alloy income already works
+- Cap enforced in `_processInfluenceIncome` after adding income — simple clamp, no pre-check needed
+- Starting influence remains 100 as specified — now a meaningful starting budget rather than the entire lifetime supply
+- Example pacing: 3 colonies with 2 traits = 8 influence/month → 50-cost Mineral Rush edict takes ~6 months (~1 min) to save for
+
+**Next:** VP formula rebalance with diminishing pop returns (game-designer R37 priority #2)

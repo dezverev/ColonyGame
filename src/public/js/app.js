@@ -316,6 +316,7 @@
     research: document.getElementById('res-research'),
     researchNet: document.getElementById('res-research-net'),
     influence: document.getElementById('res-influence'),
+    influenceNet: document.getElementById('res-influence-net'),
   };
   const statusSpeed = document.getElementById('status-speed');
   const pauseOverlay = document.getElementById('pause-overlay');
@@ -816,6 +817,11 @@
       _setNet(resBar.alloysNet, np.alloys);
       const totalResNet = (np.physics || 0) + (np.society || 0) + (np.engineering || 0);
       _setNet(resBar.researchNet, totalResNet);
+    }
+
+    // Influence income (empire-wide, from player summary)
+    if (player && player.income && player.income.influence != null) {
+      _setNet(resBar.influenceNet, player.income.influence);
     }
 
     // Match timer

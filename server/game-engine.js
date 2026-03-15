@@ -147,6 +147,10 @@ const EDICT_DEFS = {
   },
 };
 
+const INFLUENCE_BASE_INCOME = 2;  // +2 influence/colony/month (capital building)
+const INFLUENCE_TRAIT_INCOME = 1; // +1 influence/month per colony with a personality trait
+const INFLUENCE_CAP = 200;        // Max influence stockpile
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -698,6 +702,35 @@ class GameEngine {
       }
       this._dirtyPlayers.add(playerId);
     }
+  }
+
+  // Process influence income from colonies (called monthly)
+  _processInfluenceIncome() {
+    for (const [playerId, state] of this.playerStates) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (!colonyIds || colonyIds.length === 0) continue;
+
+      // Base income: +2 per colony (capital building)
+      let income = colonyIds.length * INFLUENCE_BASE_INCOME;
+
+      // Trait bonus: +1 per colony with an active personality trait
+      for (const colonyId of colonyIds) {
+        const colony = this.colonies.get(colonyId);
+        if (!colony) continue;
+        if (this._calcColonyTrait(colony)) {
+          income += INFLUENCE_TRAIT_INCOME;
+        }
+      }
+
+      state.resources.influence += income;
+      // Cap at INFLUENCE_CAP
+      if (state.resources.influence > INFLUENCE_CAP) {
+        state.resources.influence = INFLUENCE_CAP;
+      }
+
+      this._dirtyPlayers.add(playerId);
+    }
+    this._invalidateStateCache();
   }
 
   // Process construction queues
@@ -2048,6 +2081,7 @@ class GameEngine {
       this._processResearch();
       this._processPopStarvation();
       this._processEdicts();
+      this._processInfluenceIncome();
     }
 
     // Flush events — send per-player event messages
@@ -2443,6 +2477,7 @@ class GameEngine {
     const colonyIds = this._playerColonies.get(playerId) || [];
     let totalPops = 0;
     const income = { energy: 0, minerals: 0, food: 0, alloys: 0 };
+    let traitCount = 0;
     for (const colonyId of colonyIds) {
       const colony = this.colonies.get(colonyId);
       if (!colony) continue;
@@ -2452,7 +2487,9 @@ class GameEngine {
       income.minerals += production.minerals - consumption.minerals;
       income.food += production.food - consumption.food;
       income.alloys += production.alloys - consumption.alloys;
+      if (this._calcColonyTrait(colony)) traitCount++;
     }
+    income.influence = colonyIds.length * INFLUENCE_BASE_INCOME + traitCount * INFLUENCE_TRAIT_INCOME;
     const summary = { colonyCount: colonyIds.length, totalPops, income };
     this._summaryCache.set(playerId, summary);
     return summary;
@@ -2676,4 +2713,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, generateGalaxy, assignStartingSystems };
