@@ -28,6 +28,13 @@ function createEngine3P() {
   return engine;
 }
 
+function setHostile(engine, p1, p2) {
+  const s1 = engine.playerStates.get(p1);
+  const s2 = engine.playerStates.get(p2);
+  if (s1) s1.diplomacy[p2] = { stance: 'hostile', cooldownTick: 0 };
+  if (s2) s2.diplomacy[p1] = { stance: 'hostile', cooldownTick: 0 };
+}
+
 // Helper: directly spawn a corvette at a specific system for a player
 function spawnCorvette(engine, playerId, systemId, overrides = {}) {
   const ship = {
@@ -51,6 +58,7 @@ describe('Fleet Combat — Draw (mutual destruction)', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
   });
 
   it('should award no battlesWon when both sides are destroyed', () => {
@@ -92,6 +100,7 @@ describe('Fleet Combat — Draw (mutual destruction)', () => {
 describe('Fleet Combat — Simultaneous Damage', () => {
   it('ship at 1 HP still deals damage before dying', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     // p1: 1 HP, 3 attack. p2: 10 HP, 3 attack.
     // Simultaneous: p1 hits p2 for 3 before dying. p2 should end at 7 HP.
     spawnCorvette(engine, 'p1', 0, { hp: 1, attack: 3 });
@@ -107,6 +116,7 @@ describe('Fleet Combat — Simultaneous Damage', () => {
 
   it('both ships at low HP should both die simultaneously', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     spawnCorvette(engine, 'p1', 0, { hp: 2, attack: 5 });
     spawnCorvette(engine, 'p2', 0, { hp: 2, attack: 5 });
 
@@ -121,6 +131,7 @@ describe('Fleet Combat — Simultaneous Damage', () => {
 describe('Fleet Combat — Multiple Systems', () => {
   it('resolves combat independently in different systems', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     // Combat in system 0: p1 wins (2v1)
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p1', 0);
@@ -140,6 +151,7 @@ describe('Fleet Combat — Multiple Systems', () => {
 
   it('ships lost accumulate across multiple battles', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     // System 0: p1 2v1 p2 — p2 loses 1
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p1', 0);
@@ -163,6 +175,7 @@ describe('Fleet Combat — Multiple Systems', () => {
 describe('Fleet Combat — Event Broadcast', () => {
   it('non-combatant players receive combatStarted events', () => {
     const engine = createEngine3P();
+    setHostile(engine, 'p1', 'p2');
     const events = [];
     engine.onEvent = (evts) => { events.push(...evts); };
 
@@ -179,6 +192,7 @@ describe('Fleet Combat — Event Broadcast', () => {
 
   it('non-combatant players receive combatResult events', () => {
     const engine = createEngine3P();
+    setHostile(engine, 'p1', 'p2');
     const events = [];
     engine.onEvent = (evts) => { events.push(...evts); };
 
@@ -201,6 +215,7 @@ describe('Fleet Retreat — Input Validation', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
   });
 
   it('should reject retreat with missing shipId', () => {
@@ -262,6 +277,7 @@ describe('Military Ship Index Integrity', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
   });
 
   it('_addMilitaryShip updates all 3 indices', () => {
@@ -409,6 +425,7 @@ describe('System Control — Edge Cases', () => {
 describe('Fleet Combat — VP Cache', () => {
   it('combat invalidates VP cache', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     engine._vpCacheTick = 100; // pretend cached
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p2', 0);
@@ -420,6 +437,7 @@ describe('Fleet Combat — VP Cache', () => {
 
   it('retreat that destroys ship invalidates VP cache', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     engine._vpCacheTick = 100;
     const ship = spawnCorvette(engine, 'p1', 0, { hp: 1 });
     spawnCorvette(engine, 'p2', 0);
@@ -435,6 +453,7 @@ describe('Fleet Combat — VP Cache', () => {
 describe('Fleet Combat — Dirty Player Tracking', () => {
   it('marks all combatants as dirty after combat', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     engine._dirtyPlayers.clear();
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p2', 0);
@@ -451,6 +470,7 @@ describe('Fleet Combat — Dirty Player Tracking', () => {
 describe('Fleet Combat — Large Battles', () => {
   it('3v1 overwhelm — defender destroyed quickly', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p1', 0);
     spawnCorvette(engine, 'p1', 0);
@@ -468,6 +488,7 @@ describe('Fleet Combat — Large Battles', () => {
 
   it('focus fire kills weakest ship first in multi-ship battle', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     // p1: 2 corvettes
     // p2: 1 corvette with 3 HP, 1 corvette with 20 HP
     spawnCorvette(engine, 'p1', 0);

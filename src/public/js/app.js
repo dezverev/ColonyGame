@@ -220,7 +220,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -487,6 +487,12 @@
         const _pn3 = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
         return `<span style="color:#2ecc71">\u2694 ${msg.colonyName || 'Colony'} has been liberated from ${_pn3(msg.liberatedFrom)}!</span>`;
       }
+      case 'warDeclared':
+        return `<span style="color:#e74c3c">\u2694 WAR DECLARED: ${msg.aggressorName || 'Unknown'} declares war on ${msg.targetName || 'Unknown'}!</span>`;
+      case 'allianceFormed':
+        return `<span style="color:#3498db">\u2726 ALLIANCE FORMED: ${msg.player1Name || 'Unknown'} and ${msg.player2Name || 'Unknown'} are now allies!</span>`;
+      case 'friendlyProposed':
+        return `<span style="color:#3498db">\u2726 ${msg.fromName || 'Unknown'} proposes an alliance! <button class="stance-btn stance-friendly" onclick="window._acceptDiplomacy('${msg.fromId}')">Accept</button></span>`;
       default:
         return null;
     }
@@ -1506,14 +1512,42 @@
 
     const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
     let html = `<div class="scoreboard-month">Month ${month}</div>`;
-    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Battles</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>Stance</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Battles</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    const myPlayer = players.find(p => p.id === gameState.yourId);
+    const myDiplomacy = myPlayer && myPlayer.diplomacy ? myPlayer.diplomacy.stances || {} : {};
+    const myPending = myPlayer && myPlayer.diplomacy ? myPlayer.diplomacy.pendingFriendly || [] : [];
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
       const inc = p.income || {};
       const fmtInc = (v) => { const n = v || 0; return n >= 0 ? `+${n}` : `${n}`; };
+      // Stance column: show icon + buttons for non-self players
+      let stanceCell = '';
+      if (isMe) {
+        stanceCell = '-';
+      } else {
+        const myStance = myDiplomacy[p.id] ? myDiplomacy[p.id].stance : 'neutral';
+        const theirStance = p.stanceTowardMe || 'neutral';
+        const icon = myStance === 'hostile' ? '<span style="color:#e74c3c" title="At War">&#x2694;</span>' :
+                     myStance === 'friendly' ? '<span style="color:#3498db" title="Allied">&#x2726;</span>' :
+                     '<span style="color:#888" title="Neutral">&#x25CB;</span>';
+        const theirIcon = theirStance === 'hostile' ? '&#x2694;' : theirStance === 'friendly' ? '&#x2726;' : '';
+        // Check if they have a pending proposal toward us
+        const hasPending = (gameState.players || []).some(pp => pp.id !== gameState.yourId && pp.diplomacy && pp.diplomacy.pendingFriendly && pp.diplomacy.pendingFriendly.includes(gameState.yourId) && pp.id === p.id);
+        // Actually we can't see their pending — check if they sent us a friendlyProposed. Use stanceTowardMe approach
+        // Show accept button if their stance toward me is checked via pending — we track via server events instead
+        // For now show stance icons and action buttons
+        const pendingToThem = myPending.includes(p.id);
+        let btns = '';
+        if (myStance !== 'hostile') btns += `<button class="stance-btn stance-hostile" onclick="window._setDiplomacy('${p.id}','hostile')" title="Declare War">&#x2694;</button>`;
+        if (myStance !== 'friendly' && !pendingToThem) btns += `<button class="stance-btn stance-friendly" onclick="window._setDiplomacy('${p.id}','friendly')" title="Propose Alliance">&#x2726;</button>`;
+        if (pendingToThem) btns += '<span class="stance-pending">pending...</span>';
+        if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
+        stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
+      }
       html += `<tr${cls}><td>${i + 1}</td>` +
         `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td>` +
+        `<td class="stance-cell">${stanceCell}</td>` +
         `<td><strong>${p.vp || 0}</strong></td>` +
         `<td>${p.colonyCount || 0}</td>` +
         `<td>${p.totalPops || 0}</td>` +
@@ -1543,7 +1577,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Raiders</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1557,6 +1591,7 @@
         `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
         `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
         `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
+        `<td>${(s.breakdown.friendlyCount || 0) + (s.breakdown.mutualFriendlyCount || 0)} (${s.breakdown.diplomacyVP || 0})</td>` +
         `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
@@ -1788,6 +1823,16 @@
         }
       }, 300);
     });
+  }
+
+  // Diplomacy command helpers
+  if (typeof window !== 'undefined') {
+    window._setDiplomacy = function(targetPlayerId, stance) {
+      send({ type: 'setDiplomacy', targetPlayerId, stance });
+    };
+    window._acceptDiplomacy = function(targetPlayerId) {
+      send({ type: 'acceptDiplomacy', targetPlayerId });
+    };
   }
 
   // Expose send and gameState for future modules (renderer, UI)

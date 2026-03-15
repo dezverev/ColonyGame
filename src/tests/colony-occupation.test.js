@@ -32,6 +32,14 @@ function giveResources(engine, playerId) {
   state.resources.food = 10000;
 }
 
+// Helper: set two players as hostile (required for occupation)
+function setHostile(engine, p1, p2) {
+  const s1 = engine.playerStates.get(p1);
+  const s2 = engine.playerStates.get(p2);
+  if (s1) s1.diplomacy[p2] = { stance: 'hostile', cooldownTick: 0 };
+  if (s2) s2.diplomacy[p1] = { stance: 'hostile', cooldownTick: 0 };
+}
+
 // Helper: directly spawn a corvette at a specific system for a player
 function spawnCorvette(engine, playerId, systemId, overrides = {}) {
   const ship = {
@@ -81,6 +89,7 @@ describe('Colony Occupation Progress', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p1Colony = getFirstColony(engine, 'p1');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
@@ -174,6 +183,7 @@ describe('Colony Occupation Events', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
     giveResources(engine, 'p2');
@@ -459,6 +469,7 @@ describe('Colony Occupation Tick Integration', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
     giveResources(engine, 'p2');
@@ -502,6 +513,7 @@ describe('Colony Occupation Edge Cases', () => {
 
   it('should handle colony in system with no galaxy data', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     const p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
 
@@ -518,13 +530,15 @@ describe('Colony Occupation Edge Cases', () => {
     assert.strictEqual(p2Colony.occupiedBy, 'p1');
   });
 
-  it('3-player scenario: only first non-owner attacker occupies', () => {
+  it('3-player scenario: only first non-owner hostile attacker occupies', () => {
     const players = new Map();
     players.set('p1', { name: 'Player 1' });
     players.set('p2', { name: 'Player 2' });
     players.set('p3', { name: 'Player 3' });
     const room = { players, galaxySize: 'small', matchTimer: 0 };
     const engine = new GameEngine(room, { tickRate: 10 });
+    setHostile(engine, 'p1', 'p2');
+    setHostile(engine, 'p3', 'p2');
 
     const p2Colony = getFirstColony(engine, 'p2');
 

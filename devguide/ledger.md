@@ -1660,4 +1660,49 @@ Each entry records an iteration of automated development.
 - Fallback format `Colony <type>-N` is intentionally bland — signals to the designer that more names should be added rather than masking the exhaustion
 - No rename command added — the spec mentions it as a future possibility; this iteration focuses on procedural generation only
 
+---
+
+## Entry 48 — 2026-03-15 — Diplomatic Stances
+
+**Phase:** 6 (Diplomacy & Interaction)
+**Status:** Complete
+
+**What was built:**
+- Full diplomatic stance system: Neutral (default), Hostile (enables combat/occupation), Friendly (mutual acceptance required, +10% production bonus, shared vision future-ready).
+- `setDiplomacy` command: costs 25 influence, 600-tick cooldown per target. Declaring Hostile is mutual and auto-sets both sides. Friendly requires proposal + acceptance via `acceptDiplomacy` command. Mutual proposals auto-accept.
+- Combat gating: `_checkFleetCombat` and `_resolveFleetCombat` now only trigger between hostile players. Neutral/friendly ships coexist peacefully in the same system.
+- Occupation gating: `_processOccupation` only progresses for hostile attackers. Neutral/friendly ships do not occupy.
+- Friendly production bonus: colonies within 3 BFS hops of a mutual-friendly player's colony get +10% production on all resources (applied after occupation penalty in `_calcProduction`).
+- Diplomacy VP: +5 VP per one-sided friendly relationship, +10 VP per mutual friendly at game end (in `_calcVPBreakdown`).
+- Events: `warDeclared` (broadcast to all), `friendlyProposed` (to target), `allianceFormed` (broadcast to all).
+- Client: stance column in scoreboard with action buttons (Declare War, Propose Alliance, Set Neutral), stance icons, pending state indicator. Diplomacy column in game-over scoreboard. Ticker and toast formatting for all diplomacy events. Accept button in ticker for incoming proposals.
+- Serialization: `diplomacy` field in player state (stances + pending), `stanceTowardMe` on other players.
+
+**Files changed:**
+- `server/game-engine.js` — 7 new constants, `diplomacy`/`pendingFriendly` in player state, `_getStance`/`_areHostile`/`_areMutuallyFriendly`/`_hasFriendlyColonyNearby`/`_invalidateProductionCaches`/`_serializeDiplomacy` helper methods, combat gating in `_checkFleetCombat`/`_resolveFleetCombat`, occupation gating in `_processOccupation`, friendly bonus in `_calcProduction`, diplomacy VP in `_calcVPBreakdown`, `setDiplomacy`/`acceptDiplomacy` command handlers, diplomacy in state serialization, module.exports
+- `server/server.js` — added `setDiplomacy`/`acceptDiplomacy` to command routing
+- `src/public/js/app.js` — stance column in scoreboard, diplomacy buttons, event ticker formatters, game-over diplomacy VP column, `_setDiplomacy`/`_acceptDiplomacy` window functions
+- `src/public/js/toast-format.js` — toast formatting and type map for `warDeclared`/`allianceFormed`/`friendlyProposed`
+- `src/public/css/style.css` — stance button styles
+- `src/tests/diplomacy-stances.test.js` — **new** 36 tests
+- `src/tests/fleet-combat.test.js` — updated 12 tests (added `setHostile` for combat gating)
+- `src/tests/fleet-combat-deep.test.js` — updated 14 tests (added `setHostile`)
+- `src/tests/colony-occupation.test.js` — updated 12 tests (added `setHostile` for occupation gating)
+- `src/tests/colony-occupation-deep.test.js` — updated 8 tests (added `setHostile`)
+- `src/tests/game-engine.test.js` — updated 2 payload size tests (increased limits for diplomacy data)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1284 total (36 new: 1 constants, 4 initial state, 6 setDiplomacy validation, 3 hostile stance, 2 cooldown, 5 friendly stance, 3 acceptDiplomacy, 4 combat gating, 2 occupation gating, 2 friendly production, 4 diplomacy VP, 5 serialization, 5 edge cases). All passing.
+
+**Key decisions:**
+- Hostile is always mutual — declaring war on someone auto-sets their stance to hostile too. This prevents "ambush" scenarios where one player attacks neutrals.
+- Friendly requires acceptance — prevents forced alliances. Mutual proposals auto-accept for convenience.
+- Combat gating filters at the system level — only hostile pairs participate in `_resolveFleetCombat`. Neutral/friendly ships in the same system are excluded from the combat resolution loop entirely.
+- Friendly production bonus uses BFS with FRIENDLY_HOP_RANGE=3 — creates geographic relevance (allies must be nearby to benefit).
+- VP is asymmetric: one-sided friendly = +5 VP, mutual = +10 VP (replaces, not stacks). Rewards the social game.
+- `pendingFriendly` uses a Set (not serializable by default) — serialized as array in `_serializeDiplomacy` for JSON transport.
+
+**Next:** Doctrine choice at game start (Phase 4, game-designer R47-2) — 3 asymmetric doctrines (Industrialist/Scholar/Expansionist) that break the solved opening build order
+
 **Next:** Diplomatic stances (Phase 6, R46-2) — minimum viable multiplayer social layer with Neutral/Hostile/Friendly stance-based combat gating

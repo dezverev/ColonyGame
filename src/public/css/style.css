@@ -350,6 +350,18 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .inc-pos { color: #2ecc71; }
 .inc-neg { color: #e74c3c; }
 
+/* ── Diplomacy stance buttons ── */
+.stance-cell { white-space: nowrap; }
+.stance-btn { background: none; border: 1px solid #555; border-radius: 3px; cursor: pointer; padding: 1px 4px; margin-left: 2px; font-size: 0.75rem; color: #ccc; }
+.stance-btn:hover { border-color: #aaa; background: rgba(255,255,255,0.1); }
+.stance-btn.stance-hostile { color: #e74c3c; border-color: #e74c3c44; }
+.stance-btn.stance-hostile:hover { background: rgba(231,76,60,0.15); border-color: #e74c3c; }
+.stance-btn.stance-friendly { color: #3498db; border-color: #3498db44; }
+.stance-btn.stance-friendly:hover { background: rgba(52,152,219,0.15); border-color: #3498db; }
+.stance-btn.stance-neutral { color: #888; border-color: #88888844; }
+.stance-btn.stance-neutral:hover { background: rgba(136,136,136,0.15); border-color: #888; }
+.stance-pending { color: #f39c12; font-size: 0.7rem; margin-left: 3px; }
+
 /* ── VP in status bar ── */
 #status-vp { font-family: monospace; color: #f1c40f; font-weight: bold; }
 #status-timer { font-family: monospace; font-weight: bold; }

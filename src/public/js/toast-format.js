@@ -31,6 +31,9 @@
     maintenanceAttrition: 'crisis',
     colonyOccupied: 'crisis',
     colonyLiberated: 'positive',
+    warDeclared: 'crisis',
+    allianceFormed: 'positive',
+    friendlyProposed: 'info',
   };
 
   function formatGameEvent(msg) {
@@ -99,6 +102,12 @@
         return 'OCCUPIED: ' + (d.colonyName || 'Colony') + ' has been occupied by ' + (d.occupantName || 'enemy') + '! -5 VP';
       case 'colonyLiberated':
         return (d.colonyName || 'Colony') + ' has been liberated!';
+      case 'warDeclared':
+        return 'WAR DECLARED: ' + (d.aggressorName || 'Unknown') + ' declares war on ' + (d.targetName || 'Unknown') + '!';
+      case 'allianceFormed':
+        return 'ALLIANCE FORMED: ' + (d.player1Name || 'Unknown') + ' and ' + (d.player2Name || 'Unknown') + ' are now allies!';
+      case 'friendlyProposed':
+        return (d.fromName || 'Unknown') + ' proposes an alliance with you!';
       default:
         return null;
     }

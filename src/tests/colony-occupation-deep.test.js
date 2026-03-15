@@ -39,6 +39,13 @@ function giveResources(engine, playerId) {
   state.resources.food = 10000;
 }
 
+function setHostile(engine, p1, p2) {
+  const s1 = engine.playerStates.get(p1);
+  const s2 = engine.playerStates.get(p2);
+  if (s1) s1.diplomacy[p2] = { stance: 'hostile', cooldownTick: 0 };
+  if (s2) s2.diplomacy[p1] = { stance: 'hostile', cooldownTick: 0 };
+}
+
 function spawnCorvette(engine, playerId, systemId, overrides = {}) {
   const ship = {
     id: 'corvette_' + (engine._idCounter++),
@@ -61,6 +68,7 @@ describe('Occupation Production — All Resources', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p2');
   });
@@ -248,6 +256,7 @@ describe('Occupation — Dirty Player Tracking', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
     giveResources(engine, 'p2');
@@ -286,6 +295,7 @@ describe('Occupation — Cache Invalidation', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
     giveResources(engine, 'p2');
@@ -351,6 +361,7 @@ describe('Occupation — Event Payload Details', () => {
 
   beforeEach(() => {
     engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     p2Colony = getFirstColony(engine, 'p2');
     giveResources(engine, 'p1');
     giveResources(engine, 'p2');
@@ -394,6 +405,7 @@ describe('Occupation — Event Payload Details', () => {
 describe('Occupation — Progress Reset Edge Cases', () => {
   it('should reset progress when only in-transit attacker ships remain', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     const p2Colony = getFirstColony(engine, 'p2');
 
     // Build up some progress with idle ship
@@ -411,6 +423,7 @@ describe('Occupation — Progress Reset Edge Cases', () => {
 
   it('should not allow occupation progress to exceed OCCUPATION_TICKS via continued processing', () => {
     const engine = createEngine();
+    setHostile(engine, 'p1', 'p2');
     const p2Colony = getFirstColony(engine, 'p2');
 
     spawnCorvette(engine, 'p1', p2Colony.systemId);

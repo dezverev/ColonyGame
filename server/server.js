@@ -247,7 +247,9 @@ function startServer(options = {}) {
       case 'buildCorvette':
       case 'sendFleet':
       case 'resolveCrisis':
-      case 'activateEdict': {
+      case 'activateEdict':
+      case 'setDiplomacy':
+      case 'acceptDiplomacy': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);

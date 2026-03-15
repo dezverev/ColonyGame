@@ -187,6 +187,15 @@ const OCCUPATION_PRODUCTION_MULT = 0.5; // occupied colonies produce at 50%
 const OCCUPATION_ATTACKER_VP = 3;   // VP per occupied colony for attacker
 const OCCUPATION_DEFENDER_VP = -5;  // VP penalty per occupied colony for defender
 
+// Diplomatic stance constants
+const DIPLOMACY_STANCES = { NEUTRAL: 'neutral', HOSTILE: 'hostile', FRIENDLY: 'friendly' };
+const DIPLOMACY_INFLUENCE_COST = 25;   // influence cost to change stance
+const DIPLOMACY_COOLDOWN_TICKS = 600;  // 60 seconds cooldown between changes toward same player
+const FRIENDLY_PRODUCTION_BONUS = 0.10; // +10% production on colonies near friendly player
+const FRIENDLY_HOP_RANGE = 3;          // max BFS hops for friendly production bonus
+const FRIENDLY_VP = 5;                 // VP per friendly relationship at game end
+const MUTUAL_FRIENDLY_VP = 10;         // VP if both players are friendly (replaces single)
+
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
 const RAIDER_MAX_INTERVAL = 3000;   // maximum ticks between raider spawns (~5 min)
@@ -434,8 +443,71 @@ class GameEngine {
         researchProgress: {},
         completedTechs: [],
         activeEdict: null, // { type, monthsRemaining } or null
+        diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
+        pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
       });
     }
+  }
+
+  // Get stance of player toward target (defaults to neutral)
+  _getStance(playerId, targetPlayerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state || !state.diplomacy[targetPlayerId]) return DIPLOMACY_STANCES.NEUTRAL;
+    return state.diplomacy[targetPlayerId].stance;
+  }
+
+  // Check if two players are mutually hostile (either side declared hostile makes both hostile)
+  _areHostile(playerA, playerB) {
+    return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.HOSTILE ||
+           this._getStance(playerB, playerA) === DIPLOMACY_STANCES.HOSTILE;
+  }
+
+  // Check if two players are mutually friendly (both sides must be friendly)
+  _areMutuallyFriendly(playerA, playerB) {
+    return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.FRIENDLY &&
+           this._getStance(playerB, playerA) === DIPLOMACY_STANCES.FRIENDLY;
+  }
+
+  // Check if colony has a friendly player's colony within N hops (BFS)
+  _hasFriendlyColonyNearby(colony) {
+    if (!this._adjacency) return false;
+    const ownerId = colony.ownerId;
+    // Find all players friendly with this colony's owner
+    const friendlyPlayerIds = [];
+    for (const [pid] of this.playerStates) {
+      if (pid === ownerId) continue;
+      if (this._areMutuallyFriendly(ownerId, pid)) {
+        friendlyPlayerIds.push(pid);
+      }
+    }
+    if (friendlyPlayerIds.length === 0) return false;
+
+    // BFS from colony's system up to FRIENDLY_HOP_RANGE hops
+    const visited = new Set();
+    let frontier = [colony.systemId];
+    visited.add(colony.systemId);
+    for (let hop = 0; hop < FRIENDLY_HOP_RANGE; hop++) {
+      const next = [];
+      for (const sysId of frontier) {
+        const neighbors = this._adjacency[sysId];
+        if (!neighbors) continue;
+        for (const nId of neighbors) {
+          if (visited.has(nId)) continue;
+          visited.add(nId);
+          next.push(nId);
+          // Check if any friendly player has a colony in this system
+          for (const friendId of friendlyPlayerIds) {
+            const friendColonies = this._playerColonies.get(friendId) || [];
+            for (const cId of friendColonies) {
+              const c = this.colonies.get(cId);
+              if (c && c.systemId === nId) return true;
+            }
+          }
+        }
+      }
+      frontier = next;
+    }
+    return false;
   }
 
   _initStartingColonies() {
@@ -556,6 +628,15 @@ class GameEngine {
       const colony = this.colonies.get(colonyId);
       if (colony) colony._cachedProduction = null;
     }
+  }
+
+  // Invalidate production caches for ALL colonies across ALL players.
+  // Needed when diplomatic stance changes affect production bonuses.
+  _invalidateProductionCaches() {
+    for (const colony of this.colonies.values()) {
+      colony._cachedProduction = null;
+    }
+    this._summaryCacheTick = -1;
   }
 
   // Count total districts (built + in queue)
@@ -759,6 +840,15 @@ class GameEngine {
       for (const resource of Object.keys(production)) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
+        }
+      }
+    }
+
+    // Friendly diplomatic bonus: +10% production if a mutual-friendly player's colony is within 3 hops
+    if (this._hasFriendlyColonyNearby(colony)) {
+      for (const resource of Object.keys(production)) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
         }
       }
     }
@@ -2155,29 +2245,57 @@ class GameEngine {
     // Use system index — only check systems that have ships
     for (const [systemId, ships] of this._militaryShipsBySystem) {
       if (ships.length < 2) continue;
-      // Check if idle ships from multiple owners exist
-      let firstOwner = null;
-      let contested = false;
+      // Check if idle ships from hostile owners exist
+      const ownersSeen = new Set();
+      let hasHostilePair = false;
       for (const ship of ships) {
         if (ship.path && ship.path.length > 0) continue; // in transit
-        if (firstOwner === null) { firstOwner = ship.ownerId; }
-        else if (ship.ownerId !== firstOwner) { contested = true; break; }
+        ownersSeen.add(ship.ownerId);
       }
-      if (contested) {
+      if (ownersSeen.size < 2) continue;
+      // Check if any pair of owners is hostile
+      const ownersArr = [...ownersSeen];
+      for (let i = 0; i < ownersArr.length && !hasHostilePair; i++) {
+        for (let j = i + 1; j < ownersArr.length; j++) {
+          if (this._areHostile(ownersArr[i], ownersArr[j])) {
+            hasHostilePair = true;
+            break;
+          }
+        }
+      }
+      if (hasHostilePair) {
         this._resolveFleetCombat(systemId, ships);
       }
     }
   }
 
-  // Resolve combat in a system between all hostile players' ships
+  // Resolve combat in a system between hostile players' ships
   _resolveFleetCombat(systemId, shipsInSystem) {
-    // Gather idle ships at this system, grouped by owner (using pre-filtered list)
-    const shipsByOwner = new Map();
+    // Gather idle ships at this system, grouped by owner — only include owners in hostile relationships
+    const allByOwner = new Map();
     for (const ship of shipsInSystem) {
       if (ship.path && ship.path.length > 0) continue;
-      let arr = shipsByOwner.get(ship.ownerId);
-      if (!arr) { arr = []; shipsByOwner.set(ship.ownerId, arr); }
+      let arr = allByOwner.get(ship.ownerId);
+      if (!arr) { arr = []; allByOwner.set(ship.ownerId, arr); }
       arr.push(ship);
+    }
+
+    // Filter to only owners involved in at least one hostile relationship with another present owner
+    const allOwners = [...allByOwner.keys()];
+    const hostileOwners = new Set();
+    for (let i = 0; i < allOwners.length; i++) {
+      for (let j = i + 1; j < allOwners.length; j++) {
+        if (this._areHostile(allOwners[i], allOwners[j])) {
+          hostileOwners.add(allOwners[i]);
+          hostileOwners.add(allOwners[j]);
+        }
+      }
+    }
+
+    const shipsByOwner = new Map();
+    for (const ownerId of hostileOwners) {
+      const ships = allByOwner.get(ownerId);
+      if (ships && ships.length > 0) shipsByOwner.set(ownerId, ships);
     }
 
     const ownerIds = [...shipsByOwner.keys()];
@@ -2350,6 +2468,15 @@ class GameEngine {
 
       if (!attackerId) {
         // Only defender's in-transit ships here — reset progress
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Occupation requires hostile stance — neutral/friendly ships don't occupy
+      if (!this._areHostile(attackerId, colony.ownerId)) {
         if (colony.occupationProgress > 0) {
           colony.occupationProgress = 0;
           changed = true;
@@ -2742,7 +2869,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
       return empty;
     }
 
@@ -2825,7 +2952,24 @@ class GameEngine {
     }
     occupiedDefenderVP = coloniesOccupied * OCCUPATION_DEFENDER_VP;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP;
+    // Diplomacy VP: +5 per friendly relationship, +10 if mutual
+    let friendlyCount = 0;
+    let mutualFriendlyCount = 0;
+    let diplomacyVP = 0;
+    for (const [otherId] of this.playerStates) {
+      if (otherId === playerId) continue;
+      const myStance = this._getStance(playerId, otherId);
+      const theirStance = this._getStance(otherId, playerId);
+      if (myStance === DIPLOMACY_STANCES.FRIENDLY && theirStance === DIPLOMACY_STANCES.FRIENDLY) {
+        mutualFriendlyCount++;
+        diplomacyVP += MUTUAL_FRIENDLY_VP;
+      } else if (myStance === DIPLOMACY_STANCES.FRIENDLY) {
+        friendlyCount++;
+        diplomacyVP += FRIENDLY_VP;
+      }
+    }
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -2840,6 +2984,7 @@ class GameEngine {
       shipsLost, shipsLostVP,
       coloniesOccupying, occupiedAttackerVP,
       coloniesOccupied, occupiedDefenderVP,
+      friendlyCount, mutualFriendlyCount, diplomacyVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -3628,6 +3773,146 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'setDiplomacy': {
+        const { targetPlayerId, stance } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (!stance || !Object.values(DIPLOMACY_STANCES).includes(stance)) return { error: 'Invalid stance' };
+        if (targetPlayerId === playerId) return { error: 'Cannot set diplomacy with yourself' };
+
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+        const state = this.playerStates.get(playerId);
+
+        // Check cooldown
+        const existing = state.diplomacy[targetPlayerId];
+        if (existing && existing.cooldownTick > this.tickCount) {
+          return { error: 'Diplomacy on cooldown' };
+        }
+
+        // Check if already at this stance
+        const currentStance = existing ? existing.stance : DIPLOMACY_STANCES.NEUTRAL;
+        if (currentStance === stance) return { error: 'Already at this stance' };
+
+        // Check influence cost
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < DIPLOMACY_INFLUENCE_COST) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence
+        state.resources.influence -= DIPLOMACY_INFLUENCE_COST;
+
+        // Set stance with cooldown
+        state.diplomacy[targetPlayerId] = {
+          stance,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+
+        // Handle stance-specific logic
+        if (stance === DIPLOMACY_STANCES.HOSTILE) {
+          // Hostile is mutual — auto-set target's stance to hostile toward this player
+          targetState.diplomacy[playerId] = {
+            stance: DIPLOMACY_STANCES.HOSTILE,
+            cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+          };
+          // Clear any pending friendly requests
+          state.pendingFriendly.delete(targetPlayerId);
+          targetState.pendingFriendly.delete(playerId);
+          // Broadcast war declared
+          for (const [pid] of this.playerStates) {
+            this._emitEvent('warDeclared', pid, {
+              aggressorId: playerId,
+              aggressorName: state.name,
+              targetId: targetPlayerId,
+              targetName: targetState.name,
+            });
+          }
+        } else if (stance === DIPLOMACY_STANCES.FRIENDLY) {
+          // Friendly requires acceptance — add pending request
+          state.pendingFriendly.add(targetPlayerId);
+          // Notify target player
+          this._emitEvent('friendlyProposed', targetPlayerId, {
+            fromId: playerId,
+            fromName: state.name,
+          });
+          // Don't set to friendly yet — wait for acceptance
+          // Revert to the actual pending state
+          state.diplomacy[targetPlayerId].stance = currentStance === DIPLOMACY_STANCES.HOSTILE ? DIPLOMACY_STANCES.NEUTRAL : currentStance;
+          // If target already has a pending request toward us, auto-accept
+          if (targetState.pendingFriendly.has(playerId)) {
+            state.diplomacy[targetPlayerId].stance = DIPLOMACY_STANCES.FRIENDLY;
+            targetState.diplomacy[playerId] = {
+              stance: DIPLOMACY_STANCES.FRIENDLY,
+              cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+            };
+            state.pendingFriendly.delete(targetPlayerId);
+            targetState.pendingFriendly.delete(playerId);
+            // Broadcast alliance formed
+            for (const [pid] of this.playerStates) {
+              this._emitEvent('allianceFormed', pid, {
+                player1Id: playerId,
+                player1Name: state.name,
+                player2Id: targetPlayerId,
+                player2Name: targetState.name,
+              });
+            }
+            this._invalidateProductionCaches();
+          }
+        } else {
+          // Neutral — clear any pending friendly requests
+          state.pendingFriendly.delete(targetPlayerId);
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._vpCacheTick = -1;
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'acceptDiplomacy': {
+        const { targetPlayerId } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot accept diplomacy with yourself' };
+
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+        const state = this.playerStates.get(playerId);
+
+        // Check if target has a pending friendly request toward us
+        if (!targetState.pendingFriendly.has(playerId)) {
+          return { error: 'No pending friendly proposal' };
+        }
+
+        // Accept — set both sides to friendly
+        state.diplomacy[targetPlayerId] = {
+          stance: DIPLOMACY_STANCES.FRIENDLY,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+        targetState.diplomacy[playerId] = {
+          stance: DIPLOMACY_STANCES.FRIENDLY,
+          cooldownTick: this.tickCount + DIPLOMACY_COOLDOWN_TICKS,
+        };
+        targetState.pendingFriendly.delete(playerId);
+        state.pendingFriendly.delete(targetPlayerId);
+
+        // Broadcast alliance formed
+        for (const [pid] of this.playerStates) {
+          this._emitEvent('allianceFormed', pid, {
+            player1Id: playerId,
+            player1Name: state.name,
+            player2Id: targetPlayerId,
+            player2Name: targetState.name,
+          });
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._vpCacheTick = -1;
+        this._invalidateProductionCaches();
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -3682,6 +3967,7 @@ class GameEngine {
         currentResearch: p.currentResearch, researchProgress: p.researchProgress,
         completedTechs: p.completedTechs,
         vp: this._calcVictoryPoints(p.id),
+        diplomacy: this._serializeDiplomacy(p.id),
       });
     }
     const coloniesArr = [];
@@ -3796,6 +4082,7 @@ class GameEngine {
       corvettes: this._playerCorvetteCount(playerId),
       battlesWon: this._battlesWon.get(playerId) || 0,
       shipsLost: this._shipsLost.get(playerId) || 0,
+      diplomacy: this._serializeDiplomacy(playerId),
       ...mySummary,
     };
 
@@ -3812,6 +4099,7 @@ class GameEngine {
         corvettes: this._playerCorvetteCount(p.id),
         battlesWon: this._battlesWon.get(p.id) || 0,
         shipsLost: this._shipsLost.get(p.id) || 0,
+        stanceTowardMe: this._getStance(p.id, playerId),
         ...summary,
       });
     }
@@ -3941,6 +4229,23 @@ class GameEngine {
     return result;
   }
 
+  // Serialize diplomacy state for a player (stances, pending requests)
+  _serializeDiplomacy(playerId) {
+    const state = this.playerStates.get(playerId);
+    if (!state) return {};
+    const result = {};
+    for (const [targetId, entry] of Object.entries(state.diplomacy)) {
+      result[targetId] = {
+        stance: entry.stance,
+        cooldownTick: entry.cooldownTick,
+      };
+    }
+    return {
+      stances: result,
+      pendingFriendly: [...state.pendingFriendly],
+    };
+  }
+
   getInitState() {
     const state = this.getState();
     // Include full galaxy data on init (systems, hyperlanes) — sent once
@@ -3964,4 +4269,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, generateGalaxy, assignStartingSystems };
