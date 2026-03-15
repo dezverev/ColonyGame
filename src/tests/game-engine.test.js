@@ -2517,6 +2517,7 @@ describe('GameEngine — Match Timer Edge Cases', () => {
       onGameOver: (data) => { gameOverData = data; },
     });
     engine._doctrinePhase = false; // skip doctrine auto-assignment to keep VP equal
+    engine._endgameCrisisTriggered = true; // skip endgame crisis to keep VP equal
     // Equalize resources so VP is the same
     const p1 = engine.playerStates.get(1);
     const p2 = engine.playerStates.get(2);

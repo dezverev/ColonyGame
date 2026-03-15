@@ -36,6 +36,11 @@
     friendlyProposed: 'info',
     doctrineChosen: 'positive',
     doctrineAutoAssigned: 'info',
+    endgameCrisisWarning: 'warning',
+    endgameCrisis: 'crisis',
+    precursorCombat: 'crisis',
+    precursorDestroyed: 'positive',
+    precursorOccupied: 'crisis',
   };
 
   function formatGameEvent(msg) {
@@ -114,6 +119,18 @@
         return (d.playerName || 'A player') + ' chose the ' + (d.name || 'Unknown') + ' doctrine';
       case 'doctrineAutoAssigned':
         return 'Auto-assigned ' + (d.name || 'Unknown') + ' doctrine (selection timer expired)';
+      case 'endgameCrisisWarning':
+        return 'WARNING: Endgame crisis approaching — brace for impact!';
+      case 'endgameCrisis':
+        if (d.crisisType === 'galacticStorm') return 'GALACTIC STORM: All production reduced 25% for the remainder of the match!';
+        if (d.crisisType === 'precursorAwakening') return 'PRECURSOR AWAKENING: An ancient warship has emerged — destroy it for +15 VP!';
+        return 'ENDGAME CRISIS: ' + (d.label || 'Unknown') + ' — ' + (d.description || '');
+      case 'precursorCombat':
+        return 'COMBAT: Precursor fleet engaged at ' + (d.systemName || 'system') + '! ' + (d.playerShips || 0) + ' corvettes fighting...';
+      case 'precursorDestroyed':
+        return 'PRECURSOR DESTROYED: ' + (d.destroyerName || 'Unknown') + ' destroyed the precursor fleet! +' + (d.vpReward || 15) + ' VP';
+      case 'precursorOccupied':
+        return 'PRECURSOR OCCUPATION: ' + (d.colonyName || 'Colony') + ' occupied by precursor fleet! -5 VP for ' + (d.ownerName || 'owner');
       default:
         return null;
     }

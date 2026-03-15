@@ -1752,3 +1752,43 @@ Each entry records an iteration of automated development.
 **Next:** Endgame crisis event (Phase 7, R48-2) — Galactic Storm or Precursor Awakening at 75% match timer. Creates the climax every match needs
 
 **Next:** Diplomatic stances (Phase 6, R46-2) — minimum viable multiplayer social layer with Neutral/Hostile/Friendly stance-based combat gating
+
+---
+
+## Entry 50 — 2026-03-15 — Endgame Crisis Event
+
+**Phase:** 7 (Events, Polish & Win Conditions)
+**Status:** Complete
+
+**What was built:**
+- Endgame crisis system: at 75% match timer elapsed, a galaxy-wide crisis triggers randomly. Two variants provide dramatic late-game climax.
+- **Galactic Storm:** All production reduced by 25% for the remainder of the match. Applied as 0.75 multiplier in `_calcProduction` after scarcity but before occupation. Forces economic adaptation — players who stockpiled thrive, barely-breaking-even players get punished.
+- **Precursor Awakening:** Hostile 60 HP / 15 attack warship spawns at galaxy center (most-connected system), pathfinds toward nearest colony at 3 seconds/hop (faster than raiders). Engages defense platforms and player corvettes. Occupies undefended colonies (50% production penalty). +15 VP for destroying it, -5 VP per colony it occupies.
+- 100-tick (10-second) advance warning broadcast before crisis triggers.
+- Precursor fleet combat: engages idle corvettes at intercepted systems during movement and on arrival. Defense platforms fight first, then military ships. Over 8 combat rounds. Focus-fires weakest target.
+- Precursor retargeting: after occupying a colony, fleet pathfinds to next nearest colony.
+- VP integration: `precursorVP` and `precursorOccupiedCount` fields in `_calcVPBreakdown`. Destroyer gets +15 VP, each occupied colony owner gets -5 VP.
+- Client: dramatic banner alerts for crisis warning/trigger, HUD indicator showing active crisis type (Galactic Storm with red text, Precursor Awakening with HP display), toast formatting for all 5 crisis event types, scoreboard Crisis VP column in game-over screen, ticker integration for all broadcast events.
+- Serialization: `endgameCrisis` and `precursorFleet` in both `getState()` and `getPlayerState()`. Precursor fleet in cached ship data.
+
+**Files changed:**
+- `server/game-engine.js` — 9 new constants, constructor state (6 fields), `_processEndgameCrisis` method, `_spawnPrecursorFleet`, `_processPrecursorMovement`, `_resolvePrecursorCombat`, `_resolvePrecursorArrival` methods, Galactic Storm and precursor occupation multipliers in `_calcProduction`, precursor VP in `_calcVPBreakdown`, crisis state in `getState`/`getPlayerState`/`_getSerializedShipData`, tick loop hooks, module.exports updated
+- `src/public/js/app.js` — endgame crisis event handlers, `_showEndgameCrisisAlert` function, HUD crisis indicator, scoreboard Crisis VP column, ticker broadcast list updated
+- `src/public/js/toast-format.js` — 5 new event types and formatters (endgameCrisisWarning, endgameCrisis, precursorCombat, precursorDestroyed, precursorOccupied)
+- `src/public/index.html` — endgame-crisis-indicator span element
+- `src/tests/endgame-crisis.test.js` — **new** 30 tests
+- `src/tests/game-engine.test.js` — updated 1 test (skip endgame crisis for VP tie test)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1439 total (30 new: 3 constants, 3 initialization, 1 no-timer guard, 2 warning, 2 trigger, 3 Galactic Storm production, 4 Precursor Awakening spawn/movement/serialization, 1 precursor combat with ships, 1 precursor combat with defense platform, 4 VP effects, 1 precursor occupation production, 5 serialization, 5 edge cases). All passing.
+
+**Key decisions:**
+- Precursor spawns at the galaxy's most-connected system (hub/center) rather than a random system — creates natural drama as it advances from the core outward.
+- Precursor is faster than raiders (30 ticks/hop vs 40) and much stronger (60 HP/15 atk vs 30 HP/8 atk) — it's a credible threat that demands military response.
+- Precursor occupation uses the same 0.5 multiplier as player occupation but doesn't require the 300-tick occupation progress mechanic — instant occupation on arrival at undefended colony.
+- Galactic Storm stacks multiplicatively with scarcity seasons — a storm+scarcity combo can reduce production to ~52.5% (0.75 × 0.70), creating genuine economic emergencies.
+- Crisis type is randomly selected (50/50) — prevents metagaming around a known crisis type.
+- After occupying a colony, precursor retargets the next nearest colony — continued threat until destroyed.
+
+**Next:** VP formula rebalance (Phase 1, R49-4) — battle VP 5→3, survey VP surveyed/3, colony-founded VP +5/colony, alloy VP alloys/20

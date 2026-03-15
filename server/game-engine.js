@@ -240,6 +240,17 @@ const RAIDER_DISABLE_TICKS = 300;    // districts disabled for 30 seconds on rai
 const RAIDER_RESOURCE_STOLEN = 50;   // 50 of each resource stolen on raid
 const RAIDER_DESTROY_VP = 5;         // +5 VP per raider destroyed
 
+// Endgame crisis constants
+const ENDGAME_CRISIS_TRIGGER = 0.75;     // triggers at 75% of match timer elapsed
+const ENDGAME_CRISIS_WARNING_TICKS = 100; // 10-second advance warning
+const GALACTIC_STORM_MULTIPLIER = 0.75;  // -25% all production
+const PRECURSOR_HP = 60;
+const PRECURSOR_ATTACK = 15;
+const PRECURSOR_HOP_TICKS = 30;          // 3 seconds per hop (faster than raiders)
+const PRECURSOR_COMBAT_TICKS = 8;        // more combat rounds than raiders
+const PRECURSOR_DESTROY_VP = 15;         // +15 VP for destroying precursor fleet
+const PRECURSOR_OCCUPY_VP = -5;          // -5 VP if precursor occupies your colony
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -382,6 +393,7 @@ class GameEngine {
     // Match timer: minutes from room settings, 0 = unlimited
     const matchMinutes = Number(room.matchTimer) || 0;
     this._matchTicksRemaining = matchMinutes > 0 ? matchMinutes * 60 * (options.tickRate || 10) : 0;
+    this._matchTicksTotal = this._matchTicksRemaining; // initial total for endgame crisis timing
     this._matchTimerEnabled = matchMinutes > 0;
     this._warned2min = false;
     this._warned30sec = false;
@@ -416,6 +428,14 @@ class GameEngine {
     // Fleet combat tracking
     this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
     this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
+
+    // Endgame crisis tracking
+    this._endgameCrisis = null;      // null | { type: 'galacticStorm' | 'precursorAwakening', triggered: true }
+    this._endgameCrisisWarned = false;
+    this._endgameCrisisTriggered = false;
+    this._precursorFleet = null;     // { id, systemId, targetSystemId, path, hopProgress, hp, attack }
+    this._precursorDestroyedBy = null; // playerId who destroyed precursor fleet
+    this._precursorOccupiedColonies = new Set(); // colony IDs occupied by precursor
 
     this._initPlayerStates();
 
@@ -955,6 +975,24 @@ class GameEngine {
       }
     }
 
+    // Galactic Storm: -25% all production for remainder of match
+    if (this._endgameCrisis && this._endgameCrisis.type === 'galacticStorm') {
+      for (const resource of Object.keys(production)) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * GALACTIC_STORM_MULTIPLIER * 100) / 100;
+        }
+      }
+    }
+
+    // Precursor occupation: production halved (same as player occupation)
+    if (this._precursorOccupiedColonies.has(colony.id)) {
+      for (const resource of Object.keys(production)) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
+        }
+      }
+    }
+
     // Power surge energy boost: +50% energy production during energyBoostTicks
     if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
       production.energy = Math.round(production.energy * 1.5 * 100) / 100;
@@ -1161,6 +1199,329 @@ class GameEngine {
       this._dirtyPlayers.add(colony.ownerId);
     }
     this._summaryCacheTick = -1;
+  }
+
+  // ── Endgame Crisis System ──
+
+  _processEndgameCrisis() {
+    // Only activate with match timer enabled
+    if (!this._matchTimerEnabled || this._endgameCrisisTriggered) return;
+
+    // Trigger when 75% of match time has elapsed (25% remaining)
+    const triggerAtRemaining = Math.floor(this._matchTicksTotal * (1 - ENDGAME_CRISIS_TRIGGER));
+
+    // Warning: 100 ticks before trigger (when remaining drops below threshold + warning ticks)
+    if (!this._endgameCrisisWarned && this._matchTicksRemaining <= triggerAtRemaining + ENDGAME_CRISIS_WARNING_TICKS) {
+      this._endgameCrisisWarned = true;
+      this._emitEvent('endgameCrisisWarning', null, {
+        ticksUntilCrisis: this._matchTicksRemaining - triggerAtRemaining,
+      }, true);
+    }
+
+    // Trigger crisis when 75% of match time has elapsed
+    if (this._matchTicksRemaining <= triggerAtRemaining) {
+      this._endgameCrisisTriggered = true;
+
+      // Randomly select crisis type
+      const crisisType = Math.random() < 0.5 ? 'galacticStorm' : 'precursorAwakening';
+      this._endgameCrisis = { type: crisisType };
+
+      if (crisisType === 'galacticStorm') {
+        // Galactic Storm: -25% all production for remainder of match
+        this._invalidateAllProductionCaches();
+        this._invalidateStateCache();
+        this._emitEvent('endgameCrisis', null, {
+          crisisType: 'galacticStorm',
+          label: 'Galactic Storm',
+          description: 'A devastating galactic storm reduces all production by 25% for the remainder of the match!',
+        }, true);
+      } else {
+        // Precursor Awakening: spawn hostile fleet
+        this._spawnPrecursorFleet();
+        this._emitEvent('endgameCrisis', null, {
+          crisisType: 'precursorAwakening',
+          label: 'Precursor Awakening',
+          description: 'An ancient precursor fleet has awakened! A powerful warship approaches the nearest colony!',
+          precursorHp: PRECURSOR_HP,
+          precursorAttack: PRECURSOR_ATTACK,
+        }, true);
+      }
+    }
+  }
+
+  _spawnPrecursorFleet() {
+    // Spawn at galaxy center-ish system (system with most connections) or random far system
+    let spawnSystemId = null;
+    if (this.galaxy && this.galaxy.systems.length > 0) {
+      // Pick the system with the most hyperlane connections (center of galaxy)
+      let maxConnections = 0;
+      for (const sys of this.galaxy.systems) {
+        const connections = (this._adjacency.get(sys.id) || []).length;
+        if (connections > maxConnections) {
+          maxConnections = connections;
+          spawnSystemId = sys.id;
+        }
+      }
+    }
+
+    if (spawnSystemId === null) return;
+
+    // Find nearest colony to target
+    const targetSystemId = this._findNearestColonySystem(spawnSystemId);
+    if (!targetSystemId) return;
+
+    const path = this._findPath(spawnSystemId, targetSystemId);
+    if (!path || path.length === 0) return;
+
+    // Find which colony is at the target system
+    let targetColonyId = null;
+    for (const [, colony] of this.colonies) {
+      if (colony.systemId === targetSystemId) {
+        targetColonyId = colony.id;
+        break;
+      }
+    }
+
+    this._precursorFleet = {
+      id: this._nextId(),
+      systemId: spawnSystemId,
+      targetSystemId,
+      targetColonyId,
+      path,
+      hopProgress: 0,
+      hp: PRECURSOR_HP,
+      attack: PRECURSOR_ATTACK,
+    };
+
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+    this._invalidateStateCache();
+  }
+
+  _processPrecursorMovement() {
+    if (!this._precursorFleet) return;
+    const fleet = this._precursorFleet;
+
+    if (!fleet.path || fleet.path.length === 0) return;
+
+    fleet.hopProgress++;
+
+    if (fleet.hopProgress >= PRECURSOR_HOP_TICKS) {
+      fleet.systemId = fleet.path.shift();
+      fleet.hopProgress = 0;
+
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+
+      // Check if player military ships are at this system — they can intercept
+      const shipsHere = this._militaryShipsBySystem.get(fleet.systemId);
+      if (shipsHere && shipsHere.length > 0) {
+        this._resolvePrecursorCombat(fleet, shipsHere);
+        if (!this._precursorFleet) return; // fleet destroyed
+      }
+
+      // Arrived at target
+      if (fleet.path.length === 0) {
+        this._resolvePrecursorArrival(fleet);
+      }
+    }
+  }
+
+  _resolvePrecursorCombat(fleet, playerShips) {
+    // Filter to idle ships only
+    const idleShips = playerShips.filter(s => !s.path || s.path.length === 0);
+    if (idleShips.length === 0) return;
+
+    const systemName = (this.galaxy && this.galaxy.systems[fleet.systemId])
+      ? this.galaxy.systems[fleet.systemId].name : `System ${fleet.systemId}`;
+
+    // Track owners involved for VP/events
+    const ownerShips = new Map();
+    for (const ship of idleShips) {
+      let arr = ownerShips.get(ship.ownerId);
+      if (!arr) { arr = []; ownerShips.set(ship.ownerId, arr); }
+      arr.push(ship);
+    }
+
+    // Broadcast combat started
+    for (const [playerId] of this.playerStates) {
+      this._emitEvent('precursorCombat', playerId, {
+        systemId: fleet.systemId,
+        systemName,
+        precursorHp: fleet.hp,
+        playerShips: idleShips.length,
+      });
+    }
+
+    // Combat rounds
+    for (let round = 0; round < PRECURSOR_COMBAT_TICKS; round++) {
+      // Precursor attacks: target weakest player ship
+      if (fleet.hp > 0) {
+        let target = null;
+        for (const ship of idleShips) {
+          if (ship.hp <= 0) continue;
+          if (!target || ship.hp < target.hp) target = ship;
+        }
+        if (target) {
+          target.hp -= fleet.attack;
+        }
+      }
+
+      // Player ships attack precursor
+      for (const ship of idleShips) {
+        if (ship.hp <= 0) continue;
+        fleet.hp -= ship.attack;
+        if (fleet.hp <= 0) break;
+      }
+
+      if (fleet.hp <= 0) break;
+    }
+
+    // Process ship losses
+    const destroyed = [];
+    for (const ship of idleShips) {
+      if (ship.hp <= 0) {
+        destroyed.push(ship);
+        const lossCount = (this._shipsLost.get(ship.ownerId) || 0) + 1;
+        this._shipsLost.set(ship.ownerId, lossCount);
+      }
+    }
+    for (const ship of destroyed) {
+      this._removeMilitaryShip(ship);
+    }
+
+    // Check if precursor destroyed
+    if (fleet.hp <= 0) {
+      // Find the owner with the most ships involved — they get the VP
+      let bestOwner = null;
+      let bestCount = 0;
+      for (const [ownerId, ships] of ownerShips) {
+        if (ships.length > bestCount) {
+          bestCount = ships.length;
+          bestOwner = ownerId;
+        }
+      }
+      this._precursorDestroyedBy = bestOwner;
+      this._precursorFleet = null;
+      this._vpCacheTick = -1;
+
+      this._emitEvent('precursorDestroyed', null, {
+        systemId: fleet.systemId,
+        systemName,
+        destroyedBy: bestOwner,
+        destroyerName: bestOwner ? (this.playerStates.get(bestOwner) || {}).name : 'Unknown',
+        vpReward: PRECURSOR_DESTROY_VP,
+      }, true);
+
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+  }
+
+  _resolvePrecursorArrival(fleet) {
+    // Find colony at target system
+    let targetColony = null;
+    if (fleet.targetColonyId) {
+      targetColony = this.colonies.get(fleet.targetColonyId);
+    }
+    if (!targetColony) {
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === fleet.systemId) {
+          targetColony = colony;
+          break;
+        }
+      }
+    }
+
+    if (!targetColony) {
+      // No colony here — precursor dissipates
+      this._precursorFleet = null;
+      this._invalidateStateCache();
+      return;
+    }
+
+    const ownerId = targetColony.ownerId;
+
+    // Check for defense platform
+    if (targetColony.defensePlatform && !targetColony.defensePlatform.building && targetColony.defensePlatform.hp > 0) {
+      const platform = targetColony.defensePlatform;
+      let precursorHp = fleet.hp;
+      let platformHp = platform.hp;
+
+      for (let t = 0; t < PRECURSOR_COMBAT_TICKS; t++) {
+        platformHp -= fleet.attack;
+        if (platformHp <= 0) break;
+        precursorHp -= DEFENSE_PLATFORM_ATTACK;
+        if (precursorHp <= 0) break;
+      }
+
+      platform.hp = Math.max(0, platformHp);
+
+      if (precursorHp <= 0) {
+        // Defense platform destroyed the precursor
+        this._precursorDestroyedBy = ownerId;
+        this._precursorFleet = null;
+        this._vpCacheTick = -1;
+
+        this._emitEvent('precursorDestroyed', null, {
+          systemId: fleet.systemId,
+          systemName: targetColony.name,
+          destroyedBy: ownerId,
+          destroyerName: (this.playerStates.get(ownerId) || {}).name || 'Unknown',
+          vpReward: PRECURSOR_DESTROY_VP,
+          byPlatform: true,
+        }, true);
+
+        for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+        this._invalidateColonyCache(targetColony);
+        this._invalidateStateCache();
+        return;
+      }
+
+      fleet.hp = precursorHp;
+    }
+
+    // Check for military ships in system
+    const shipsHere = this._militaryShipsBySystem.get(fleet.systemId);
+    if (shipsHere && shipsHere.length > 0) {
+      this._resolvePrecursorCombat(fleet, shipsHere);
+      if (!this._precursorFleet) return; // destroyed by ships
+    }
+
+    // Precursor occupies the colony — production halved, VP penalty
+    this._precursorOccupiedColonies.add(targetColony.id);
+    this._vpCacheTick = -1;
+
+    this._emitEvent('precursorOccupied', null, {
+      colonyId: targetColony.id,
+      colonyName: targetColony.name,
+      systemId: fleet.systemId,
+      ownerId,
+      ownerName: (this.playerStates.get(ownerId) || {}).name || 'Unknown',
+    }, true);
+
+    // Precursor stays at colony — it's done moving
+    this._invalidateColonyCache(targetColony);
+    this._invalidateAllProductionCaches();
+    this._invalidateStateCache();
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+
+    // After occupying, retarget next nearest colony
+    const nextTarget = this._findNearestColonySystem(fleet.systemId);
+    if (nextTarget && nextTarget !== fleet.systemId) {
+      const path = this._findPath(fleet.systemId, nextTarget);
+      if (path && path.length > 0) {
+        fleet.targetSystemId = nextTarget;
+        fleet.path = path;
+        fleet.hopProgress = 0;
+        // Find colony at next target
+        for (const [, colony] of this.colonies) {
+          if (colony.systemId === nextTarget) {
+            fleet.targetColonyId = colony.id;
+            break;
+          }
+        }
+      }
+    }
   }
 
   // ── NPC Raider Fleet System ──
@@ -3101,7 +3462,21 @@ class GameEngine {
       }
     }
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP;
+    // Endgame crisis VP: +15 for destroying precursor, -5 per colony occupied by precursor
+    let precursorVP = 0;
+    if (this._precursorDestroyedBy === playerId) {
+      precursorVP += PRECURSOR_DESTROY_VP;
+    }
+    let precursorOccupiedCount = 0;
+    for (const colonyId of this._precursorOccupiedColonies) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && colony.ownerId === playerId) {
+        precursorOccupiedCount++;
+      }
+    }
+    precursorVP += precursorOccupiedCount * PRECURSOR_OCCUPY_VP;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -3117,6 +3492,7 @@ class GameEngine {
       coloniesOccupying, occupiedAttackerVP,
       coloniesOccupied, occupiedDefenderVP,
       friendlyCount, mutualFriendlyCount, diplomacyVP,
+      precursorVP, precursorOccupiedCount,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -3341,6 +3717,10 @@ class GameEngine {
 
     // Scarcity season processing every tick
     this._processScarcitySeason();
+
+    // Endgame crisis processing
+    this._processEndgameCrisis();
+    this._processPrecursorMovement();
 
     // NPC raider fleet processing every tick
     this._processRaiderSpawning();
@@ -4189,6 +4569,20 @@ class GameEngine {
       id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
       hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
     }));
+    // Endgame crisis state
+    if (this._endgameCrisis) {
+      state.endgameCrisis = { type: this._endgameCrisis.type };
+      if (this._precursorFleet) {
+        state.precursorFleet = {
+          id: this._precursorFleet.id,
+          systemId: this._precursorFleet.systemId,
+          targetSystemId: this._precursorFleet.targetSystemId,
+          hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+          hopProgress: this._precursorFleet.hopProgress,
+          hp: this._precursorFleet.hp,
+        };
+      }
+    }
     this._cachedState = state;
     return state;
   }
@@ -4232,6 +4626,14 @@ class GameEngine {
         id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
         hopsRemaining: (r.path ? r.path.length : 0), hopProgress: r.hopProgress, hp: r.hp,
       })),
+      precursorFleet: this._precursorFleet ? {
+        id: this._precursorFleet.id,
+        systemId: this._precursorFleet.systemId,
+        targetSystemId: this._precursorFleet.targetSystemId,
+        hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+        hopProgress: this._precursorFleet.hopProgress,
+        hp: this._precursorFleet.hp,
+      } : null,
     };
     return this._cachedShipData;
   }
@@ -4312,6 +4714,21 @@ class GameEngine {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
     }
     state.raiders = shipData.raiders;
+
+    // Endgame crisis state
+    if (this._endgameCrisis) {
+      state.endgameCrisis = { type: this._endgameCrisis.type };
+      if (this._precursorFleet) {
+        state.precursorFleet = {
+          id: this._precursorFleet.id,
+          systemId: this._precursorFleet.systemId,
+          targetSystemId: this._precursorFleet.targetSystemId,
+          hopsRemaining: this._precursorFleet.path ? this._precursorFleet.path.length : 0,
+          hopProgress: this._precursorFleet.hopProgress,
+          hp: this._precursorFleet.hp,
+        };
+      }
+    }
 
     // Doctrine selection phase info
     if (this._doctrinePhase) {
@@ -4449,4 +4866,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, generateGalaxy, assignStartingSystems };

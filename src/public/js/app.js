@@ -218,6 +218,14 @@
           _showMatchWarning('2 minutes remaining!');
         } else if (msg.eventType === 'finalCountdown') {
           _showMatchWarning('30 seconds — FINAL COUNTDOWN!');
+        } else if (msg.eventType === 'endgameCrisisWarning') {
+          _showMatchWarning('ENDGAME CRISIS APPROACHING...');
+        } else if (msg.eventType === 'endgameCrisis') {
+          _showEndgameCrisisAlert(msg);
+        } else if (msg.eventType === 'precursorDestroyed') {
+          _showMatchWarning('PRECURSOR FLEET DESTROYED by ' + (msg.destroyerName || 'Unknown') + '!');
+        } else if (msg.eventType === 'precursorOccupied') {
+          _showMatchWarning('PRECURSOR occupies ' + (msg.colonyName || 'colony') + '!');
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -227,7 +235,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -981,6 +989,25 @@
       }
     }
 
+    // Endgame crisis indicator
+    const crisisIndicator = document.getElementById('endgame-crisis-indicator');
+    if (crisisIndicator) {
+      if (gameState.endgameCrisis) {
+        if (gameState.endgameCrisis.type === 'galacticStorm') {
+          crisisIndicator.textContent = '\u26A1 Galactic Storm — All production -25%';
+          crisisIndicator.style.color = '#e74c3c';
+        } else if (gameState.endgameCrisis.type === 'precursorAwakening') {
+          const pf = gameState.precursorFleet;
+          const hpText = pf ? ' (HP: ' + pf.hp + ')' : ' (Destroyed)';
+          crisisIndicator.textContent = '\uD83D\uDC7E Precursor Fleet' + hpText;
+          crisisIndicator.style.color = '#9b59b6';
+        }
+        crisisIndicator.classList.remove('hidden');
+      } else {
+        crisisIndicator.classList.add('hidden');
+      }
+    }
+
     // Fleet indicator
     const fleetEl = document.getElementById('fleet-indicator');
     if (fleetEl && gameState.militaryShips) {
@@ -1590,7 +1617,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th><th>Crisis</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1605,7 +1632,8 @@
         `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
         `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
         `<td>${(s.breakdown.friendlyCount || 0) + (s.breakdown.mutualFriendlyCount || 0)} (${s.breakdown.diplomacyVP || 0})</td>` +
-        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
+        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td>` +
+        `<td>${s.breakdown.precursorVP || 0}</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
@@ -1661,6 +1689,25 @@
     matchWarning.classList.remove('hidden');
     if (_warningTimeout) clearTimeout(_warningTimeout);
     _warningTimeout = setTimeout(() => matchWarning.classList.add('hidden'), 5000);
+  }
+
+  // ── Endgame Crisis Alert ──
+  function _showEndgameCrisisAlert(msg) {
+    // Show dramatic banner for 8 seconds
+    if (!matchWarning) return;
+    if (msg.crisisType === 'galacticStorm') {
+      matchWarning.textContent = 'GALACTIC STORM — All production -25%!';
+      matchWarning.style.borderColor = '#e74c3c';
+    } else if (msg.crisisType === 'precursorAwakening') {
+      matchWarning.textContent = 'PRECURSOR AWAKENING — Ancient warship approaches!';
+      matchWarning.style.borderColor = '#9b59b6';
+    }
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => {
+      matchWarning.classList.add('hidden');
+      matchWarning.style.borderColor = '';
+    }, 8000);
   }
 
   // Panel close buttons
