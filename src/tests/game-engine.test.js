@@ -623,6 +623,53 @@ describe('GameEngine — Energy Balance', () => {
     assert.strictEqual(consumption.energy, 1);
   });
 
+  it('housing district produces 2 food (DISTRICT_DEFS)', () => {
+    assert.strictEqual(DISTRICT_DEFS.housing.produces.food, 2);
+  });
+
+  it('housing district food production is applied in production calc', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony, 'housing');
+
+    const { production } = engine._calcProduction(colony);
+    // Housing produces 2 food without requiring a pop
+    assert.strictEqual(production.food, 2);
+  });
+
+  it('multiple housing districts stack food production', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._addBuiltDistrict(colony, 'housing');
+
+    const { production } = engine._calcProduction(colony);
+    // 3 housing × 2 food = 6 food
+    assert.strictEqual(production.food, 6);
+  });
+
+  it('housing food production does not require pops (jobless)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });
+    colony.pops = 0; // No pops at all
+    engine._addBuiltDistrict(colony, 'housing');
+
+    const { production } = engine._calcProduction(colony);
+    // Housing is jobless — produces food even with 0 pops
+    assert.strictEqual(production.food, 2);
+  });
+
+  it('disabled housing produces no food', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });
+    engine._addBuiltDistrict(colony, 'housing');
+    colony.districts[colony.districts.length - 1].disabled = true;
+
+    const { production } = engine._calcProduction(colony);
+    assert.strictEqual(production.food, 0);
+  });
+
   it('one generator can power two industrials (6 energy vs 3+3)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const colony = engine._createColony(1, 'Test', { size: 16, type: 'continental', habitability: 80 });

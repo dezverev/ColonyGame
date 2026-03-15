@@ -1864,3 +1864,31 @@ Each entry records an iteration of automated development.
 - Gunboat ATK 3 makes all three variants closer in raw power (40/45/36+regen), shifting the balance toward rock-paper-scissors counter-targeting rather than raw stats
 
 **Next:** Mid-game catalyst events (Phase 7, R51-1) — 3 timed events at 30/45/55% match time. Or fleet intelligence/espionage (Phase 5, R51-6)
+
+---
+
+## Entry 53 — 2026-03-15 — Housing District Food Production Balance Fix
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Housing districts now produce +2 food per month, making them a real choice vs agriculture (5 housing + 2 food vs agriculture's 0 housing + 6 food)
+- Updated `_calcProduction` to process production from naturally jobless districts (housing), not just consumption
+- Updated client DISTRICT_UI to show "+5 Housing, +2 Food" in build menu and district info
+
+**Files changed:**
+- `server/game-engine.js` — DISTRICT_DEFS housing produces `{ food: 2 }`, _calcProduction jobless block processes production
+- `src/public/js/app.js` — DISTRICT_UI housing produces updated to '+5 Housing, +2 Food'
+- `src/tests/game-engine.test.js` — 5 new tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1601 total (5 new: DISTRICT_DEFS food value, production calc, stacking, jobless zero-pop, disabled no food). All passing (1 pre-existing doctrine-choice-deep flaky test unrelated).
+
+**Key decisions:**
+- Housing food production does not require pops — consistent with housing being a jobless district (jobs: 0). This is a passive bonus from the housing infrastructure itself.
+- No change to starting colony balance — starting colonies have no housing districts, so food surplus remains +4.
+- +2 food makes housing competitive but not dominant: agriculture gives 6 food + 0 housing, housing gives 2 food + 5 housing. Players choosing housing get ~33% of agriculture's food output as a bonus.
+
+**Next:** Colony ship cost/time reduction (Phase 1, R53) or resource gifting (Phase 6, R53 PRIORITY)

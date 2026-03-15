@@ -5,7 +5,7 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#
 // District definitions: type -> { produces, consumes, cost, buildTime }
 // Production/consumption is per "month" (every 100 ticks = 10 seconds)
 const DISTRICT_DEFS = {
-  housing:     { produces: {}, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 200 },
+  housing:     { produces: { food: 2 }, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 200 },
   generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   mining:      { produces: { minerals: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
@@ -935,9 +935,11 @@ class GameEngine {
       // Effective job cost (T3 Automated Mining makes mining districts cost 0 jobs)
       const effectiveJobs = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
 
-      // Jobless districts (e.g., housing, or districts with tech job override) still consume resources
+      // Jobless districts (e.g., housing) produce and consume without requiring a pop
       if (effectiveJobs === 0 && def.jobs === 0) {
-        // Naturally jobless (housing) — consume only, no production
+        for (const [resource, amount] of Object.entries(def.produces)) {
+          production[resource] = (production[resource] || 0) + amount;
+        }
         for (const [resource, amount] of Object.entries(def.consumes)) {
           consumption[resource] = (consumption[resource] || 0) + amount;
         }
