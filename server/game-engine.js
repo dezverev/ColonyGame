@@ -288,6 +288,18 @@ const UNDERDOG_BONUS_PER_COLONY = 0.15;   // +15% production per colony gap vs l
 const UNDERDOG_BONUS_CAP = 0.45;          // max +45% (3 colony gap)
 const UNDERDOG_TECH_DISCOUNT = 0.15;      // -15% tech cost per player who already completed it
 
+// Mid-game catalyst event constants
+const CATALYST_RESOURCE_RUSH_PCT = 0.30;     // fires at 30% match time elapsed
+const CATALYST_TECH_AUCTION_PCT = 0.45;      // fires at 45% match time elapsed
+const CATALYST_BORDER_INCIDENT_PCT = 0.55;   // fires at 55% match time elapsed
+const CATALYST_RUSH_INCOME = 100;            // +100 resource/month from motherlode
+const CATALYST_RUSH_DURATION = 1800;         // 1800 ticks (3 minutes)
+const CATALYST_AUCTION_WINDOW = 60;          // 60-tick bidding window (6 seconds)
+const CATALYST_INCIDENT_WINDOW = 60;         // 60-tick response window (6 seconds)
+const CATALYST_INCIDENT_BOTH_DEESCALATE_VP = 5;  // +5 VP each
+const CATALYST_INCIDENT_ESCALATE_VP = 3;         // +3 VP for sole escalator
+const CATALYST_INCIDENT_HOP_RANGE = 3;           // colonies within 3 hops
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -476,6 +488,23 @@ class GameEngine {
     this._precursorFleet = null;     // { id, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._precursorDestroyedBy = null; // playerId who destroyed precursor fleet
     this._precursorOccupiedColonies = new Set(); // colony IDs occupied by precursor
+
+    // Mid-game catalyst event tracking
+    this._catalystResourceRushFired = false;
+    this._catalystTechAuctionFired = false;
+    this._catalystBorderIncidentFired = false;
+    // Resource Rush state
+    this._resourceRushSystem = null;     // systemId of the motherlode
+    this._resourceRushResource = null;   // 'energy' | 'minerals' | 'food' | 'alloys'
+    this._resourceRushOwner = null;      // playerId who claimed it
+    this._resourceRushTicksLeft = 0;     // ticks remaining for income bonus
+    // Tech Auction state
+    this._auctionBids = null;            // Map<playerId, amount> during bidding, null otherwise
+    this._auctionDeadlineTick = 0;       // tick when auction closes
+    // Border Incident state
+    this._incidentPlayers = null;        // [playerId1, playerId2] or null
+    this._incidentChoices = null;        // Map<playerId, 'escalate'|'deescalate'> during window
+    this._incidentDeadlineTick = 0;      // tick when incident resolves
 
     this._initPlayerStates();
 
@@ -1336,6 +1365,356 @@ class GameEngine {
         }, true);
       }
     }
+  }
+
+  // ── Mid-game Catalyst Events ──
+
+  _processCatalystEvents() {
+    if (!this._matchTimerEnabled || this._gameOver) return;
+
+    const elapsed = this._matchTicksTotal - this._matchTicksRemaining;
+    const pct = elapsed / this._matchTicksTotal;
+
+    // 1. Resource Rush at 30%
+    if (!this._catalystResourceRushFired && pct >= CATALYST_RESOURCE_RUSH_PCT) {
+      this._catalystResourceRushFired = true;
+      this._triggerResourceRush();
+    }
+
+    // Resource Rush income processing (every month tick)
+    if (this._resourceRushOwner && this._resourceRushTicksLeft > 0) {
+      this._resourceRushTicksLeft--;
+      if (this.tickCount % MONTH_TICKS === 0) {
+        const state = this.playerStates.get(this._resourceRushOwner);
+        if (state) {
+          state.resources[this._resourceRushResource] += CATALYST_RUSH_INCOME;
+          this._dirtyPlayers.add(this._resourceRushOwner);
+          this._invalidateStateCache();
+        }
+      }
+      if (this._resourceRushTicksLeft <= 0) {
+        this._emitEvent('resourceRushExpired', null, {
+          systemId: this._resourceRushSystem,
+          resource: this._resourceRushResource,
+        }, true);
+        this._resourceRushOwner = null;
+      }
+    }
+
+    // 2. Tech Auction at 45%
+    if (!this._catalystTechAuctionFired && pct >= CATALYST_TECH_AUCTION_PCT) {
+      this._catalystTechAuctionFired = true;
+      this._triggerTechAuction();
+    }
+
+    // Resolve tech auction when window closes
+    if (this._auctionBids && this.tickCount >= this._auctionDeadlineTick) {
+      this._resolveTechAuction();
+    }
+
+    // 3. Border Incident at 55%
+    if (!this._catalystBorderIncidentFired && pct >= CATALYST_BORDER_INCIDENT_PCT) {
+      this._catalystBorderIncidentFired = true;
+      this._triggerBorderIncident();
+    }
+
+    // Resolve border incident when window closes
+    if (this._incidentPlayers && this.tickCount >= this._incidentDeadlineTick) {
+      this._resolveBorderIncident();
+    }
+  }
+
+  _triggerResourceRush() {
+    // Find an unsurveyed system (not surveyed by any player)
+    const allSurveyed = new Set();
+    for (const [, sysSet] of this._surveyedSystems) {
+      for (const sid of sysSet) allSurveyed.add(sid);
+    }
+    // Also exclude systems with colonies
+    for (const [, colony] of this.colonies) {
+      allSurveyed.add(colony.systemId);
+    }
+
+    const candidates = this.galaxy.systems.filter(s => !allSurveyed.has(s.id));
+    if (candidates.length === 0) {
+      // All systems surveyed — pick a random unclaimed system instead
+      const colonySystems = new Set();
+      for (const [, colony] of this.colonies) colonySystems.add(colony.systemId);
+      const unclaimedSystems = this.galaxy.systems.filter(s => !colonySystems.has(s.id));
+      if (unclaimedSystems.length === 0) return; // no valid system
+      const sys = unclaimedSystems[Math.floor(Math.random() * unclaimedSystems.length)];
+      this._resourceRushSystem = sys.id;
+    } else {
+      const sys = candidates[Math.floor(Math.random() * candidates.length)];
+      this._resourceRushSystem = sys.id;
+    }
+
+    const resources = ['energy', 'minerals', 'food', 'alloys'];
+    this._resourceRushResource = resources[Math.floor(Math.random() * resources.length)];
+    this._resourceRushOwner = null;
+    this._resourceRushTicksLeft = 0;
+
+    // Find system name for display
+    const rushSys = this.galaxy.systems.find(s => s.id === this._resourceRushSystem);
+    const sysName = rushSys ? rushSys.name : 'Unknown System';
+
+    this._emitEvent('resourceRush', null, {
+      systemId: this._resourceRushSystem,
+      systemName: sysName,
+      resource: this._resourceRushResource,
+      income: CATALYST_RUSH_INCOME,
+      durationTicks: CATALYST_RUSH_DURATION,
+    }, true);
+  }
+
+  // Called when a player stations a military ship or colonizes the rush system
+  _claimResourceRush(playerId) {
+    if (!this._resourceRushSystem || this._resourceRushOwner) return false;
+    this._resourceRushOwner = playerId;
+    this._resourceRushTicksLeft = CATALYST_RUSH_DURATION;
+    const state = this.playerStates.get(playerId);
+    const playerName = state ? state.name : 'Unknown';
+    this._emitEvent('resourceRushClaimed', null, {
+      playerId,
+      playerName,
+      systemId: this._resourceRushSystem,
+      resource: this._resourceRushResource,
+      income: CATALYST_RUSH_INCOME,
+    }, true);
+    this._invalidateStateCache();
+    return true;
+  }
+
+  _triggerTechAuction() {
+    // Only if there are players with active T2 research
+    this._auctionBids = new Map();
+    this._auctionDeadlineTick = this.tickCount + CATALYST_AUCTION_WINDOW;
+
+    this._emitEvent('techAuction', null, {
+      deadlineTick: this._auctionDeadlineTick,
+      windowTicks: CATALYST_AUCTION_WINDOW,
+    }, true);
+  }
+
+  _resolveTechAuction() {
+    const bids = this._auctionBids;
+    this._auctionBids = null; // close bidding
+
+    if (!bids || bids.size === 0) {
+      this._emitEvent('techAuctionResult', null, {
+        winner: null,
+        reason: 'No bids received',
+      }, true);
+      return;
+    }
+
+    // Find highest bidder
+    let winnerId = null;
+    let highestBid = 0;
+    for (const [pid, amount] of bids) {
+      if (amount > highestBid) {
+        highestBid = amount;
+        winnerId = pid;
+      }
+    }
+
+    // Deduct influence from ALL bidders
+    for (const [pid, amount] of bids) {
+      const state = this.playerStates.get(pid);
+      if (state) {
+        state.resources.influence = Math.max(0, state.resources.influence - amount);
+        this._dirtyPlayers.add(pid);
+      }
+    }
+
+    // Winner instantly completes their current research (first T2 found, or any current)
+    let completedTech = null;
+    if (winnerId) {
+      const winnerState = this.playerStates.get(winnerId);
+      if (winnerState) {
+        // Find current research to complete (prefer T2)
+        for (const track of ['physics', 'society', 'engineering']) {
+          const techId = winnerState.currentResearch[track];
+          if (!techId) continue;
+          const techDef = TECH_TREE[techId];
+          if (techDef && techDef.tier === 2) {
+            completedTech = techId;
+            break;
+          }
+        }
+        // Fallback: complete any current research
+        if (!completedTech) {
+          for (const track of ['physics', 'society', 'engineering']) {
+            const techId = winnerState.currentResearch[track];
+            if (techId) { completedTech = techId; break; }
+          }
+        }
+        // Complete the tech
+        if (completedTech) {
+          const techDef = TECH_TREE[completedTech];
+          if (techDef && !winnerState.completedTechs.includes(completedTech)) {
+            winnerState.completedTechs.push(completedTech);
+            winnerState.currentResearch[techDef.track] = null;
+            delete winnerState.researchProgress[completedTech];
+            this._invalidatePlayerProductionCaches(winnerId);
+            this._vpCacheTick = -1;
+          }
+        }
+      }
+    }
+
+    const winnerState = winnerId ? this.playerStates.get(winnerId) : null;
+    this._emitEvent('techAuctionResult', null, {
+      winner: winnerId,
+      winnerName: winnerState ? winnerState.name : null,
+      winningBid: highestBid,
+      completedTech,
+      techName: completedTech && TECH_TREE[completedTech] ? TECH_TREE[completedTech].name : null,
+      totalBidders: bids.size,
+    }, true);
+
+    this._invalidateStateCache();
+  }
+
+  _triggerBorderIncident() {
+    // Find two players with colonies within CATALYST_INCIDENT_HOP_RANGE hops
+    const playerIds = [...this.playerStates.keys()];
+    if (playerIds.length < 2) return;
+
+    const pair = this._findNearbyPlayerPair(playerIds, CATALYST_INCIDENT_HOP_RANGE);
+    if (!pair) return;
+
+    this._incidentPlayers = pair;
+    this._incidentChoices = new Map();
+    this._incidentDeadlineTick = this.tickCount + CATALYST_INCIDENT_WINDOW;
+
+    const state1 = this.playerStates.get(pair[0]);
+    const state2 = this.playerStates.get(pair[1]);
+    this._emitEvent('borderIncident', null, {
+      players: pair,
+      playerNames: [state1 ? state1.name : 'Unknown', state2 ? state2.name : 'Unknown'],
+      deadlineTick: this._incidentDeadlineTick,
+      windowTicks: CATALYST_INCIDENT_WINDOW,
+    }, true);
+  }
+
+  // Find two players who have colonies within N hops of each other
+  _findNearbyPlayerPair(playerIds, maxHops) {
+    const adj = this._adjacency;
+    if (!adj) return null;
+
+    // Build player -> [systemIds] map
+    const playerSystems = new Map();
+    for (const pid of playerIds) {
+      const colIds = this._playerColonies.get(pid) || [];
+      const systems = [];
+      for (const cid of colIds) {
+        const c = this.colonies.get(cid);
+        if (c) systems.push(c.systemId);
+      }
+      if (systems.length > 0) playerSystems.set(pid, systems);
+    }
+
+    const pids = [...playerSystems.keys()];
+    // Shuffle to randomize which pair is selected
+    for (let i = pids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pids[i], pids[j]] = [pids[j], pids[i]];
+    }
+
+    for (let i = 0; i < pids.length; i++) {
+      for (let j = i + 1; j < pids.length; j++) {
+        const sysA = playerSystems.get(pids[i]);
+        const sysB = new Set(playerSystems.get(pids[j]));
+
+        // BFS from each of player A's colonies up to maxHops
+        for (const startSys of sysA) {
+          const visited = new Set([startSys]);
+          let frontier = [startSys];
+          for (let hop = 0; hop < maxHops; hop++) {
+            const next = [];
+            for (const sysId of frontier) {
+              const neighbors = adj.get(sysId) || [];
+              for (const nId of neighbors) {
+                if (visited.has(nId)) continue;
+                visited.add(nId);
+                next.push(nId);
+                if (sysB.has(nId)) return [pids[i], pids[j]];
+              }
+            }
+            frontier = next;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  _resolveBorderIncident() {
+    const players = this._incidentPlayers;
+    const choices = this._incidentChoices;
+    this._incidentPlayers = null;
+    this._incidentChoices = null;
+
+    if (!players || !choices) return;
+
+    // Default to de-escalate if no response
+    const choice1 = choices.get(players[0]) || 'deescalate';
+    const choice2 = choices.get(players[1]) || 'deescalate';
+
+    const state1 = this.playerStates.get(players[0]);
+    const state2 = this.playerStates.get(players[1]);
+    const name1 = state1 ? state1.name : 'Unknown';
+    const name2 = state2 ? state2.name : 'Unknown';
+
+    let result;
+    if (choice1 === 'deescalate' && choice2 === 'deescalate') {
+      // Both de-escalate: +5 VP each
+      result = 'both_deescalate';
+      // VP is tracked via breakdown — add bonus VP directly
+      if (state1) { state1._catalystVP = (state1._catalystVP || 0) + CATALYST_INCIDENT_BOTH_DEESCALATE_VP; }
+      if (state2) { state2._catalystVP = (state2._catalystVP || 0) + CATALYST_INCIDENT_BOTH_DEESCALATE_VP; }
+    } else if (choice1 === 'escalate' && choice2 === 'escalate') {
+      // Both escalate: both go hostile, no VP
+      result = 'both_escalate';
+      this._forceHostile(players[0], players[1]);
+    } else {
+      // One escalates: escalator gets +3 VP, other forced to hostile stance
+      result = 'one_escalate';
+      const escalator = choice1 === 'escalate' ? players[0] : players[1];
+      const victim = choice1 === 'escalate' ? players[1] : players[0];
+      const escalatorState = this.playerStates.get(escalator);
+      if (escalatorState) { escalatorState._catalystVP = (escalatorState._catalystVP || 0) + CATALYST_INCIDENT_ESCALATE_VP; }
+      this._forceHostile(escalator, victim);
+    }
+
+    this._vpCacheTick = -1;
+    this._invalidateStateCache();
+
+    this._emitEvent('borderIncidentResult', null, {
+      players,
+      playerNames: [name1, name2],
+      choices: { [players[0]]: choice1, [players[1]]: choice2 },
+      result,
+    }, true);
+  }
+
+  // Force mutual hostile stance between two players
+  _forceHostile(pid1, pid2) {
+    const state1 = this.playerStates.get(pid1);
+    const state2 = this.playerStates.get(pid2);
+    if (state1) {
+      if (!state1.diplomacy[pid2]) state1.diplomacy[pid2] = { stance: DIPLOMACY_STANCES.NEUTRAL, cooldownTick: 0 };
+      state1.diplomacy[pid2].stance = DIPLOMACY_STANCES.HOSTILE;
+      state1.pendingFriendly.delete(pid2);
+    }
+    if (state2) {
+      if (!state2.diplomacy[pid1]) state2.diplomacy[pid1] = { stance: DIPLOMACY_STANCES.NEUTRAL, cooldownTick: 0 };
+      state2.diplomacy[pid1].stance = DIPLOMACY_STANCES.HOSTILE;
+      state2.pendingFriendly.delete(pid1);
+    }
+    this._dirtyPlayers.add(pid1);
+    this._dirtyPlayers.add(pid2);
   }
 
   _spawnPrecursorFleet() {
@@ -2812,6 +3191,11 @@ class GameEngine {
         newSysArr.push(ship);
         this._dirtyPlayers.add(ship.ownerId);
 
+        // Check if this system is the Resource Rush motherlode
+        if (this._resourceRushSystem && ship.systemId === this._resourceRushSystem && !this._resourceRushOwner) {
+          this._claimResourceRush(ship.ownerId);
+        }
+
         if (ship.path.length === 0) {
           // Arrived at final destination — clear target
           ship.targetSystemId = null;
@@ -3252,6 +3636,11 @@ class GameEngine {
       playerName: playerState ? playerState.name : 'Unknown',
     }, true);
 
+    // Check Resource Rush claim via colonization
+    if (this._resourceRushSystem && ship.targetSystemId === this._resourceRushSystem && !this._resourceRushOwner) {
+      this._claimResourceRush(ship.ownerId);
+    }
+
     // Underdog bonus changes when colony count changes — invalidate all production caches
     this._invalidateAllProductionCaches();
     this._invalidateStateCache();
@@ -3599,7 +3988,10 @@ class GameEngine {
     }
     precursorVP += precursorOccupiedCount * PRECURSOR_OCCUPY_VP;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP;
+    // Catalyst event VP (border incident)
+    const catalystVP = state._catalystVP || 0;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -3616,6 +4008,7 @@ class GameEngine {
       coloniesOccupied, occupiedDefenderVP,
       friendlyCount, mutualFriendlyCount, diplomacyVP,
       precursorVP, precursorOccupiedCount,
+      catalystVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -3845,6 +4238,9 @@ class GameEngine {
     // Endgame crisis processing
     this._processEndgameCrisis();
     this._processPrecursorMovement();
+
+    // Mid-game catalyst events
+    this._processCatalystEvents();
 
     // NPC raider fleet processing every tick
     this._processRaiderSpawning();
@@ -4602,6 +4998,33 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'auctionBid': {
+        // Submit sealed bid for tech auction
+        if (!this._auctionBids) return { error: 'No auction active' };
+        if (this.tickCount >= this._auctionDeadlineTick) return { error: 'Auction window closed' };
+        const { amount } = cmd;
+        if (!Number.isFinite(amount) || amount < 1) return { error: 'Invalid bid amount' };
+        const bidState = this.playerStates.get(playerId);
+        if (!bidState) return { error: 'Player not found' };
+        if (amount > bidState.resources.influence) return { error: 'Not enough influence' };
+        // Must have active research to benefit
+        const hasResearch = bidState.currentResearch.physics || bidState.currentResearch.society || bidState.currentResearch.engineering;
+        if (!hasResearch) return { error: 'No active research to complete' };
+        this._auctionBids.set(playerId, amount);
+        return { ok: true };
+      }
+
+      case 'respondIncident': {
+        // Submit border incident choice
+        if (!this._incidentPlayers || !this._incidentChoices) return { error: 'No incident active' };
+        if (this.tickCount >= this._incidentDeadlineTick) return { error: 'Incident window closed' };
+        if (!this._incidentPlayers.includes(playerId)) return { error: 'Not involved in this incident' };
+        const { choice } = cmd;
+        if (choice !== 'escalate' && choice !== 'deescalate') return { error: 'Choice must be escalate or deescalate' };
+        this._incidentChoices.set(playerId, choice);
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -4881,6 +5304,30 @@ class GameEngine {
       state.doctrineDeadlineTick = this._doctrineDeadlineTick;
     }
 
+    // Mid-game catalyst event state
+    if (this._resourceRushSystem) {
+      state.resourceRush = {
+        systemId: this._resourceRushSystem,
+        resource: this._resourceRushResource,
+        owner: this._resourceRushOwner,
+        ticksLeft: this._resourceRushTicksLeft,
+      };
+    }
+    if (this._auctionBids) {
+      state.techAuction = {
+        deadlineTick: this._auctionDeadlineTick,
+        hasBid: this._auctionBids.has(playerId),
+      };
+    }
+    if (this._incidentPlayers) {
+      state.borderIncident = {
+        players: this._incidentPlayers,
+        deadlineTick: this._incidentDeadlineTick,
+        hasResponded: this._incidentChoices ? this._incidentChoices.has(playerId) : false,
+        involved: this._incidentPlayers.includes(playerId),
+      };
+    }
+
     return state;
   }
 
@@ -5013,4 +5460,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, generateGalaxy, assignStartingSystems };

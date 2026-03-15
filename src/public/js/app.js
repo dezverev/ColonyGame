@@ -226,6 +226,35 @@
           _showMatchWarning('PRECURSOR FLEET DESTROYED by ' + (msg.destroyerName || 'Unknown') + '!');
         } else if (msg.eventType === 'precursorOccupied') {
           _showMatchWarning('PRECURSOR occupies ' + (msg.colonyName || 'colony') + '!');
+        } else if (msg.eventType === 'resourceRush') {
+          _showCatalystAlert('RESOURCE RUSH', 'Motherlode discovered in ' + (msg.systemName || 'unknown system') + '! First to station a fleet or colonize claims +' + (msg.income || 100) + ' ' + (msg.resource || 'resources') + '/month!', '#f39c12');
+        } else if (msg.eventType === 'resourceRushClaimed') {
+          _showMatchWarning((msg.playerName || 'Someone') + ' claimed the Resource Rush motherlode!');
+        } else if (msg.eventType === 'techAuction') {
+          _showCatalystAlert('TECH AUCTION', 'Bid influence to instantly complete your current research! Highest bidder wins. All bidders pay.', '#9b59b6');
+          _showAuctionUI(msg);
+        } else if (msg.eventType === 'techAuctionResult') {
+          _hideAuctionUI();
+          if (msg.winner) {
+            _showMatchWarning((msg.winnerName || 'Someone') + ' won the Tech Auction (' + (msg.techName || 'research') + ') with a bid of ' + msg.winningBid + ' influence!');
+          } else {
+            _showMatchWarning('Tech Auction ended — no bids received.');
+          }
+        } else if (msg.eventType === 'borderIncident') {
+          _showCatalystAlert('BORDER INCIDENT', 'Tensions rising between ' + (msg.playerNames || []).join(' and ') + '! Choose: escalate or de-escalate.', '#e74c3c');
+          if (msg.players && gameState && msg.players.includes(gameState.yourId)) {
+            _showIncidentUI(msg);
+          }
+        } else if (msg.eventType === 'borderIncidentResult') {
+          _hideIncidentUI();
+          const r = msg.result;
+          if (r === 'both_deescalate') {
+            _showMatchWarning('Border Incident resolved peacefully — both parties gain +5 VP!');
+          } else if (r === 'both_escalate') {
+            _showMatchWarning('Border Incident escalated — both parties are now hostile!');
+          } else {
+            _showMatchWarning('Border Incident: one party escalated — diplomatic fallout!');
+          }
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -235,7 +264,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat' || msg.eventType === 'resourceRush' || msg.eventType === 'resourceRushClaimed' || msg.eventType === 'techAuction' || msg.eventType === 'techAuctionResult' || msg.eventType === 'borderIncident' || msg.eventType === 'borderIncidentResult') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -515,6 +544,28 @@
         return `<span style="color:#3498db">\u2726 ALLIANCE FORMED: ${msg.player1Name || 'Unknown'} and ${msg.player2Name || 'Unknown'} are now allies!</span>`;
       case 'friendlyProposed':
         return `<span style="color:#3498db">\u2726 ${msg.fromName || 'Unknown'} proposes an alliance! <button class="stance-btn stance-friendly" onclick="window._acceptDiplomacy('${msg.fromId}')">Accept</button></span>`;
+      case 'resourceRush': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#f39c12">\u2B50 RESOURCE RUSH — ${rn} motherlode in ${msg.systemName || 'system'}! Claim it first!</span>`;
+      }
+      case 'resourceRushClaimed':
+        return `<span style="color:#f39c12">\u2B50 ${msg.playerName || 'Unknown'} claimed the motherlode!</span>`;
+      case 'resourceRushExpired':
+        return `<span style="color:#888">Resource Rush motherlode has been exhausted.</span>`;
+      case 'techAuction':
+        return `<span style="color:#9b59b6">\u2696 TECH AUCTION — Bid influence to complete research instantly!</span>`;
+      case 'techAuctionResult':
+        return msg.winner
+          ? `<span style="color:#9b59b6">\u2696 ${msg.winnerName || 'Unknown'} won the auction — ${msg.techName || 'tech'} completed! (Bid: ${msg.winningBid})</span>`
+          : `<span style="color:#888">\u2696 Tech Auction ended — no bids.</span>`;
+      case 'borderIncident':
+        return `<span style="color:#e74c3c">\u26A0 BORDER INCIDENT between ${(msg.playerNames || []).join(' and ')}!</span>`;
+      case 'borderIncidentResult': {
+        const r = msg.result;
+        if (r === 'both_deescalate') return `<span style="color:#2ecc71">\u2726 Border Incident resolved peacefully — +5 VP each!</span>`;
+        if (r === 'both_escalate') return `<span style="color:#e74c3c">\u2694 Border Incident escalated — both parties now hostile!</span>`;
+        return `<span style="color:#f39c12">\u2694 Border Incident: one party escalated — diplomatic tensions rise!</span>`;
+      }
       default:
         return null;
     }
@@ -1751,6 +1802,93 @@
       matchWarning.classList.add('hidden');
       matchWarning.style.borderColor = '';
     }, 8000);
+  }
+
+  // ── Catalyst Event UI ──
+
+  function _showCatalystAlert(title, text, color) {
+    if (!matchWarning) return;
+    matchWarning.innerHTML = `<strong>${title}</strong> — ${text}`;
+    matchWarning.style.borderColor = color || '#f39c12';
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => {
+      matchWarning.classList.add('hidden');
+      matchWarning.style.borderColor = '';
+    }, 10000);
+  }
+
+  // Tech Auction bid UI
+  let _auctionOverlay = null;
+  function _showAuctionUI(msg) {
+    if (_auctionOverlay) _auctionOverlay.remove();
+    _auctionOverlay = document.createElement('div');
+    _auctionOverlay.className = 'catalyst-overlay';
+    _auctionOverlay.innerHTML = `
+      <div class="catalyst-dialog">
+        <h3 style="color:#9b59b6">Tech Breakthrough Auction</h3>
+        <p>Bid influence to instantly complete your current research.<br>Highest bidder wins. <strong>All bidders lose their bid.</strong></p>
+        <div style="margin:8px 0">
+          <label>Bid amount: <input type="number" id="auction-bid-input" min="1" value="10" style="width:60px;background:#1a1a2e;color:#e0e0e0;border:1px solid #555;padding:2px 4px"></label>
+          <button id="auction-bid-btn" style="margin-left:8px;padding:4px 12px;background:#9b59b6;border:none;color:#fff;cursor:pointer;border-radius:3px">Place Bid</button>
+        </div>
+        <p id="auction-status" style="color:#888;font-size:0.9em"></p>
+      </div>
+    `;
+    document.body.appendChild(_auctionOverlay);
+    const bidBtn = document.getElementById('auction-bid-btn');
+    const bidInput = document.getElementById('auction-bid-input');
+    const statusEl = document.getElementById('auction-status');
+    if (bidBtn) {
+      bidBtn.addEventListener('click', () => {
+        const amount = parseInt(bidInput.value, 10);
+        if (!Number.isFinite(amount) || amount < 1) return;
+        send({ type: 'auctionBid', amount });
+        statusEl.textContent = 'Bid placed: ' + amount + ' influence';
+        bidBtn.disabled = true;
+      });
+    }
+  }
+  function _hideAuctionUI() {
+    if (_auctionOverlay) { _auctionOverlay.remove(); _auctionOverlay = null; }
+  }
+
+  // Border Incident choice UI
+  let _incidentOverlay = null;
+  function _showIncidentUI(msg) {
+    if (_incidentOverlay) _incidentOverlay.remove();
+    _incidentOverlay = document.createElement('div');
+    _incidentOverlay.className = 'catalyst-overlay';
+    const otherName = msg.playerNames
+      ? (msg.players[0] === gameState.yourId ? msg.playerNames[1] : msg.playerNames[0])
+      : 'another player';
+    _incidentOverlay.innerHTML = `
+      <div class="catalyst-dialog">
+        <h3 style="color:#e74c3c">Border Incident</h3>
+        <p>Tensions are rising between you and <strong>${otherName}</strong>.</p>
+        <p style="font-size:0.9em;color:#aaa">Both de-escalate: +5 VP each. One escalates: +3 VP, other goes hostile. Both escalate: both hostile, no VP.</p>
+        <div style="margin:10px 0">
+          <button id="incident-deescalate" style="padding:6px 16px;background:#2ecc71;border:none;color:#fff;cursor:pointer;border-radius:3px;margin-right:10px">De-escalate</button>
+          <button id="incident-escalate" style="padding:6px 16px;background:#e74c3c;border:none;color:#fff;cursor:pointer;border-radius:3px">Escalate</button>
+        </div>
+        <p id="incident-status" style="color:#888;font-size:0.9em"></p>
+      </div>
+    `;
+    document.body.appendChild(_incidentOverlay);
+    const deescBtn = document.getElementById('incident-deescalate');
+    const escBtn = document.getElementById('incident-escalate');
+    const statusEl = document.getElementById('incident-status');
+    function submitChoice(choice) {
+      send({ type: 'respondIncident', choice });
+      statusEl.textContent = 'Choice submitted: ' + choice;
+      deescBtn.disabled = true;
+      escBtn.disabled = true;
+    }
+    if (deescBtn) deescBtn.addEventListener('click', () => submitChoice('deescalate'));
+    if (escBtn) escBtn.addEventListener('click', () => submitChoice('escalate'));
+  }
+  function _hideIncidentUI() {
+    if (_incidentOverlay) { _incidentOverlay.remove(); _incidentOverlay = null; }
   }
 
   // Panel close buttons

@@ -1891,4 +1891,39 @@ Each entry records an iteration of automated development.
 - No change to starting colony balance — starting colonies have no housing districts, so food surplus remains +4.
 - +2 food makes housing competitive but not dominant: agriculture gives 6 food + 0 housing, housing gives 2 food + 5 housing. Players choosing housing get ~33% of agriculture's food output as a bonus.
 
+---
+
+## Entry 54 — 2026-03-15 — Mid-game Catalyst Events
+
+**Phase:** 7 (Events, Polish & Win Conditions)
+**Status:** Complete
+
+**What was built:**
+- **Resource Rush (30% match time):** A random unsurveyed system is revealed to all players as a "motherlode." First player to station a military ship or colonize there gets +100 of a random resource per month for 1800 ticks (3 minutes). Tracked via `_resourceRushSystem`, `_resourceRushOwner`, `_resourceRushTicksLeft`. Claim triggers on military ship arrival and colony founding.
+- **Tech Breakthrough Auction (45% match time):** All players can submit sealed influence bids within a 60-tick window. Highest bidder wins and instantly completes their current research. All bidders lose their bid. New `auctionBid` command with full validation (influence check, active research required, window timing).
+- **Border Incident (55% match time):** Two random players with colonies within 3 hops get a prisoner's dilemma — each independently chooses "escalate" or "de-escalate" within 60 ticks. Both de-escalate: +5 VP each. One escalates: escalator +3 VP, both forced hostile. Both escalate: both hostile, no VP. Default to de-escalate if no response. New `respondIncident` command.
+- **Client UI:** Catalyst alert banners with colored borders, full-screen auction bid dialog with influence input, border incident choice dialog with escalate/de-escalate buttons, ticker formatting for all event types, CSS overlay styles.
+- **State serialization:** Resource rush, tech auction, and border incident state included in player state broadcasts. Catalyst VP included in VP breakdown.
+
+**Files changed:**
+- `server/game-engine.js` — 11 new constants (CATALYST_*), catalyst state tracking in constructor, `_processCatalystEvents()` main loop method, `_triggerResourceRush()`, `_claimResourceRush()`, `_triggerTechAuction()`, `_resolveTechAuction()`, `_triggerBorderIncident()`, `_findNearbyPlayerPair()`, `_resolveBorderIncident()`, `_forceHostile()`, `auctionBid` and `respondIncident` command handlers, `catalystVP` in VP breakdown, catalyst state in `getPlayerState`, module.exports updated
+- `server/server.js` — added `auctionBid` and `respondIncident` to command routing
+- `src/public/js/app.js` — event handlers for all 6 catalyst event types (resourceRush, resourceRushClaimed, techAuction, techAuctionResult, borderIncident, borderIncidentResult), ticker formatting for all types, `_showCatalystAlert()`, `_showAuctionUI()/_hideAuctionUI()`, `_showIncidentUI()/_hideIncidentUI()`, broadcast event type list updated
+- `src/public/css/style.css` — `.catalyst-overlay` and `.catalyst-dialog` styles
+- `src/tests/catalyst-events.test.js` — **new** 46 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1653 total (46 new: 8 constants, 8 resource rush, 8 tech auction, 11 border incident, 4 serialization, 3 _findNearbyPlayerPair, 4 edge cases). All passing (2 pre-existing doctrine-choice-deep flaky tests unrelated).
+
+**Key decisions:**
+- Resource Rush claim triggers on military ship arrival (in `_processMilitaryShipMovement`) and colony founding (in `_foundColonyFromShip`), not on surveying — rewards military/colonization action, not passive exploration.
+- Tech Auction uses sealed bids (players don't see each other's bids), all bidders pay their bid regardless of winning. This creates interesting risk/reward — bid too low and waste influence, bid too high and overpay.
+- Border Incident defaults to de-escalate if no response within the 60-tick window — punishes inattention less harshly than aggressive defaults.
+- Catalyst VP stored as `state._catalystVP` on the player state object, accumulated from border incident outcomes. Included in `_calcVPBreakdown` and `catalystVP` field in breakdown.
+- `_findNearbyPlayerPair` uses BFS from each colony of player A up to N hops, checking for player B's colonies. Shuffled player order for randomness. Returns null if no qualifying pair found (single-player or very spread-out galaxy).
+- All three events only fire in timed matches (`_matchTimerEnabled` guard), consistent with endgame crisis behavior.
+
+**Next:** Resource gifting (Phase 6, R54-2) — `giftResources` command, one-way gifts of 25+ units, 200-tick cooldown, makes friendly stance actionable.
+
 **Next:** Colony ship cost/time reduction (Phase 1, R53) or resource gifting (Phase 6, R53 PRIORITY)
