@@ -3664,6 +3664,9 @@ class GameEngine {
     colony.pops = COLONY_SHIP_STARTING_POPS;
     colony.isStartingColony = false;
 
+    // Colony established bonus: free mining district from colony ship materials
+    this._addBuiltDistrict(colony, 'mining');
+
     // Remove ship
     this._removeColonyShip(ship);
 

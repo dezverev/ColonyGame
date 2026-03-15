@@ -804,7 +804,8 @@ describe('Colony ship — new colony properties', () => {
     assert.strictEqual(newColony.pops, COLONY_SHIP_STARTING_POPS);
     assert.strictEqual(newColony.isStartingColony, false);
     assert.strictEqual(newColony.ownerId, 1);
-    assert.deepStrictEqual(newColony.districts, []);
+    assert.strictEqual(newColony.districts.length, 1, 'Should have 1 bonus mining district');
+    assert.strictEqual(newColony.districts[0].type, 'mining');
     assert.deepStrictEqual(newColony.buildQueue, []);
     assert.strictEqual(newColony.growthProgress, 0);
 

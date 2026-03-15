@@ -2041,3 +2041,29 @@ Each entry records an iteration of automated development.
 - Perf test thresholds relaxed to prevent flakiness without losing meaningful regression detection.
 
 **Next:** Colony established bonus (Phase 3, R57-3) — auto-build 1 mining district on founding. Then colony ship cost/time reduction (Phase 1, R57-4) — cost {minerals:175, food:75, alloys:75}, build time 450 ticks.
+
+---
+
+## Entry 58 — 2026-03-15 — Colony Established Bonus
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- **Colony established bonus:** When a colony ship founds a new colony, 1 Mining district is auto-built instantly at no cost (represents materials from the colony ship). Reduces dead time between founding and productivity by ~30 seconds. New colonies start weak (2 pops, 1 mining) but produce minerals immediately.
+
+**Files changed:**
+- `server/game-engine.js` — added `_addBuiltDistrict(colony, 'mining')` call in `_foundColonyFromShip` after `_createColony`
+- `src/tests/colony-established-bonus.test.js` — **new** 8 tests (auto-build verification, no-cost check, instant build, production output, starting colony exclusion, match stats, serialization, multiple foundings)
+- `src/tests/colony-ships.test.js` — updated 1 test to expect 1 mining district instead of empty districts on new colonies
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1819 total (8 new, 1 updated). All passing.
+
+**Key decisions:**
+- Bonus district uses existing `_addBuiltDistrict` — no special-casing needed, it's a real district that produces, consumes, and counts toward traits
+- Mining chosen over other types because it's the most universally useful resource for bootstrapping a new colony (fund further construction)
+- No build time, no cost — represents salvaged colony ship materials, keeps the mechanic invisible and frictionless
+
+**Next:** Colony ship cost + time reduction (Phase 1, R58-2) — cost {minerals:175, food:75, alloys:75}, build time 450 ticks, consolidates R41+R53 tasks. Then distinct victory conditions (Phase 7, R58-3) — Scientific/Military/Economic instant-win paths.
