@@ -2057,6 +2057,8 @@ class GameEngine {
       const pi = arr.indexOf(ship);
       if (pi !== -1) arr.splice(pi, 1);
     }
+    this._vpCacheTick = -1; // VP depends on corvette count
+    this._invalidateStateCache();
   }
 
   // Get corvette count for a player — O(1)
