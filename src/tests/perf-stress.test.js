@@ -173,7 +173,6 @@ describe('Late-Game Stress Tests', () => {
     engine._invalidateStateCache();
     const t0 = process.hrtime.bigint();
     for (let pid = 1; pid <= 8; pid++) {
-      engine._cachedPlayerJSON.delete(pid); // force fresh
       engine.getPlayerStateJSON(pid);
     }
     const totalMs = Number(process.hrtime.bigint() - t0) / 1e6;
@@ -278,8 +277,8 @@ describe('Late-Game Stress Tests', () => {
     buildLateGame(engine);
     engine.tick();
 
+    engine._invalidateStateCache();
     for (let pid = 1; pid <= 8; pid++) {
-      engine._cachedPlayerJSON.delete(pid);
       const json = engine.getPlayerStateJSON(pid);
       const kb = Buffer.byteLength(json, 'utf8') / 1024;
       if (pid <= 2) console.log(`  Player ${pid} payload: ${kb.toFixed(2)} KB`);

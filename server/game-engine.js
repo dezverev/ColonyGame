@@ -428,6 +428,7 @@ class GameEngine {
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._cachedPlayerJSON = new Map(); // playerId -> cached per-player JSON string
+    this._stateCacheDirty = false; // deferred invalidation flag — avoids redundant Map.clear() between broadcasts
     this._pendingEvents = []; // events to flush with next broadcast
     this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
     this._vpBreakdownCache = new Map(); // playerId -> full VP breakdown
@@ -822,7 +823,7 @@ class GameEngine {
   _invalidateStateCache() {
     this._cachedState = null;
     this._cachedStateJSON = null;
-    this._cachedPlayerJSON.clear();
+    this._stateCacheDirty = true; // defer Map.clear() until cache is actually read
     this._cachedShipData = null;
   }
 
@@ -5390,6 +5391,11 @@ class GameEngine {
 
   // Pre-stringified per-player gameState payload
   getPlayerStateJSON(playerId) {
+    // Deferred invalidation: clear map once when first read after dirty flag set
+    if (this._stateCacheDirty) {
+      this._cachedPlayerJSON.clear();
+      this._stateCacheDirty = false;
+    }
     const cached = this._cachedPlayerJSON.get(playerId);
     if (cached) return cached;
     const state = this.getPlayerState(playerId);

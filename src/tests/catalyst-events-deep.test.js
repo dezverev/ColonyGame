@@ -374,11 +374,15 @@ describe('Catalyst Events Deep — cache invalidation', () => {
     processCatalystAndFlush(engine);
 
     // Prime the cache
-    engine.getPlayerStateJSON('p1');
-    assert.ok(engine._cachedPlayerJSON.get('p1'), 'cache should be primed');
+    const before = engine.getPlayerStateJSON('p1');
+    assert.ok(before, 'cache should be primed');
 
     engine._claimResourceRush('p1');
-    assert.strictEqual(engine._cachedPlayerJSON.get('p1'), undefined, 'cache should be invalidated after claim');
+    // Dirty flag should be set (deferred invalidation)
+    assert.ok(engine._stateCacheDirty, 'cache should be marked dirty after claim');
+    // Next read should produce fresh data (not the old cached string)
+    const after = engine.getPlayerStateJSON('p1');
+    assert.notStrictEqual(before, after, 'fresh JSON should differ from stale cached version');
   });
 
   it('rush income on month tick invalidates state cache', () => {
@@ -388,14 +392,16 @@ describe('Catalyst Events Deep — cache invalidation', () => {
     engine._claimResourceRush('p1');
 
     // Prime cache
-    engine.getPlayerStateJSON('p1');
+    const before = engine.getPlayerStateJSON('p1');
 
     engine.tickCount = MONTH_TICKS;
     engine._resourceRushTicksLeft = 100;
     processCatalystAndFlush(engine);
 
-    // Cache should be invalidated because resource changed
-    assert.strictEqual(engine._cachedPlayerJSON.get('p1'), undefined, 'cache invalidated after rush income');
+    // Dirty flag should be set because resource changed
+    assert.ok(engine._stateCacheDirty, 'cache should be marked dirty after rush income');
+    const after = engine.getPlayerStateJSON('p1');
+    assert.notStrictEqual(before, after, 'fresh JSON should reflect updated resources');
   });
 });
 
