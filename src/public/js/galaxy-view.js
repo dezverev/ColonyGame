@@ -23,8 +23,11 @@
   let colonyShipPool = [];     // reusable colony ship mesh pool
   let scienceShipMeshes = [];  // active science ship marker meshes
   let scienceShipPool = [];    // reusable science ship mesh pool
+  let raiderMeshes = [];       // active raider marker meshes
+  let raiderPool = [];         // reusable raider mesh pool
   let _lastColonyShipData = null;   // cached ship arrays for per-frame animation
   let _lastScienceShipData = null;
+  let _lastRaiderData = null;
 
   // Must match server/game-engine.js SPEED_INTERVALS exactly
   const SPEED_INTERVALS = { 1: 200, 2: 100, 3: 50, 4: 33, 5: 20 };
@@ -156,6 +159,12 @@
     _matCache.scienceShip = new THREE.MeshBasicMaterial({
       color: 0x00e5ff, transparent: true, opacity: 0.9,
     });
+
+    // Raider: diamond shape, red
+    _geoCache.raider = new THREE.OctahedronGeometry(2.5, 0);
+    _matCache.raider = new THREE.MeshBasicMaterial({
+      color: 0xff2222, transparent: true, opacity: 0.9,
+    });
   }
 
   // ── Build galaxy scene ──
@@ -223,6 +232,10 @@
     scienceShipMeshes = [];
     for (const mesh of scienceShipPool) scene.remove(mesh);
     scienceShipPool = [];
+    for (const mesh of raiderMeshes) scene.remove(mesh);
+    raiderMeshes = [];
+    for (const mesh of raiderPool) scene.remove(mesh);
+    raiderPool = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
@@ -579,6 +592,56 @@
     }
   }
 
+  function updateRaiders(raiders) {
+    if (!scene || !galaxyData) return;
+    _lastRaiderData = raiders;
+    const now = performance.now();
+
+    const activeIds = new Set();
+    if (raiders) for (const r of raiders) activeIds.add('r' + r.id);
+    raiderMeshes = _recycleStaleMeshes(raiderMeshes, activeIds, raiderPool);
+
+    if (!raiders || raiders.length === 0) return;
+
+    const meshByKey = {};
+    for (const m of raiderMeshes) if (m.userData._shipKey) meshByKey[m.userData._shipKey] = m;
+    raiderMeshes = [];
+
+    for (const raider of raiders) {
+      const shipKey = 'r' + raider.id;
+      // Raiders use red color (not player-owned)
+      const matKey = 'raider_red';
+      if (!_matCache[matKey]) {
+        _matCache[matKey] = new THREE.MeshBasicMaterial({
+          color: 0xff2222, transparent: true, opacity: 0.9,
+        });
+      }
+      let mesh = meshByKey[shipKey];
+      let isNew = false;
+      if (!mesh) {
+        isNew = true;
+        if (raiderPool.length > 0) {
+          mesh = raiderPool.pop();
+          mesh.material = _matCache[matKey];
+          mesh.visible = true;
+        } else {
+          mesh = new THREE.Mesh(_geoCache.raider, _matCache[matKey]);
+          scene.add(mesh);
+        }
+      }
+      const sys = galaxyData.systems[raider.systemId];
+      if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; raiderPool.push(mesh); continue; }
+
+      mesh.userData.shipData = raider;
+      mesh.userData._shipKey = shipKey;
+      mesh.userData._updateTime = now;
+      if (isNew) {
+        mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      raiderMeshes.push(mesh);
+    }
+  }
+
   // ── Update from game state ──
 
   function updateOwnership(colonies, players) {
@@ -798,6 +861,20 @@
       }
       mesh.rotation.y = now * 0.003;
     }
+
+    // Raiders
+    for (const mesh of raiderMeshes) {
+      const raider = mesh.userData.shipData;
+      if (!raider) continue;
+      const pos = _extrapolateTransitPos(raider, 40, 3, mesh.userData._updateTime || now, now);
+      if (pos) {
+        mesh.position.set(pos.x, pos.y, pos.z);
+      } else {
+        const sys = galaxyData.systems[raider.systemId];
+        if (sys) mesh.position.set(sys.x + 5, (sys.y || 0) + 5, sys.z + 5);
+      }
+      mesh.rotation.y = now * 0.004;
+    }
   }
 
   // ── Render ──
@@ -844,6 +921,7 @@
     updateOwnership,
     updateColonyShips,
     updateScienceShips,
+    updateRaiders,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,

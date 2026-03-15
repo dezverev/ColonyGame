@@ -1419,4 +1419,43 @@ Each entry records an iteration of automated development.
 - `_invalidateAllProductionCaches` is a new method separate from `_invalidatePlayerProductionCaches` — scarcity affects ALL players, not per-player
 - Scarcity is galaxy-wide (not per-colony) to create shared economic weather that drives trade/diplomacy decisions
 
-**Next:** Starting condition draft "Opening Hands" (game-designer R38-3), NPC raider fleets (R39-1), or military outposts (R39-2)
+**Next:** Opening Hands starting draft (R40-2), military outposts (R40-3), or in-game chat + diplomacy pings (R40-4)
+
+---
+
+## Entry 41 — 2026-03-14 — NPC Raider Fleets (PvE Military Threat)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- NPC raider fleet spawning: every 1800-3000 ticks (3-5 min), a raider spawns at a random galaxy edge system and moves toward the nearest player colony via BFS pathfinding at 40 ticks/hop
+- Defense platform build command: `buildDefensePlatform` costs 100 alloys, 200-tick build time, max 1 per colony, 50 HP / 15 attack per combat tick
+- Combat resolution: auto-resolves over 5 ticks when raider arrives — platform deals 15/tick (kills 30 HP raider in 2 ticks), raider deals 8/tick (platform survives at 42 HP). Damaged platforms may lose to subsequent raiders
+- Raid consequences: undefended colonies lose 2 random districts (disabled for 300 ticks) + 50 of each resource stolen
+- VP integration: +5 VP per raider destroyed, tracked per player as lifetime count, shown in scoreboard
+- Defense platform passive repair: +10 HP/month, capped at maxHp
+- Raider-disabled district re-enable timers: districts auto-re-enable after 300 ticks
+- Client: toast notifications for raiderSpawned/raiderDefeated/colonyRaided, event ticker entries, HUD raider count indicator, red diamond raider markers on galaxy map with smooth animation, game-over scoreboard "Raiders" column
+
+**Files changed:**
+- `server/game-engine.js` — 14 new constants (RAIDER_*, DEFENSE_PLATFORM_*), constructor init (_raiders, _nextRaiderTick, _raidersDestroyed), _randomRaiderInterval, _getEdgeSystems, _findNearestColonySystem, _processRaiderSpawning, _processRaiderMovement, _resolveRaiderArrival, _raidColony, _removeRaider, _processRaiderDisableTimers, _processDefensePlatformRepair, _processDefensePlatformConstruction methods, buildDefensePlatform command handler, raider VP in _calcVPBreakdown, raiders in getState/getPlayerState serialization, defensePlatform in _serializeColony (conditional), defensePlatform field on colony objects, updated tick() and module.exports
+- `src/public/js/toast-format.js` — raiderSpawned/raiderDefeated/colonyRaided in TOAST_TYPE_MAP and formatGameEvent
+- `src/public/js/app.js` — raider events in _formatTickerEvent, raider HUD indicator, updateRaiders call in galaxy view update, game-over scoreboard "Raiders" column
+- `src/public/js/galaxy-view.js` — raider geometry/material, raiderMeshes/raiderPool tracking, updateRaiders function, raider animation in _animateShips, cleanup in destroy, exported in GalaxyView object
+- `src/public/index.html` — raider-indicator span in status bar
+- `src/tests/raider-fleets.test.js` — **new** 44 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 945 total (44 new: 4 constants, 4 initialization, 4 spawning, 1 movement, 5 defense platform construction, 6 combat resolution, 3 VP integration, 4 defense platform repair, 5 serialization, 1 resource theft limits, 5 edge cases, 1 toast format, 1 lifecycle integration). All passing.
+
+**Key decisions:**
+- Combat resolves instantly on arrival (not over multiple ticks in the tick loop) — simpler and avoids needing to track in-progress combats, matches the "auto-resolve over 5 ticks" spec by running 5 combat iterations in a single function call
+- Platform attacks first each combat tick — the defender has advantage, so a full-HP platform always beats a single raider (15×2 = 30 kills raider, takes 8 damage = 42 HP remaining)
+- Raider-disabled districts use `_raiderDisableTick` property on district objects to track when to re-enable, separate from crisis disable mechanism
+- Defense platform is omitted from colony serialization when null to keep payload under 25KB at 8 players / 40 colonies
+- Raiders visible to all players (not fog-gated) since they're a shared threat that all players should see and prepare for
+- Edge systems for spawning are defined as systems with ≤2 hyperlane connections (galactic rim nodes)
+
+**Next:** Opening Hands starting draft (R40-2), military outposts (R40-3), or in-game chat + diplomacy pings (R40-4)

@@ -159,6 +159,22 @@ const SCARCITY_DURATION = 300;       // 30 seconds at 10Hz
 const SCARCITY_WARNING_TICKS = 100;  // 10 seconds advance warning
 const SCARCITY_MULTIPLIER = 0.70;    // -30% production during scarcity
 
+// NPC raider fleet constants
+const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
+const RAIDER_MAX_INTERVAL = 3000;   // maximum ticks between raider spawns (~5 min)
+const RAIDER_HOP_TICKS = 40;        // 4 seconds per hyperlane hop
+const RAIDER_HP = 30;
+const RAIDER_ATTACK = 8;            // damage per combat tick
+const RAIDER_COMBAT_TICKS = 5;      // combat resolves over 5 ticks
+const DEFENSE_PLATFORM_COST = { alloys: 100 };
+const DEFENSE_PLATFORM_BUILD_TIME = 200; // 20 seconds
+const DEFENSE_PLATFORM_MAX_HP = 50;
+const DEFENSE_PLATFORM_ATTACK = 15;  // damage per combat tick
+const DEFENSE_PLATFORM_REPAIR_RATE = 10; // HP repaired per month
+const RAIDER_DISABLE_TICKS = 300;    // districts disabled for 30 seconds on raid
+const RAIDER_RESOURCE_STOLEN = 50;   // 50 of each resource stolen on raid
+const RAIDER_DESTROY_VP = 5;         // +5 VP per raider destroyed
+
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
 
@@ -311,6 +327,11 @@ class GameEngine {
     this._nextScarcityTick = this._randomScarcityInterval(); // first scarcity scheduled
     this._scarcityWarned = false; // true after warning broadcast, before scarcity starts
 
+    // NPC raider fleet tracking
+    this._raiders = []; // { id, systemId, targetColonyId, path, hopProgress, hp }
+    this._nextRaiderTick = this._randomRaiderInterval(); // first raider spawn
+    this._raidersDestroyed = new Map(); // playerId -> count of raiders destroyed (lifetime)
+
     this._initPlayerStates();
 
     // Generate galaxy
@@ -407,6 +428,7 @@ class GameEngine {
       growthProgress: 0,           // ticks accumulated toward next pop
       crisisState: null,           // active crisis: { type, ticksRemaining, resolved, disabledIds, quarantineTicks, strikeTicks, energyBoostTicks }
       nextCrisisTick: 0,           // tick when next crisis can occur (set on colony creation)
+      defensePlatform: null,       // { hp, maxHp, building } — null until built, building=true while under construction
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
@@ -816,6 +838,319 @@ class GameEngine {
       this._dirtyPlayers.add(colony.ownerId);
     }
     this._summaryCacheTick = -1;
+  }
+
+  // ── NPC Raider Fleet System ──
+
+  _randomRaiderInterval() {
+    return RAIDER_MIN_INTERVAL + Math.floor(Math.random() * (RAIDER_MAX_INTERVAL - RAIDER_MIN_INTERVAL));
+  }
+
+  // Find edge systems (systems with fewer connections — galactic rim)
+  _getEdgeSystems() {
+    const adj = this._adjacency;
+    const edges = [];
+    for (const sys of this.galaxy.systems) {
+      const neighbors = adj.get(sys.id) || [];
+      if (neighbors.length <= 2) edges.push(sys.id);
+    }
+    // Fallback: if no edge systems found, pick any unowned systems
+    if (edges.length === 0) {
+      for (const sys of this.galaxy.systems) {
+        const isOwned = [...this.colonies.values()].some(c => c.systemId === sys.id);
+        if (!isOwned) edges.push(sys.id);
+      }
+    }
+    return edges;
+  }
+
+  // Find nearest player colony to a system via BFS
+  _findNearestColonySystem(fromSystemId) {
+    const adj = this._adjacency;
+    const visited = new Set([fromSystemId]);
+    const queue = [fromSystemId];
+    const colonySystems = new Set();
+    for (const [, colony] of this.colonies) {
+      colonySystems.add(colony.systemId);
+    }
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (colonySystems.has(current) && current !== fromSystemId) {
+        return current;
+      }
+      const neighbors = adj.get(current) || [];
+      for (const neighbor of neighbors) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    return null;
+  }
+
+  _processRaiderSpawning() {
+    if (this.colonies.size === 0) return; // no colonies to raid
+
+    if (this.tickCount >= this._nextRaiderTick) {
+      const edgeSystems = this._getEdgeSystems();
+      if (edgeSystems.length === 0) return;
+
+      // Pick random edge system for spawn
+      const spawnSystemId = edgeSystems[Math.floor(Math.random() * edgeSystems.length)];
+
+      // Find nearest colony to target
+      const targetSystemId = this._findNearestColonySystem(spawnSystemId);
+      if (!targetSystemId) {
+        // No reachable colony — try again later
+        this._nextRaiderTick = this.tickCount + 100;
+        return;
+      }
+
+      // Find path to target
+      const path = this._findPath(spawnSystemId, targetSystemId);
+      if (!path || path.length === 0) {
+        this._nextRaiderTick = this.tickCount + 100;
+        return;
+      }
+
+      // Find which colony is at the target system
+      let targetColonyId = null;
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === targetSystemId) {
+          targetColonyId = colony.id;
+          break;
+        }
+      }
+
+      const raider = {
+        id: this._nextId(),
+        systemId: spawnSystemId,
+        targetSystemId,
+        targetColonyId,
+        path,
+        hopProgress: 0,
+        hp: RAIDER_HP,
+      };
+      this._raiders.push(raider);
+
+      // Schedule next raider
+      this._nextRaiderTick = this.tickCount + this._randomRaiderInterval();
+
+      // Broadcast raider spawned to all players
+      this._emitEvent('raiderSpawned', null, {
+        raiderId: raider.id,
+        systemId: spawnSystemId,
+        targetSystemId,
+      }, true);
+
+      // Mark all players dirty for state broadcast
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+  }
+
+  _processRaiderMovement() {
+    const arrivals = [];
+    for (const raider of this._raiders) {
+      if (!raider.path || raider.path.length === 0) continue;
+
+      raider.hopProgress++;
+
+      if (raider.hopProgress >= RAIDER_HOP_TICKS) {
+        raider.systemId = raider.path.shift();
+        raider.hopProgress = 0;
+
+        if (raider.path.length === 0) {
+          arrivals.push(raider);
+        }
+      }
+    }
+
+    // Mark all players dirty if raiders exist (position updates)
+    if (this._raiders.length > 0 && this.tickCount % 5 === 0) {
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+      this._invalidateStateCache();
+    }
+
+    // Process arrivals at target systems
+    for (const raider of arrivals) {
+      this._resolveRaiderArrival(raider);
+    }
+  }
+
+  _resolveRaiderArrival(raider) {
+    // Find colony at target system
+    let targetColony = null;
+    if (raider.targetColonyId) {
+      targetColony = this.colonies.get(raider.targetColonyId);
+    }
+    if (!targetColony) {
+      // Colony may have been lost; find any colony at this system
+      for (const [, colony] of this.colonies) {
+        if (colony.systemId === raider.systemId) {
+          targetColony = colony;
+          break;
+        }
+      }
+    }
+
+    if (!targetColony) {
+      // No colony here anymore — raider dissipates
+      this._removeRaider(raider);
+      return;
+    }
+
+    const ownerId = targetColony.ownerId;
+
+    // Check for defense platform
+    if (targetColony.defensePlatform && !targetColony.defensePlatform.building && targetColony.defensePlatform.hp > 0) {
+      // Combat: platform vs raider over RAIDER_COMBAT_TICKS
+      const platform = targetColony.defensePlatform;
+      let raiderHp = raider.hp;
+      let platformHp = platform.hp;
+
+      for (let t = 0; t < RAIDER_COMBAT_TICKS; t++) {
+        // Platform attacks raider
+        raiderHp -= DEFENSE_PLATFORM_ATTACK;
+        if (raiderHp <= 0) break;
+        // Raider attacks platform
+        platformHp -= RAIDER_ATTACK;
+        if (platformHp <= 0) break;
+      }
+
+      platform.hp = Math.max(0, platformHp);
+
+      if (raiderHp <= 0) {
+        // Raider destroyed — player gets VP credit
+        const count = (this._raidersDestroyed.get(ownerId) || 0) + 1;
+        this._raidersDestroyed.set(ownerId, count);
+        this._vpCacheTick = -1; // VP changed
+
+        this._emitEvent('raiderDefeated', ownerId, {
+          colonyId: targetColony.id,
+          colonyName: targetColony.name,
+          systemId: raider.systemId,
+          platformHpRemaining: platform.hp,
+        }, true);
+
+        this._removeRaider(raider);
+      } else {
+        // Platform destroyed, raider raids the colony
+        raider.hp = raiderHp;
+        this._raidColony(raider, targetColony);
+      }
+    } else {
+      // No defense — raid the colony
+      this._raidColony(raider, targetColony);
+    }
+
+    this._dirtyPlayers.add(ownerId);
+    this._invalidateColonyCache(targetColony);
+    this._invalidateStateCache();
+  }
+
+  _raidColony(raider, colony) {
+    const ownerId = colony.ownerId;
+    const state = this.playerStates.get(ownerId);
+
+    // Disable 2 random non-disabled districts for RAIDER_DISABLE_TICKS
+    const enabledDistricts = colony.districts.filter(d => !d.disabled);
+    // Shuffle and pick up to 2
+    for (let i = enabledDistricts.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [enabledDistricts[i], enabledDistricts[j]] = [enabledDistricts[j], enabledDistricts[i]];
+    }
+    const toDisable = enabledDistricts.slice(0, 2);
+    const disabledIds = [];
+    for (const d of toDisable) {
+      d.disabled = true;
+      d._raiderDisableTick = this.tickCount + RAIDER_DISABLE_TICKS;
+      disabledIds.push(d.id);
+    }
+
+    // Steal 50 of each resource (don't go below 0)
+    if (state) {
+      const stolen = {};
+      for (const res of ['energy', 'minerals', 'food']) {
+        const amount = Math.min(state.resources[res], RAIDER_RESOURCE_STOLEN);
+        state.resources[res] -= amount;
+        stolen[res] = amount;
+      }
+
+      this._emitEvent('colonyRaided', ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        systemId: colony.systemId,
+        districtsDisabled: disabledIds.length,
+        resourcesStolen: stolen,
+      }, true);
+    }
+
+    this._removeRaider(raider);
+  }
+
+  _removeRaider(raider) {
+    const idx = this._raiders.indexOf(raider);
+    if (idx !== -1) this._raiders.splice(idx, 1);
+    for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
+    this._invalidateStateCache();
+  }
+
+  // Re-enable districts disabled by raiders after their timer expires
+  _processRaiderDisableTimers() {
+    for (const [, colony] of this.colonies) {
+      let changed = false;
+      for (const d of colony.districts) {
+        if (d._raiderDisableTick && this.tickCount >= d._raiderDisableTick) {
+          d.disabled = false;
+          delete d._raiderDisableTick;
+          changed = true;
+        }
+      }
+      if (changed) {
+        this._invalidateColonyCache(colony);
+        this._emitEvent('districtEnabled', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: 'raider-disabled',
+        });
+      }
+    }
+  }
+
+  // Repair defense platforms passively each month
+  _processDefensePlatformRepair() {
+    for (const [, colony] of this.colonies) {
+      if (!colony.defensePlatform || colony.defensePlatform.building) continue;
+      if (colony.defensePlatform.hp < colony.defensePlatform.maxHp) {
+        colony.defensePlatform.hp = Math.min(
+          colony.defensePlatform.maxHp,
+          colony.defensePlatform.hp + DEFENSE_PLATFORM_REPAIR_RATE
+        );
+        this._dirtyPlayers.add(colony.ownerId);
+        this._invalidateStateCache();
+      }
+    }
+  }
+
+  // Process defense platform construction (called from _processConstruction area)
+  _processDefensePlatformConstruction() {
+    for (const [, colony] of this.colonies) {
+      if (!colony.defensePlatform || !colony.defensePlatform.building) continue;
+      colony.defensePlatform.buildTicksRemaining--;
+      this._dirtyPlayers.add(colony.ownerId);
+      if (colony.defensePlatform.buildTicksRemaining <= 0) {
+        colony.defensePlatform.building = false;
+        delete colony.defensePlatform.buildTicksRemaining;
+        this._invalidateStateCache();
+        this._emitEvent('constructionComplete', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: 'defensePlatform',
+        });
+      }
+    }
   }
 
   // Process construction queues
@@ -1910,7 +2245,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0 };
       return empty;
     }
 
@@ -1958,7 +2293,11 @@ class GameEngine {
     const surveyed = surveyedSet ? surveyedSet.size : 0;
     const surveyedVP = Math.floor(surveyed / 5);
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP;
+    // Raider VP: +5 per raider destroyed
+    const raidersDestroyed = this._raidersDestroyed.get(playerId) || 0;
+    const raidersVP = raidersDestroyed * RAIDER_DESTROY_VP;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -1967,6 +2306,7 @@ class GameEngine {
       techs: (state.completedTechs || []).length, techVP,
       traits: traitCount, traitsVP,
       surveyed, surveyedVP,
+      raidersDestroyed, raidersVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -2162,6 +2502,9 @@ class GameEngine {
     // Process construction every tick
     this._processConstruction();
 
+    // Process defense platform construction every tick
+    this._processDefensePlatformConstruction();
+
     // Process colony ship movement every tick
     this._processColonyShipMovement();
 
@@ -2177,6 +2520,11 @@ class GameEngine {
     // Scarcity season processing every tick
     this._processScarcitySeason();
 
+    // NPC raider fleet processing every tick
+    this._processRaiderSpawning();
+    this._processRaiderMovement();
+    this._processRaiderDisableTimers();
+
     // Monthly processing (every 100 ticks)
     if (this.tickCount % MONTH_TICKS === 0) {
       this._processMonthlyResources();
@@ -2185,6 +2533,7 @@ class GameEngine {
       this._processPopStarvation();
       this._processEdicts();
       this._processInfluenceIncome();
+      this._processDefensePlatformRepair();
     }
 
     // Flush events — send per-player event messages
@@ -2561,6 +2910,41 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'buildDefensePlatform': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        // Check if colony already has a defense platform
+        if (colony.defensePlatform) return { error: 'Colony already has a defense platform' };
+
+        // Check resource cost
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(DEFENSE_PLATFORM_COST)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(DEFENSE_PLATFORM_COST)) {
+          state.resources[resource] -= amount;
+        }
+
+        // Start construction
+        colony.defensePlatform = {
+          hp: DEFENSE_PLATFORM_MAX_HP,
+          maxHp: DEFENSE_PLATFORM_MAX_HP,
+          building: true,
+          buildTicksRemaining: DEFENSE_PLATFORM_BUILD_TIME,
+        };
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -2642,6 +3026,11 @@ class GameEngine {
     if (this._activeScarcity) {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
     }
+    // Include raider fleets
+    state.raiders = this._raiders.map(r => ({
+      id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
+      path: r.path || [], hopProgress: r.hopProgress, hp: r.hp,
+    }));
     this._cachedState = state;
     return state;
   }
@@ -2724,6 +3113,11 @@ class GameEngine {
     if (this._activeScarcity) {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
     }
+    // Include raider fleets (all players see all raiders)
+    state.raiders = this._raiders.map(r => ({
+      id: r.id, systemId: r.systemId, targetSystemId: r.targetSystemId,
+      path: r.path || [], hopProgress: r.hopProgress, hp: r.hp,
+    }));
 
     return state;
   }
@@ -2780,7 +3174,7 @@ class GameEngine {
         shutdownTicks: c.crisisState.shutdownTicks || 0,
       };
     }
-    return {
+    const result = {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
       isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
       districts: c.districts, buildQueue: queueArr,
@@ -2796,6 +3190,16 @@ class GameEngine {
         physics: production.physics, society: production.society, engineering: production.engineering,
       },
     };
+    // Only include defensePlatform when present (saves ~700 bytes at 40 colonies)
+    if (c.defensePlatform) {
+      result.defensePlatform = {
+        hp: c.defensePlatform.hp,
+        maxHp: c.defensePlatform.maxHp,
+        building: c.defensePlatform.building || false,
+        buildTicksRemaining: c.defensePlatform.buildTicksRemaining || 0,
+      };
+    }
+    return result;
   }
 
   getInitState() {
@@ -2821,4 +3225,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, generateGalaxy, assignStartingSystems };

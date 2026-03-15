@@ -24,6 +24,9 @@
     scarcityWarning: 'warning',
     scarcityStarted: 'crisis',
     scarcityEnded: 'positive',
+    raiderSpawned: 'warning',
+    raiderDefeated: 'positive',
+    colonyRaided: 'crisis',
   };
 
   function formatGameEvent(msg) {
@@ -78,6 +81,12 @@
         const rName = (d.resource || 'resource').charAt(0).toUpperCase() + (d.resource || 'resource').slice(1);
         return rName + ' scarcity has ended — production restored.';
       }
+      case 'raiderSpawned':
+        return 'ALERT: Raider fleet detected on the galactic rim — heading for your colonies!';
+      case 'raiderDefeated':
+        return 'Defense platform destroyed raider at ' + (d.colonyName || 'colony') + '! +5 VP';
+      case 'colonyRaided':
+        return 'RAIDED: ' + (d.colonyName || 'Colony') + ' was raided! ' + (d.districtsDisabled || 0) + ' districts disabled.';
       default:
         return null;
     }

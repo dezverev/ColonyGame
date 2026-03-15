@@ -179,6 +179,9 @@
             if (window.GalaxyView.updateScienceShips) {
               window.GalaxyView.updateScienceShips(gameState.scienceShips);
             }
+            if (window.GalaxyView.updateRaiders) {
+              window.GalaxyView.updateRaiders(gameState.raiders);
+            }
             // Refresh open system panel so survey results appear
             if (systemPanel && !systemPanel.classList.contains('hidden')) {
               const sel = window.GalaxyView.getSelectedSystem();
@@ -447,6 +450,12 @@
         const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
         return `<span style="color:#2ecc71">${rn} scarcity ended — production restored.</span>`;
       }
+      case 'raiderSpawned':
+        return `<span style="color:#e74c3c">\u26A0 Raider fleet detected on the galactic rim!</span>`;
+      case 'raiderDefeated':
+        return `<span style="color:#2ecc71">Defense platform destroyed raider at ${msg.colonyName || 'colony'}! +5 VP</span>`;
+      case 'colonyRaided':
+        return `<span style="color:#e74c3c">\u26A0 ${msg.colonyName || 'Colony'} was raided! ${msg.districtsDisabled || 0} districts disabled.</span>`;
       default:
         return null;
     }
@@ -867,6 +876,17 @@
         scarcityEl.classList.remove('hidden');
       } else {
         scarcityEl.classList.add('hidden');
+      }
+    }
+    // Raider alert indicator
+    const raiderEl = document.getElementById('raider-indicator');
+    if (raiderEl) {
+      const raiderCount = (gameState.raiders || []).length;
+      if (raiderCount > 0) {
+        raiderEl.textContent = '\u26A0 ' + raiderCount + ' Raider' + (raiderCount > 1 ? 's' : '') + ' Inbound';
+        raiderEl.classList.remove('hidden');
+      } else {
+        raiderEl.classList.add('hidden');
       }
     }
 
@@ -1438,7 +1458,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1448,7 +1468,8 @@
         `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
         `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
         `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
-        `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td></tr>`;
+        `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
+        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';
     gameOverScores.innerHTML = scoresHtml;
