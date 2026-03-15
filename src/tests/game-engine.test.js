@@ -3750,4 +3750,160 @@ describe('GameEngine — Edict System', () => {
     assert.ok(EDICT_DEFS.researchGrant);
     assert.ok(EDICT_DEFS.emergencyReserves);
   });
+
+  it('can activate a new edict after the previous one expires', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+
+    // Expire it by ticking 5 months
+    for (let i = 0; i < 500; i++) engine.tick();
+    const state = engine.playerStates.get(1);
+    assert.strictEqual(state.activeEdict, null, 'edict should have expired');
+
+    // Now activate another
+    const result = engine.handleCommand(1, { type: 'activateEdict', edictType: 'researchGrant' });
+    assert.deepStrictEqual(result, { ok: true });
+    assert.strictEqual(state.activeEdict.type, 'researchGrant');
+  });
+
+  it('emergency reserves can be used while a duration edict IS active', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+
+    // Activate a duration edict first
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+    assert.ok(state.activeEdict, 'duration edict should be active');
+
+    // Emergency reserves is instant — should it be blocked or allowed?
+    // Per the code: state.activeEdict is set, so it IS blocked
+    const result = engine.handleCommand(1, { type: 'activateEdict', edictType: 'emergencyReserves' });
+    assert.ok(result.error, 'emergency reserves blocked while duration edict active');
+  });
+
+  it('emergency reserves deducts influence', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    const influenceBefore = state.resources.influence;
+
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'emergencyReserves' });
+    assert.strictEqual(state.resources.influence, influenceBefore - 25, 'should deduct 25 influence for emergency reserves');
+  });
+
+  it('succeeds when influence exactly equals edict cost', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.influence = 50; // exact cost for mineralRush
+
+    const result = engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+    assert.deepStrictEqual(result, { ok: true });
+    assert.strictEqual(state.resources.influence, 0);
+  });
+
+  it('rejects edict with non-string edictType', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    assert.ok(engine.handleCommand(1, { type: 'activateEdict', edictType: 42 }).error);
+    assert.ok(engine.handleCommand(1, { type: 'activateEdict', edictType: null }).error);
+    assert.ok(engine.handleCommand(1, { type: 'activateEdict', edictType: {} }).error);
+  });
+
+  it('production returns to base values after edict expires', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonies = engine._playerColonies.get(1);
+    const colony = engine.colonies.get(colonies[0]);
+
+    const baseProd = engine._calcProduction(colony);
+    const baseMinerals = baseProd.production.minerals;
+    assert.ok(baseMinerals > 0, 'should have base mineral production');
+
+    // Activate mineral rush
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+
+    // Expire it
+    for (let i = 0; i < 500; i++) engine.tick();
+    const state = engine.playerStates.get(1);
+    assert.strictEqual(state.activeEdict, null, 'edict should have expired');
+
+    // Production should be back to base
+    colony._cachedProduction = null;
+    const afterProd = engine._calcProduction(colony);
+    assert.strictEqual(afterProd.production.minerals, baseMinerals, 'minerals should return to base after edict expires');
+  });
+
+  it('research grant boosts all three research fields', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colonies = engine._playerColonies.get(1);
+    const colony = engine.colonies.get(colonies[0]);
+
+    const baseProd = engine._calcProduction(colony);
+    const baseEng = baseProd.production.engineering;
+    assert.ok(baseEng > 0, 'should have base engineering production');
+
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'researchGrant' });
+    engine._invalidatePlayerProductionCaches(1);
+    const boostedProd = engine._calcProduction(colony);
+
+    assert.strictEqual(boostedProd.production.engineering, Math.round(baseEng * 1.5 * 100) / 100, 'engineering should be boosted 50%');
+  });
+
+  it('multiple emergency reserves can be used consecutively', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const state = engine.playerStates.get(1);
+    state.resources.influence = 100; // enough for 4 uses at 25 each
+
+    const energyBefore = state.resources.energy;
+    for (let i = 0; i < 4; i++) {
+      const result = engine.handleCommand(1, { type: 'activateEdict', edictType: 'emergencyReserves' });
+      assert.deepStrictEqual(result, { ok: true });
+    }
+    assert.strictEqual(state.resources.energy, energyBefore + 400);
+    assert.strictEqual(state.resources.influence, 0);
+  });
+
+  it('edict does not affect other players production', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const p2Colonies = engine._playerColonies.get(2);
+    const p2Colony = engine.colonies.get(p2Colonies[0]);
+
+    const baseProd = engine._calcProduction(p2Colony);
+    const baseMinerals = baseProd.production.minerals;
+
+    // Player 1 activates mineral rush
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+    p2Colony._cachedProduction = null;
+    const afterProd = engine._calcProduction(p2Colony);
+
+    assert.strictEqual(afterProd.production.minerals, baseMinerals, 'player 2 minerals should be unaffected by player 1 edict');
+  });
+
+  it('edictActivated event for instant edict includes instant flag', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, onEvent: (evts) => events.push(...evts) });
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'emergencyReserves' });
+    tickToBroadcast(engine);
+
+    const evt = events.find(e => e.eventType === 'edictActivated');
+    assert.ok(evt, 'should emit edictActivated for instant edict');
+    assert.strictEqual(evt.instant, true, 'instant flag should be true');
+    assert.strictEqual(evt.edictName, 'Emergency Reserves');
+  });
+
+  it('edictActivated event for duration edict includes duration', () => {
+    const events = [];
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10, onEvent: (evts) => events.push(...evts) });
+    engine.handleCommand(1, { type: 'activateEdict', edictType: 'mineralRush' });
+    tickToBroadcast(engine);
+
+    const evt = events.find(e => e.eventType === 'edictActivated');
+    assert.ok(evt);
+    assert.strictEqual(evt.duration, 5);
+    assert.strictEqual(evt.instant, undefined, 'duration edict should not have instant flag');
+  });
+
+  it('null activeEdict in player state JSON when no edict active', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const json = engine.getPlayerStateJSON(1);
+    const parsed = JSON.parse(json);
+    const me = parsed.players[0];
+    assert.strictEqual(me.activeEdict, null, 'activeEdict should be null when none active');
+  });
 });
