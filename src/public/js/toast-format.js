@@ -29,6 +29,8 @@
     colonyRaided: 'crisis',
     shipLostMaintenance: 'crisis',
     maintenanceAttrition: 'crisis',
+    colonyOccupied: 'crisis',
+    colonyLiberated: 'positive',
   };
 
   function formatGameEvent(msg) {
@@ -93,6 +95,10 @@
         return 'Corvette lost — cannot afford fleet maintenance!';
       case 'maintenanceAttrition':
         return 'Fleet attrition: ' + (d.shipsLost || 0) + ' corvette' + ((d.shipsLost || 0) > 1 ? 's' : '') + ' scrapped — resources too low!';
+      case 'colonyOccupied':
+        return 'OCCUPIED: ' + (d.colonyName || 'Colony') + ' has been occupied by ' + (d.occupantName || 'enemy') + '! -5 VP';
+      case 'colonyLiberated':
+        return (d.colonyName || 'Colony') + ' has been liberated!';
       default:
         return null;
     }

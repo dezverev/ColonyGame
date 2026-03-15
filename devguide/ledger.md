@@ -1593,4 +1593,42 @@ Each entry records an iteration of automated development.
 - Idle-only maintenance for civilian ships: ships in transit or surveying are "operational" and don't incur idle cost — rewards active use of civilian fleet
 - Attrition event is broadcast so all players see when an opponent's fleet degrades — creates strategic information
 
+---
+
+## Entry 46 — 2026-03-14 — Colony Occupation After Fleet Combat
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Colony occupation system: when an attacker has corvettes in a system with an enemy colony and no defender ships, occupation progress increments each tick. After 300 ticks (30 seconds), colony becomes occupied.
+- Occupied colonies produce at 50% output (applied as final multiplier in `_calcProduction`).
+- VP integration: attacker gains +3 VP per occupied colony, defender loses -5 VP per occupied colony (asymmetric to punish losing territory).
+- Liberation: defender moves corvettes to system with no enemy ships → colony is freed, production restored, VP reset.
+- Progress reset: if attacker ships leave or defender ships arrive before occupation completes, progress resets to 0.
+- Events: `colonyOccupied` and `colonyLiberated` broadcast events with system/colony details.
+- Client: occupation events in event ticker, toast notifications for own events, "OCCUPIED" badge in colony list sidebar, "Occupation" column in game-over scoreboard.
+- Serialization: `occupiedBy` and `occupationProgress` included in colony state when active.
+
+**Files changed:**
+- `server/game-engine.js` — 4 new constants (OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP), `occupiedBy`/`occupationProgress` fields on colonies, `_processOccupation` tick method, occupation multiplier in `_calcProduction`, occupation VP in `_calcVPBreakdown`, serialization, module.exports
+- `src/public/js/app.js` — `colonyOccupied`/`colonyLiberated` ticker formatters, occupation badge in colony list, "Occupation" column in game-over scoreboard
+- `src/public/js/toast-format.js` — toast formatting and type map for occupation events
+- `src/public/css/style.css` — `.colony-list-occupied` badge style
+- `src/tests/colony-occupation.test.js` — **new** 34 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1188 total (34 new: 2 constants, 1 initial state, 7 occupation progress, 2 events, 3 production penalty, 4 VP integration, 4 liberation, 4 serialization, 2 tick integration, 5 edge cases). All passing (1 pre-existing flaky perf test unrelated).
+
+**Key decisions:**
+- Occupation progress is per-tick (not monthly) — 300 ticks = 30 seconds, giving defenders a meaningful window to respond
+- Progress resets entirely if attacker leaves or defender arrives — no partial credit, clean binary state
+- Production multiplier applies to all positive production resources (not consumption) — occupied colonies still consume food/energy, creating a drain on the defender
+- VP is asymmetric (-5 defender, +3 attacker) — losing territory hurts more than gaining it, incentivizing defense
+- Already-occupied colonies cannot be re-occupied by a third party — the `continue` in `_processOccupation` skips occupied colonies, preventing occupation chain exploits
+- Liberation invalidates production cache immediately — no stale 50% penalty after liberation
+
+**Next:** Colony procedural naming (Phase 7, R45-6) — 30-minute task with outsized emotional payoff per game-designer R45 priority order
+
 **Next:** Colony occupation after fleet combat (R44-2) — winning battles should change the map

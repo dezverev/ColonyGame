@@ -172,6 +172,10 @@ const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
 const CORVETTE_MAINTENANCE = { energy: 1, alloys: 1 };  // per corvette per month
 const CIVILIAN_SHIP_MAINTENANCE = { energy: 1 };         // per idle colony/science ship per month
 const MAINTENANCE_DAMAGE = 2;       // HP lost per corvette when maintenance unpaid
+const OCCUPATION_TICKS = 300;       // 30 seconds to occupy a colony (with corvettes present)
+const OCCUPATION_PRODUCTION_MULT = 0.5; // occupied colonies produce at 50%
+const OCCUPATION_ATTACKER_VP = 3;   // VP per occupied colony for attacker
+const OCCUPATION_DEFENDER_VP = -5;  // VP penalty per occupied colony for defender
 
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
@@ -456,6 +460,8 @@ class GameEngine {
       crisisState: null,           // active crisis: { type, ticksRemaining, resolved, disabledIds, quarantineTicks, strikeTicks, energyBoostTicks }
       nextCrisisTick: 0,           // tick when next crisis can occur (set on colony creation)
       defensePlatform: null,       // { hp, maxHp, building } — null until built, building=true while under construction
+      occupiedBy: null,            // playerId of occupying player, null if unoccupied
+      occupationProgress: 0,       // ticks progressed toward occupation (0 to OCCUPATION_TICKS)
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
@@ -709,6 +715,15 @@ class GameEngine {
     // Power surge energy boost: +50% energy production during energyBoostTicks
     if (colony.crisisState && colony.crisisState.energyBoostTicks > 0 && production.energy > 0) {
       production.energy = Math.round(production.energy * 1.5 * 100) / 100;
+    }
+
+    // Occupation penalty: 50% production when occupied by another player
+    if (colony.occupiedBy) {
+      for (const resource of Object.keys(production)) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
+        }
+      }
     }
 
     const result = { production, consumption };
@@ -2236,6 +2251,92 @@ class GameEngine {
     this._invalidateStateCache();
   }
 
+  // Process colony occupation progress each tick
+  _processOccupation() {
+    let changed = false;
+    for (const colony of this.colonies.values()) {
+      const systemId = colony.systemId;
+      if (systemId == null) continue;
+
+      const shipsHere = this._militaryShipsBySystem.get(systemId) || [];
+
+      // Find which players have idle military ships in this system
+      const ownersHere = new Set();
+      for (const ship of shipsHere) {
+        if (ship.path && ship.path.length > 0) continue; // in transit
+        ownersHere.add(ship.ownerId);
+      }
+
+      // Check if colony is already occupied — handle liberation
+      if (colony.occupiedBy) {
+        const occupierPresent = ownersHere.has(colony.occupiedBy);
+        const defenderPresent = ownersHere.has(colony.ownerId);
+
+        // Liberation: defender has ships, occupier does not
+        if (defenderPresent && !occupierPresent) {
+          const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+          const prevOccupier = colony.occupiedBy;
+          colony.occupiedBy = null;
+          colony.occupationProgress = 0;
+          colony._cachedProduction = null; // invalidate production cache
+          this._emitEvent('colonyLiberated', colony.ownerId, { colonyId: colony.id, colonyName: colony.name, systemId, systemName, liberatedFrom: prevOccupier }, true);
+          this._dirtyPlayers.add(colony.ownerId);
+          this._dirtyPlayers.add(prevOccupier);
+          this._vpCacheTick = -1;
+          changed = true;
+        }
+        continue; // already occupied, skip occupation progress
+      }
+
+      // Check for attackers — enemy player with ships at this system, no defender ships
+      const defenderPresent = ownersHere.has(colony.ownerId);
+      if (defenderPresent) {
+        // Defender has ships — reset any occupation progress
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Find an attacker (enemy with ships here)
+      let attackerId = null;
+      for (const ownerId of ownersHere) {
+        if (ownerId !== colony.ownerId) {
+          attackerId = ownerId;
+          break;
+        }
+      }
+
+      if (!attackerId) {
+        // No one here — reset progress
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Increment occupation progress
+      colony.occupationProgress++;
+      changed = true;
+
+      // Check if occupation is complete
+      if (colony.occupationProgress >= OCCUPATION_TICKS) {
+        colony.occupiedBy = attackerId;
+        colony._cachedProduction = null; // invalidate production cache
+        const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+        const attackerState = this.playerStates.get(attackerId);
+        const attackerName = attackerState ? attackerState.name : 'Unknown';
+        this._emitEvent('colonyOccupied', colony.ownerId, { colonyId: colony.id, colonyName: colony.name, systemId, systemName, occupantId: attackerId, occupantName: attackerName }, true);
+        this._dirtyPlayers.add(colony.ownerId);
+        this._dirtyPlayers.add(attackerId);
+        this._vpCacheTick = -1;
+      }
+    }
+    if (changed) this._invalidateStateCache();
+  }
+
   // Add a military ship and update indices
   _addMilitaryShip(ship) {
     this._militaryShips.push(ship);
@@ -2600,7 +2701,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0 };
       return empty;
     }
 
@@ -2662,7 +2763,28 @@ class GameEngine {
     const shipsLost = this._shipsLost.get(playerId) || 0;
     const shipsLostVP = shipsLost > 0 ? shipsLost * FLEET_SHIP_LOST_VP : 0;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP;
+    // Occupation VP: attacker gains VP for colonies they occupy, defender loses VP for colonies occupied by others
+    let occupiedAttackerVP = 0;
+    let occupiedDefenderVP = 0;
+    let coloniesOccupying = 0;
+    let coloniesOccupied = 0;
+    // Count colonies this player is occupying (attacker VP)
+    for (const colony of this.colonies.values()) {
+      if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+        coloniesOccupying++;
+      }
+    }
+    occupiedAttackerVP = coloniesOccupying * OCCUPATION_ATTACKER_VP;
+    // Count own colonies that are occupied by someone else (defender VP penalty)
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && colony.occupiedBy && colony.occupiedBy !== colony.ownerId) {
+        coloniesOccupied++;
+      }
+    }
+    occupiedDefenderVP = coloniesOccupied * OCCUPATION_DEFENDER_VP;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -2675,6 +2797,8 @@ class GameEngine {
       corvettes, militaryVP,
       battlesWon, battlesWonVP,
       shipsLost, shipsLostVP,
+      coloniesOccupying, occupiedAttackerVP,
+      coloniesOccupied, occupiedDefenderVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -2881,6 +3005,9 @@ class GameEngine {
 
     // Check for fleet combat after movement
     this._checkFleetCombat();
+
+    // Process colony occupation progress
+    this._processOccupation();
 
     // Process science ship movement and surveying every tick
     this._processScienceShipMovement();
@@ -3744,6 +3871,13 @@ class GameEngine {
         physics: production.physics, society: production.society, engineering: production.engineering,
       },
     };
+    // Include occupation state when active
+    if (c.occupiedBy) {
+      result.occupiedBy = c.occupiedBy;
+      result.occupationProgress = c.occupationProgress;
+    } else if (c.occupationProgress > 0) {
+      result.occupationProgress = c.occupationProgress;
+    }
     // Only include defensePlatform when present (saves ~700 bytes at 40 colonies)
     if (c.defensePlatform) {
       result.defensePlatform = {
@@ -3779,4 +3913,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, generateGalaxy, assignStartingSystems };

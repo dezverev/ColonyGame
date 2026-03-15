@@ -220,7 +220,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -479,6 +479,13 @@
         const winner = msg.winnerId ? _pn2(msg.winnerId) : 'Draw';
         const lossStr = Object.entries(msg.losses || {}).map(([pid, n]) => `${_pn2(pid)} lost ${n}`).join(', ');
         return `<span style="color:#f39c12">\u2694 Battle at ${msg.systemName || 'system'}: ${winner} wins! ${lossStr}</span>`;
+      }
+      case 'colonyOccupied': {
+        return `<span style="color:#e74c3c">\u2694 ${msg.occupantName || 'Unknown'} has occupied ${msg.colonyName || 'colony'} in ${msg.systemName || 'system'}!</span>`;
+      }
+      case 'colonyLiberated': {
+        const _pn3 = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        return `<span style="color:#2ecc71">\u2694 ${msg.colonyName || 'Colony'} has been liberated from ${_pn3(msg.liberatedFrom)}!</span>`;
       }
       default:
         return null;
@@ -1134,7 +1141,7 @@
     const sciIdle = mySciShipsAll.filter(s => !s.path || s.path.length === 0).length;
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
-    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ',';
+    for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ':' + (col.occupiedBy || '') + ',';
     key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
@@ -1145,9 +1152,10 @@
       const entry = document.createElement('div');
       entry.className = 'colony-list-entry' + (idx === _viewingColonyIndex ? ' active' : '');
       const traitBadge = col.trait ? `<span class="colony-list-trait">${col.trait.name}</span>` : '';
+      const occupiedBadge = col.occupiedBy ? `<span class="colony-list-occupied">OCCUPIED</span>` : '';
       entry.innerHTML =
         `<span class="colony-list-name">${col.name}</span>` +
-        traitBadge +
+        traitBadge + occupiedBadge +
         `<span class="colony-list-pops">${col.pops} pop</span>`;
       entry.addEventListener('click', () => {
         _viewingColonyIndex = idx;
@@ -1535,7 +1543,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Raiders</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1548,6 +1556,7 @@
         `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
         `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
         `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
+        `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
         `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';

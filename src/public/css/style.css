@@ -533,6 +533,7 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 .colony-list-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; }
 .colony-list-trait { font-size: 0.6rem; color: #f1c40f; background: rgba(241,196,15,0.15); padding: 0 0.3rem; border-radius: 3px; white-space: nowrap; }
+.colony-list-occupied { font-size: 0.6rem; color: #e74c3c; background: rgba(231,76,60,0.2); padding: 0 0.3rem; border-radius: 3px; white-space: nowrap; font-weight: bold; }
 .colony-list-pops { font-family: monospace; color: #888; font-size: 0.7rem; }
 /* Colony trait badge in colony panel */
 .colony-trait-badge { color: #f1c40f; font-weight: bold; }
