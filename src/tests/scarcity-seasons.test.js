@@ -558,3 +558,69 @@ describe('Scarcity Seasons — Full Lifecycle Integration', () => {
     assert.strictEqual(restoredProd.minerals, baseMinerals);
   });
 });
+
+describe('Scarcity — dirty-player marking', () => {
+  it('marks all colony-owning players dirty when scarcity starts', () => {
+    const engine = makeEngineMulti(3);
+    engine._dirtyPlayers.clear();
+
+    // Force scarcity to start this tick
+    engine._nextScarcityTick = engine.tickCount + 1;
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'energy';
+    engine.tick();
+
+    // All 3 players should be marked dirty
+    for (let i = 1; i <= 3; i++) {
+      assert.ok(engine._dirtyPlayers.has(i), `Player ${i} should be dirty after scarcity start`);
+    }
+  });
+
+  it('marks all colony-owning players dirty when scarcity ends', () => {
+    const engine = makeEngineMulti(3);
+    engine._activeScarcity = { resource: 'food', ticksRemaining: 1 };
+    engine._dirtyPlayers.clear();
+    engine.tick();
+
+    for (let i = 1; i <= 3; i++) {
+      assert.ok(engine._dirtyPlayers.has(i), `Player ${i} should be dirty after scarcity end`);
+    }
+  });
+});
+
+describe('Scarcity — tick performance', () => {
+  it('scarcity processing adds negligible per-tick cost', () => {
+    const engine = makeEngineMulti(4);
+
+    // Warm up
+    for (let i = 0; i < 10; i++) engine.tick();
+
+    // Baseline: no scarcity active
+    engine._activeScarcity = null;
+    engine._nextScarcityTick = engine.tickCount + 99999;
+    const baseStart = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) engine.tick();
+    const baseMs = Number(process.hrtime.bigint() - baseStart) / 1e6;
+
+    // With scarcity active
+    engine._activeScarcity = { resource: 'energy', ticksRemaining: 9999 };
+    const scarcityStart = process.hrtime.bigint();
+    for (let i = 0; i < 100; i++) engine.tick();
+    const scarcityMs = Number(process.hrtime.bigint() - scarcityStart) / 1e6;
+
+    // Scarcity overhead should be < 20% of baseline
+    const overhead = (scarcityMs - baseMs) / baseMs;
+    assert.ok(overhead < 0.20,
+      `Scarcity overhead ${(overhead * 100).toFixed(1)}% exceeds 20% budget (base: ${baseMs.toFixed(2)}ms, scarcity: ${scarcityMs.toFixed(2)}ms)`);
+  });
+
+  it('scarcity transition tick completes within 50ms budget', () => {
+    const engine = makeEngineMulti(4);
+    // Set up transition
+    engine._activeScarcity = { resource: 'minerals', ticksRemaining: 1 };
+    const start = process.hrtime.bigint();
+    engine.tick(); // triggers scarcity end + cache invalidation
+    const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+    assert.ok(durationMs < 50, `Scarcity transition tick took ${durationMs.toFixed(2)}ms, budget is 50ms`);
+  });
+});

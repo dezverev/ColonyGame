@@ -809,9 +809,11 @@ class GameEngine {
   }
 
   // Invalidate production caches for ALL colonies (scarcity affects everyone)
+  // Also marks all colony-owning players dirty so the next broadcast sends updated production.
   _invalidateAllProductionCaches() {
     for (const [, colony] of this.colonies) {
       colony._cachedProduction = null;
+      this._dirtyPlayers.add(colony.ownerId);
     }
     this._summaryCacheTick = -1;
   }
