@@ -197,4 +197,32 @@ describe('Performance Benchmarks', () => {
       assert.ok(durationMs < 50, `Monthly tick took ${durationMs.toFixed(3)}ms`);
     });
   });
+
+  describe('Monthly Tick with cold production caches', () => {
+    it('8-player monthly tick with all production caches invalidated stays under 5ms', () => {
+      const engine = createEngine(8);
+      for (let i = 1; i <= 8; i++) buildUpColonies(engine, i);
+
+      // Warm up
+      for (let i = 0; i < 10; i++) engine.tick();
+
+      // Run 20 iterations: invalidate all caches then measure monthly tick
+      const times = [];
+      for (let r = 0; r < 20; r++) {
+        while (engine.tickCount % 100 !== 99) engine.tick();
+        engine._invalidateAllProductionCaches();
+        engine._invalidateStateCache();
+        const t0 = process.hrtime.bigint();
+        engine.tick();
+        times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      }
+
+      times.sort((a, b) => a - b);
+      const avg = times.reduce((a, b) => a + b) / times.length;
+      const max = times[times.length - 1];
+      console.log(`  Cold-cache monthly tick avg: ${avg.toFixed(3)}ms, max: ${max.toFixed(3)}ms`);
+      assert.ok(avg < 5, `Avg cold-cache tick ${avg.toFixed(3)}ms exceeds 5ms budget`);
+      assert.ok(max < 10, `Max cold-cache tick ${max.toFixed(3)}ms exceeds 10ms budget`);
+    });
+  });
 });

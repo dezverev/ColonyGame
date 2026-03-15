@@ -350,6 +350,9 @@
   const doctrineOptions = document.getElementById('doctrine-options');
   const doctrineTimer = document.getElementById('doctrine-timer');
   let doctrineChosen = false;
+  const crisisIndicator = document.getElementById('endgame-crisis-indicator');
+  const underdogEl = document.getElementById('underdog-indicator');
+  const fleetEl = document.getElementById('fleet-indicator');
   const statusMonth = document.getElementById('status-month');
   const statusPops = document.getElementById('status-pops');
   const statusGrowth = document.getElementById('status-growth');
@@ -1020,7 +1023,6 @@
     }
 
     // Endgame crisis indicator
-    const crisisIndicator = document.getElementById('endgame-crisis-indicator');
     if (crisisIndicator) {
       if (gameState.endgameCrisis) {
         if (gameState.endgameCrisis.type === 'galacticStorm') {
@@ -1039,7 +1041,6 @@
     }
 
     // Underdog bonus indicator
-    const underdogEl = document.getElementById('underdog-indicator');
     if (underdogEl && player) {
       const bonus = player.underdogBonus;
       if (bonus && bonus > 1.0) {
@@ -1052,7 +1053,6 @@
     }
 
     // Fleet indicator
-    const fleetEl = document.getElementById('fleet-indicator');
     if (fleetEl && gameState.militaryShips) {
       const myFleet = gameState.militaryShips.filter(s => s.ownerId === gameState.yourId);
       fleetEl.textContent = myFleet.length > 0 ? ('\u2694 Fleet: ' + myFleet.length) : '';

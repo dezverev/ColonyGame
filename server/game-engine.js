@@ -161,6 +161,9 @@ const INFLUENCE_BASE_INCOME = 2;  // +2 influence/colony/month (capital building
 const INFLUENCE_TRAIT_INCOME = 1; // +1 influence/month per colony with a personality trait
 const INFLUENCE_CAP = 200;        // Max influence stockpile
 
+// All production resource keys — hoisted to avoid per-colony Object.keys() allocation
+const PRODUCTION_RESOURCES = ['energy', 'minerals', 'food', 'alloys', 'physics', 'society', 'engineering'];
+
 // Scarcity season constants
 const SCARCITY_RESOURCES = ['energy', 'minerals', 'food']; // commodity resources only
 const SCARCITY_MIN_INTERVAL = 800;   // minimum ticks between scarcity seasons
@@ -1043,7 +1046,7 @@ class GameEngine {
 
     // Galactic Storm: -25% all production for remainder of match
     if (this._endgameCrisis && this._endgameCrisis.type === 'galacticStorm') {
-      for (const resource of Object.keys(production)) {
+      for (const resource of PRODUCTION_RESOURCES) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * GALACTIC_STORM_MULTIPLIER * 100) / 100;
         }
@@ -1052,7 +1055,7 @@ class GameEngine {
 
     // Precursor occupation: production halved (same as player occupation)
     if (this._precursorOccupiedColonies.has(colony.id)) {
-      for (const resource of Object.keys(production)) {
+      for (const resource of PRODUCTION_RESOURCES) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
         }
@@ -1066,7 +1069,7 @@ class GameEngine {
 
     // Occupation penalty: 50% production when occupied by another player
     if (colony.occupiedBy) {
-      for (const resource of Object.keys(production)) {
+      for (const resource of PRODUCTION_RESOURCES) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * OCCUPATION_PRODUCTION_MULT * 100) / 100;
         }
@@ -1075,7 +1078,7 @@ class GameEngine {
 
     // Friendly diplomatic bonus: +10% production if a mutual-friendly player's colony is within 3 hops
     if (this._hasFriendlyColonyNearby(colony)) {
-      for (const resource of Object.keys(production)) {
+      for (const resource of PRODUCTION_RESOURCES) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
         }
@@ -1085,7 +1088,7 @@ class GameEngine {
     // Underdog production bonus: +15% per colony gap vs leader, cap +45%
     const underdogMult = this._calcUnderdogBonus(colony.ownerId);
     if (underdogMult > 1.0) {
-      for (const resource of Object.keys(production)) {
+      for (const resource of PRODUCTION_RESOURCES) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * underdogMult * 100) / 100;
         }
