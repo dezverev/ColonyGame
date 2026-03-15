@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED } = require('../../server/game-engine');
+const { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, FRIENDLY_HOP_RANGE, FRIENDLY_PRODUCTION_BONUS } = require('../../server/game-engine');
 
 // Helper: calculate total planet bonus for a colony's districts
 function calcPlanetBonus(colony) {
@@ -3972,5 +3972,221 @@ describe('GameEngine — Edict System', () => {
     const parsed = JSON.parse(json);
     const me = parsed.players[0];
     assert.strictEqual(me.activeEdict, null, 'activeEdict should be null when none active');
+  });
+});
+
+// ── Recent Changes: Housing Food + Friendly Colony Proximity Fix ──
+
+describe('GameEngine — Housing Food & Friendly Proximity (recent)', () => {
+  // --- Housing +2 food: interaction with other systems ---
+
+  it('housing food appears in serialized player state (netProduction)', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    const colony = engine.colonies.values().next().value;
+    // Strip all existing districts to get clean baseline
+    colony.districts = [];
+    colony.pops = 0;
+    colony._cachedProduction = null;
+    engine._addBuiltDistrict(colony, 'housing');
+
+    engine._invalidateStateCache();
+    const json = engine.getPlayerStateJSON(1);
+    const parsed = JSON.parse(json);
+    const sColony = parsed.colonies[0];
+    // Housing produces 2 food, 0 pops consume 0 food → net food = 2
+    assert.strictEqual(sColony.netProduction.food, 2,
+      'Serialized colony netProduction.food should show housing food output');
+  });
+
+  it('housing food production stacks with agriculture food production', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Use arid planet to avoid continental agriculture food bonus
+    const colony = engine._createColony(1, 'MixedFarm', { size: 16, type: 'arid', habitability: 60 });
+    colony.pops = 2; // enough to staff 1 agriculture worker
+    engine._addBuiltDistrict(colony, 'housing');
+    engine._addBuiltDistrict(colony, 'agriculture');
+
+    const { production } = engine._calcProduction(colony);
+    // Housing: 2 food (jobless) + Agriculture: 6 food (1 pop) = 8 food (no planet bonus on arid for agriculture)
+    assert.strictEqual(production.food, 8,
+      'Housing food (2) + agriculture food (6) should stack to 8');
+  });
+
+  it('housing food does not receive planet type bonuses', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    // Arid has bonus for generators and industrials, not housing
+    const colony = engine._createColony(1, 'AridHousing', { size: 16, type: 'arid', habitability: 60 });
+    colony.pops = 0;
+    engine._addBuiltDistrict(colony, 'housing');
+
+    const { production } = engine._calcProduction(colony);
+    assert.strictEqual(production.food, 2,
+      'Housing food should be exactly 2 on arid planet (no planet bonus for housing)');
+  });
+
+  // --- Friendly colony proximity: BFS edge cases ---
+
+  it('_hasFriendlyColonyNearby returns false when _adjacency is null', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony = engine.colonies.values().next().value;
+    engine._adjacency = null;
+    assert.strictEqual(engine._hasFriendlyColonyNearby(colony), false,
+      'Should return false when adjacency data is missing');
+  });
+
+  it('_hasFriendlyColonyNearby returns false when friendly colony is beyond hop range', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony1 = [...engine.colonies.values()].find(c => c.ownerId === 1);
+    const colony2 = [...engine.colonies.values()].find(c => c.ownerId === 2);
+
+    // Make mutual friendly
+    const s1 = engine.playerStates.get(1);
+    const s2 = engine.playerStates.get(2);
+    s1.diplomacy[2] = { stance: 'friendly', cooldownTick: 0 };
+    s2.diplomacy[1] = { stance: 'friendly', cooldownTick: 0 };
+
+    // Build a linear chain of systems beyond FRIENDLY_HOP_RANGE
+    // sys-A -> sys-B -> sys-C -> sys-D -> sys-E (4 hops, range is 3)
+    const farSysIds = [];
+    for (let i = 0; i < FRIENDLY_HOP_RANGE + 2; i++) {
+      farSysIds.push(`far-sys-${i}`);
+    }
+
+    // Replace adjacency with a controlled linear chain
+    const adj = new Map();
+    adj.set(colony1.systemId, [farSysIds[0]]);
+    adj.set(farSysIds[0], [colony1.systemId, farSysIds[1]]);
+    for (let i = 1; i < farSysIds.length - 1; i++) {
+      adj.set(farSysIds[i], [farSysIds[i - 1], farSysIds[i + 1]]);
+    }
+    adj.set(farSysIds[farSysIds.length - 1], [farSysIds[farSysIds.length - 2]]);
+    engine._adjacency = adj;
+
+    // Place colony2 at the far end (beyond hop range)
+    colony2.systemId = farSysIds[farSysIds.length - 1];
+
+    assert.strictEqual(engine._hasFriendlyColonyNearby(colony1), false,
+      `Colony ${FRIENDLY_HOP_RANGE + 1} hops away should be out of range`);
+  });
+
+  it('_hasFriendlyColonyNearby returns true when friendly colony is exactly at hop range', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony1 = [...engine.colonies.values()].find(c => c.ownerId === 1);
+    const colony2 = [...engine.colonies.values()].find(c => c.ownerId === 2);
+
+    // Make mutual friendly
+    const s1 = engine.playerStates.get(1);
+    const s2 = engine.playerStates.get(2);
+    s1.diplomacy[2] = { stance: 'friendly', cooldownTick: 0 };
+    s2.diplomacy[1] = { stance: 'friendly', cooldownTick: 0 };
+
+    // Build a chain of exactly FRIENDLY_HOP_RANGE hops
+    const chainIds = [];
+    for (let i = 0; i < FRIENDLY_HOP_RANGE; i++) {
+      chainIds.push(`chain-sys-${i}`);
+    }
+
+    const adj = new Map();
+    adj.set(colony1.systemId, [chainIds[0]]);
+    if (chainIds.length === 1) {
+      adj.set(chainIds[0], [colony1.systemId]);
+    } else {
+      adj.set(chainIds[0], [colony1.systemId, chainIds[1]]);
+      for (let i = 1; i < chainIds.length - 1; i++) {
+        adj.set(chainIds[i], [chainIds[i - 1], chainIds[i + 1]]);
+      }
+      adj.set(chainIds[chainIds.length - 1], [chainIds[chainIds.length - 2]]);
+    }
+    engine._adjacency = adj;
+
+    // Place colony2 at exactly FRIENDLY_HOP_RANGE hops
+    colony2.systemId = chainIds[chainIds.length - 1];
+
+    assert.strictEqual(engine._hasFriendlyColonyNearby(colony1), true,
+      `Colony exactly ${FRIENDLY_HOP_RANGE} hops away should be in range`);
+  });
+
+  it('friendly bonus applies 10% increase to housing food production', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony1 = [...engine.colonies.values()].find(c => c.ownerId === 1);
+    const colony2 = [...engine.colonies.values()].find(c => c.ownerId === 2);
+
+    // Strip colony to housing-only for clean measurement
+    colony1.districts = [];
+    colony1.pops = 0;
+    colony1._cachedProduction = null;
+    engine._addBuiltDistrict(colony1, 'housing');
+
+    // Baseline without bonus
+    const { production: baseline } = engine._calcProduction(colony1);
+    assert.strictEqual(baseline.food, 2, 'Baseline housing food should be 2');
+
+    // Make mutual friendly
+    const s1 = engine.playerStates.get(1);
+    const s2 = engine.playerStates.get(2);
+    s1.diplomacy[2] = { stance: 'friendly', cooldownTick: 0 };
+    s2.diplomacy[1] = { stance: 'friendly', cooldownTick: 0 };
+
+    // Place colony2 adjacent to colony1
+    const neighbors = engine._adjacency.get(colony1.systemId);
+    assert.ok(neighbors && neighbors.length > 0, 'colony1 must have neighbors');
+    colony2.systemId = neighbors[0];
+
+    // With friendly bonus
+    colony1._cachedProduction = null;
+    const { production: boosted } = engine._calcProduction(colony1);
+    const expected = Math.round(2 * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
+    assert.strictEqual(boosted.food, expected,
+      `Housing food with friendly bonus should be ${expected} (2 * 1.1)`);
+  });
+
+  it('friendly bonus does not create production for zero-output resources', () => {
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony1 = [...engine.colonies.values()].find(c => c.ownerId === 1);
+    const colony2 = [...engine.colonies.values()].find(c => c.ownerId === 2);
+
+    // Housing-only colony: produces food but NOT energy, minerals, alloys, etc.
+    colony1.districts = [];
+    colony1.pops = 0;
+    colony1._cachedProduction = null;
+    engine._addBuiltDistrict(colony1, 'housing');
+
+    // Make mutual friendly and adjacent
+    const s1 = engine.playerStates.get(1);
+    const s2 = engine.playerStates.get(2);
+    s1.diplomacy[2] = { stance: 'friendly', cooldownTick: 0 };
+    s2.diplomacy[1] = { stance: 'friendly', cooldownTick: 0 };
+    const neighbors = engine._adjacency.get(colony1.systemId);
+    colony2.systemId = neighbors[0];
+
+    colony1._cachedProduction = null;
+    const { production } = engine._calcProduction(colony1);
+
+    // Food should be boosted, but minerals/alloys/energy should remain 0
+    assert.ok(production.food > 0, 'Food should be positive with housing');
+    assert.strictEqual(production.minerals, 0, 'Minerals should remain 0 — bonus only on positive values');
+    assert.strictEqual(production.alloys, 0, 'Alloys should remain 0 — bonus only on positive values');
+  });
+
+  it('_hasFriendlyColonyNearby uses Map.get (not bracket access) on adjacency', () => {
+    // Regression test: bracket access on Map always returns undefined
+    const engine = new GameEngine(makeRoom(2), { tickRate: 10 });
+    const colony1 = [...engine.colonies.values()].find(c => c.ownerId === 1);
+    const colony2 = [...engine.colonies.values()].find(c => c.ownerId === 2);
+
+    // Make mutual friendly
+    const s1 = engine.playerStates.get(1);
+    const s2 = engine.playerStates.get(2);
+    s1.diplomacy[2] = { stance: 'friendly', cooldownTick: 0 };
+    s2.diplomacy[1] = { stance: 'friendly', cooldownTick: 0 };
+
+    // Place on adjacent systems and verify it actually works
+    const neighbors = engine._adjacency.get(colony1.systemId);
+    assert.ok(neighbors && neighbors.length > 0, 'Must have adjacency data');
+    colony2.systemId = neighbors[0];
+
+    // The fix: this should return true (was always false before Map.get fix)
+    assert.strictEqual(engine._hasFriendlyColonyNearby(colony1), true,
+      'Friendly colony on adjacent system must be detected (Map.get regression)');
   });
 });
