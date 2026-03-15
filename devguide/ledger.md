@@ -1459,3 +1459,31 @@ Each entry records an iteration of automated development.
 - Edge systems for spawning are defined as systems with ≤2 hyperlane connections (galactic rim nodes)
 
 **Next:** Opening Hands starting draft (R40-2), military outposts (R40-3), or in-game chat + diplomacy pings (R40-4)
+
+---
+
+## Entry 42 — 2026-03-14 — Live Scoreboard with Opponent Summaries
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Added `techs` (completed tech count) and `raidersDestroyed` fields to all player objects in `getPlayerState()` — both for the requesting player and all opponents
+- Updated client in-game scoreboard (Tab key) to show two new columns: "Techs" and "Raiders" between Pops and income columns
+- All players can now see every opponent's VP, colony count, pop count, tech count, raiders destroyed, and net resource income in real-time
+
+**Files changed:**
+- `server/game-engine.js` — Added `techs` and `raidersDestroyed` fields to both `me` (own player) and `others` (opponent) objects in `getPlayerState()`
+- `src/public/js/app.js` — Added Techs and Raiders columns to `_renderScoreboard()` table header and row rendering
+- `src/tests/live-scoreboard.test.js` — **new** 14 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 987 total (14 new: 3 field presence, 2 techs tracking, 2 raiders tracking, 1 existing fields preserved, 1 multi-player, 1 VP ranking, 1 JSON serialization, 1 symmetry, 1 edge case null techs, 1 cache invalidation). All passing.
+
+**Key decisions:**
+- Added `techs` and `raidersDestroyed` directly in `getPlayerState()` rather than extending `_getPlayerSummary()` — these are scoreboard-specific fields that don't need the summary cache (they're cheap O(1) lookups from existing player state)
+- Kept `completedTechs` array on own player for client tech tree rendering, but added `techs` count separately for scoreboard consistency across all players
+- Used `(p.completedTechs || []).length` for null safety since `completedTechs` could theoretically be undefined
+
+**Next:** In-game chat + diplomacy pings (R41-3), colony ship cost reduction (R41-balance), or starting planet variety

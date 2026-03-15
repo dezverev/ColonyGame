@@ -1425,7 +1425,7 @@
 
     const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
     let html = `<div class="scoreboard-month">Month ${month}</div>`;
-    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
@@ -1436,6 +1436,8 @@
         `<td><strong>${p.vp || 0}</strong></td>` +
         `<td>${p.colonyCount || 0}</td>` +
         `<td>${p.totalPops || 0}</td>` +
+        `<td>${p.techs || 0}</td>` +
+        `<td>${p.raidersDestroyed || 0}</td>` +
         `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
         `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
         `<td class="${(inc.food || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.food)}</td>` +

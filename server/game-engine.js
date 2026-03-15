@@ -3085,15 +3085,23 @@ class GameEngine {
       completedTechs: player.completedTechs,
       activeEdict: player.activeEdict,
       vp: this._calcVictoryPoints(playerId),
+      techs: (player.completedTechs || []).length,
+      raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
       ...mySummary,
     };
 
-    // Other players: name/color + VP for scoreboard (no resources)
+    // Other players: name/color + VP + summary + techs/raiders for scoreboard (no resources)
     const others = [];
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
       const summary = this._getPlayerSummary(p.id);
-      others.push({ id: p.id, name: p.name, color: p.color, vp: this._calcVictoryPoints(p.id), ...summary });
+      others.push({
+        id: p.id, name: p.name, color: p.color,
+        vp: this._calcVictoryPoints(p.id),
+        techs: (p.completedTechs || []).length,
+        raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
+        ...summary,
+      });
     }
 
     // Own colonies (full detail)
