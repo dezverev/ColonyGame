@@ -174,6 +174,10 @@
     _matCache.corvette = new THREE.MeshBasicMaterial({
       color: 0xff4444, transparent: true, opacity: 0.9,
     });
+    // Corvette variants: distinct geometries
+    _geoCache.interceptor = new THREE.ConeGeometry(1.5, 5.0, 3);   // narrow tri-cone — fast
+    _geoCache.gunboat = new THREE.BoxGeometry(2.5, 2.5, 4.5);      // chunky box — tanky
+    _geoCache.sentinel = new THREE.OctahedronGeometry(2.2, 0);      // diamond — balanced
   }
 
   // ── Build galaxy scene ──
@@ -672,7 +676,8 @@
 
     for (const ship of ships) {
       const shipKey = 'm' + ship.id;
-      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, 'corvette', _getPlayerColor(ship.ownerId), meshByKey, corvettePool);
+      const geoKey = ship.variant || 'corvette';
+      const { mesh, isNew } = _getOrCreateShipMesh(shipKey, geoKey, _getPlayerColor(ship.ownerId), meshByKey, corvettePool);
       const sys = galaxyData.systems[ship.systemId];
       if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; corvettePool.push(mesh); continue; }
 
@@ -906,11 +911,13 @@
       mesh.rotation.y = now * 0.003;
     }
 
-    // Corvettes (military ships)
+    // Corvettes (military ships) — variant-aware hop speed
+    const _variantHopTicks = { interceptor: 30, gunboat: 50, sentinel: 40 };
     for (const mesh of corvetteMeshes) {
       const ship = mesh.userData.shipData;
       if (!ship) continue;
-      const pos = _extrapolateTransitPos(ship, 40, 3, mesh.userData._updateTime || now, now);
+      const hopTicks = ship.variant ? (_variantHopTicks[ship.variant] || 40) : 40;
+      const pos = _extrapolateTransitPos(ship, hopTicks, 3, mesh.userData._updateTime || now, now);
       if (pos) {
         mesh.position.set(pos.x, pos.y, pos.z);
       } else {

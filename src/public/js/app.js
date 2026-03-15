@@ -706,10 +706,8 @@
       buildMenuOptions.appendChild(sciBtn);
     }
 
-    // Corvette (military ship) build option
+    // Corvette (military ship) build options — base + variants
     {
-      const corvBtn = document.createElement('div');
-      corvBtn.className = 'build-option build-option-ship';
       const corvCost = { minerals: 100, alloys: 50 };
       let canAffordCorv = true;
       const corvCostParts = [];
@@ -729,14 +727,17 @@
         }
       }
       const atCorvCap = myCorvettes.length + corvBuildingCount >= 10;
-      if (!canAffordCorv || queueFull || atCorvCap) corvBtn.classList.add('disabled');
+      const completedTechs = myPlayer ? (myPlayer.completedTechs || []) : [];
 
+      // Base corvette
+      const corvBtn = document.createElement('div');
+      corvBtn.className = 'build-option build-option-ship';
+      if (!canAffordCorv || queueFull || atCorvCap) corvBtn.classList.add('disabled');
       corvBtn.innerHTML =
         '<div class="build-option-swatch" style="background:#ff4444"></div>' +
         '<div class="build-option-name">Corvette</div>' +
-        '<div class="build-option-prod">Military warship (10 HP, 3 ATK) | Upkeep: 1⚡ 1🔩/mo</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 1⚡ 1🔩/mo</div>' +
         `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
-
       corvBtn.addEventListener('click', () => {
         if (corvBtn.classList.contains('disabled')) return;
         if (!myColony) return;
@@ -744,8 +745,37 @@
         _hideAllPanels();
         if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
       });
-
       buildMenuOptions.appendChild(corvBtn);
+
+      // Corvette variants — shown only when required T2 tech is completed
+      const variants = [
+        { key: 'interceptor', name: 'Interceptor', tech: 'advanced_reactors', color: '#4488ff',
+          desc: 'Fast striker (8 HP, 5 ATK, 3s/hop) | Upkeep: 1⚡/mo', techName: 'Advanced Reactors' },
+        { key: 'gunboat', name: 'Gunboat', tech: 'deep_mining', color: '#ff8844',
+          desc: 'Heavy tank (15 HP, 4 ATK, 5s/hop) | Upkeep: 2⚡ 1🔩/mo', techName: 'Deep Mining' },
+        { key: 'sentinel', name: 'Sentinel', tech: 'gene_crops', color: '#44ff88',
+          desc: 'Sustain fighter (12 HP, 3 ATK +2 regen, 4s/hop) | Upkeep: 1⚡ 2🔩/mo', techName: 'Gene Crops' },
+      ];
+      for (const v of variants) {
+        const hasTech = completedTechs.includes(v.tech);
+        const vBtn = document.createElement('div');
+        vBtn.className = 'build-option build-option-ship';
+        if (!hasTech || !canAffordCorv || queueFull || atCorvCap) vBtn.classList.add('disabled');
+        const lockLabel = hasTech ? '' : ` [Requires ${v.techName}]`;
+        vBtn.innerHTML =
+          `<div class="build-option-swatch" style="background:${v.color}"></div>` +
+          `<div class="build-option-name">${v.name}${lockLabel}</div>` +
+          `<div class="build-option-prod">${v.desc}</div>` +
+          `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
+        vBtn.addEventListener('click', () => {
+          if (vBtn.classList.contains('disabled')) return;
+          if (!myColony) return;
+          send({ type: 'buildCorvette', colonyId: myColony.id, variant: v.key });
+          _hideAllPanels();
+          if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+        });
+        buildMenuOptions.appendChild(vBtn);
+      }
     }
 
     buildMenu.classList.remove('hidden');

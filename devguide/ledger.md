@@ -1791,4 +1791,45 @@ Each entry records an iteration of automated development.
 - Crisis type is randomly selected (50/50) — prevents metagaming around a known crisis type.
 - After occupying a colony, precursor retargets the next nearest colony — continued threat until destroyed.
 
+---
+
+## Entry 51 — 2026-03-15 — Corvette Variants via Tech
+
+**Phase:** 5 (Military & Fleets)
+**Status:** Complete
+
+**What was built:**
+- 3 corvette variants unlocked by T2 technologies, creating rock-paper-scissors fleet composition metagame. Your tech path determines your military options.
+- **Interceptor** (Physics T2: Advanced Reactors): 8 HP, 5 ATK, 30 ticks/hop. Fast striker. Counters gunboats (targets them first). Maintenance: 1E/mo. Priority 3 (attacks first in combat round).
+- **Gunboat** (Engineering T2: Deep Mining): 15 HP, 4 ATK, 50 ticks/hop. Tanky heavy hitter. Counters sentinels. Maintenance: 2E + 1A/mo. Priority 1 (attacks last).
+- **Sentinel** (Society T2: Gene Crops): 12 HP, 3 ATK + 2 HP regen/round, 40 ticks/hop. Sustain fighter. Counters interceptors (heals through damage). Maintenance: 1E + 2A/mo. Priority 2.
+- Same build cost as base corvette (100M + 50A), but 500-tick build time (vs 400 for base). All count toward MAX_CORVETTES=10 cap.
+- Combat system upgraded: ships attack in priority order (interceptors first), counter-targeting prioritizes the variant each ship is strong against, Sentinel regen heals after damage each round (capped at maxHp).
+- Per-variant movement speed: interceptors move at 30 ticks/hop (fastest), sentinels at 40 (same as base), gunboats at 50 (slowest).
+- Per-variant maintenance costs: calculated per-ship instead of flat per-corvette. Mixed fleets have accurate maintenance display.
+- Client: variant build buttons in build menu (shown when T2 tech is completed, disabled/locked otherwise). Distinct colors: Interceptor=blue, Gunboat=orange, Sentinel=green. Stats and upkeep shown in button descriptions.
+- Galaxy view: variant-specific 3D geometries (Interceptor=narrow tri-cone, Gunboat=chunky box, Sentinel=diamond octahedron). Transit animation uses per-variant hop speed.
+- Toast formatting for variant construction events (corvette-interceptor, corvette-gunboat, corvette-sentinel).
+- Serialization: `variant`, `maxHp` fields in military ship data. Build queue items include `variant` field.
+
+**Files changed:**
+- `server/game-engine.js` — CORVETTE_VARIANTS and CORVETTE_VARIANT_BUILD_TIME constants, variant validation in buildCorvette handler, variant stats on ship spawn, per-variant hop ticks in movement, per-variant maintenance in production and income display, counter-targeting and regen in fleet combat, variant+maxHp in serialization, module.exports updated
+- `src/public/js/app.js` — variant build buttons in build menu with tech-gating, stats display, send variant in buildCorvette message
+- `src/public/js/galaxy-view.js` — interceptor/gunboat/sentinel geometries, variant-aware mesh creation, per-variant hop ticks in transit animation
+- `src/public/js/toast-format.js` — 3 new constructionComplete variant messages
+- `src/tests/corvette-variants.test.js` — **new** 39 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1512 total (39 new: 5 constants, 6 tech gating, 6 build & spawn, 3 movement speed, 5 combat/counter-targeting, 4 maintenance, 4 serialization, 6 edge cases). All passing (1 pre-existing unrelated failure in doctrine-choice-deep).
+
+**Key decisions:**
+- Combat uses priority-ordered attack resolution: interceptors select targets first (priority 3), then sentinels (2), then gunboats/base (1). Damage still accumulates in a map and applies simultaneously, but target selection order gives interceptors the counter-targeting advantage.
+- Sentinel regen applies after damage resolution each round, capped at maxHp — prevents HP inflation while making sentinels durable against low-damage attackers.
+- Counter-targeting: each variant prioritizes attacking its counter-target variant. When no counter-target is available, falls back to lowest-HP focus fire. This is the primary mechanism for rock-paper-scissors dynamics.
+- All ships now carry `variant` (null for base), `regen`, and `maxHp` fields — backward compatible since null/0 values match base corvette behavior.
+- Maintenance is now computed per-ship from variant definitions instead of flat `corvetteCount * CORVETTE_MAINTENANCE` — more accurate for mixed fleets.
+
+**Next:** Underdog production bonus (Phase 6, R50-3) — +15% production per colony gap vs leader (cap +45%), prevents death spirals
+
 **Next:** VP formula rebalance (Phase 1, R49-4) — battle VP 5→3, survey VP surveyed/3, colony-founded VP +5/colony, alloy VP alloys/20

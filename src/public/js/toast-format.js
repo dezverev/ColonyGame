@@ -49,6 +49,9 @@
       case 'constructionComplete':
         if (d.districtType === 'colonyShip') return 'Colony Ship built at ' + (d.colonyName || 'colony') + ' — ready to launch!';
         if (d.districtType === 'scienceShip') return 'Science Ship built at ' + (d.colonyName || 'colony') + ' — ready to explore!';
+        if (d.districtType === 'corvette-interceptor') return 'Interceptor built at ' + (d.colonyName || 'colony') + ' — fast strike corvette ready!';
+        if (d.districtType === 'corvette-gunboat') return 'Gunboat built at ' + (d.colonyName || 'colony') + ' — heavy corvette ready!';
+        if (d.districtType === 'corvette-sentinel') return 'Sentinel built at ' + (d.colonyName || 'colony') + ' — sustain corvette ready!';
         return 'Construction complete: ' + (d.districtType || 'district') + ' on ' + (d.colonyName || 'colony');
       case 'colonyFounded':
         if (d.colonyId) return 'Colony founded in ' + (d.systemName || 'system') + '!';
