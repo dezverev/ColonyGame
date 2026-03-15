@@ -13,6 +13,15 @@ const DISTRICT_DEFS = {
   research:    { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
 };
 
+// Building definitions: buildings occupy separate slots from districts
+// Slots unlock at pop thresholds: 1 at 5 pops, 2 at 10, 3 at 15
+const BUILDING_DEFS = {
+  researchLab:     { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 200, energy: 50 }, buildTime: 500, label: 'Research Lab' },
+  foundry:         { produces: { alloys: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 300 }, buildTime: 500, label: 'Foundry' },
+  shieldGenerator: { produces: {}, consumes: { energy: 3 }, jobs: 1, cost: { minerals: 200, alloys: 100 }, buildTime: 500, label: 'Shield Generator', defensePlatformHPBonus: 25 },
+};
+const BUILDING_SLOT_THRESHOLDS = [5, 10, 15]; // pops needed for slot 1, 2, 3
+
 // Planet types and their habitability ranges
 const PLANET_TYPES = {
   continental: { habitability: 80, label: 'Continental' },
@@ -794,6 +803,8 @@ class GameEngine {
         habitability: planet.habitability,
       },
       districts: [],               // built districts: { id, type }
+      buildings: [],               // built buildings: { id, type, slot }
+      buildingQueue: [],           // { id, type, slot, ticksRemaining }
       buildQueue: [],              // { id, type, ticksRemaining }
       isStartingColony: false,     // true for initial colonies, no build discount
       playerBuiltDistricts: 0,    // count of districts player has built (not pre-built)
@@ -911,8 +922,25 @@ class GameEngine {
       const jobCount = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
       jobs += jobCount;
     }
+    // Building jobs
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (bDef) jobs += bDef.jobs;
+    }
     colony._cachedJobs = jobs;
     return jobs;
+  }
+
+  // Calculate effective defense platform max HP (base + Shield Generator bonus)
+  _calcDefensePlatformMaxHP(colony) {
+    let maxHp = DEFENSE_PLATFORM_MAX_HP;
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (bDef && bDef.defensePlatformHPBonus) {
+        maxHp += bDef.defensePlatformHPBonus;
+      }
+    }
+    return maxHp;
   }
 
   // Calculate colony personality trait based on district composition
@@ -1028,6 +1056,22 @@ class GameEngine {
         }
       }
       for (const [resource, amount] of Object.entries(def.consumes)) {
+        consumption[resource] = (consumption[resource] || 0) + amount;
+      }
+    }
+
+    // Building production (buildings use pops from the same pool as districts)
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (!bDef) continue;
+      if (bDef.jobs > 0) {
+        if (assignedPops >= workingPops) break;
+        assignedPops++;
+      }
+      for (const [resource, amount] of Object.entries(bDef.produces)) {
+        production[resource] = (production[resource] || 0) + amount;
+      }
+      for (const [resource, amount] of Object.entries(bDef.consumes)) {
         consumption[resource] = (consumption[resource] || 0) + amount;
       }
     }
@@ -2336,6 +2380,9 @@ class GameEngine {
   _processDefensePlatformRepair() {
     for (const [, colony] of this.colonies) {
       if (!colony.defensePlatform || colony.defensePlatform.building) continue;
+      // Recalculate maxHp in case Shield Generator was built/destroyed since last check
+      const effectiveMax = this._calcDefensePlatformMaxHP(colony);
+      colony.defensePlatform.maxHp = effectiveMax;
       if (colony.defensePlatform.hp < colony.defensePlatform.maxHp) {
         colony.defensePlatform.hp = Math.min(
           colony.defensePlatform.maxHp,
@@ -2491,6 +2538,43 @@ class GameEngine {
         }
 
         if (colony.buildQueue.length === 0) {
+          this._emitEvent('queueEmpty', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+          });
+        }
+      }
+    }
+  }
+
+  // Process building construction queues
+  _processBuildingConstruction() {
+    for (const [, colony] of this.colonies) {
+      if (!colony.buildingQueue || colony.buildingQueue.length === 0) continue;
+      this._dirtyPlayers.add(colony.ownerId);
+      const item = colony.buildingQueue[0];
+      item.ticksRemaining--;
+      if (item.ticksRemaining <= 0) {
+        colony.buildingQueue.shift();
+        colony.buildings.push({ id: item.id, type: item.type, slot: item.slot });
+        this._invalidateColonyCache(colony);
+        const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+        this._emitEvent('constructionComplete', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: item.type,
+          playerName: ownerName,
+        }, true);
+
+        // If Shield Generator was built and colony has a defense platform, update maxHp
+        const bDef = BUILDING_DEFS[item.type];
+        if (bDef && bDef.defensePlatformHPBonus && colony.defensePlatform && !colony.defensePlatform.building) {
+          colony.defensePlatform.maxHp = this._calcDefensePlatformMaxHP(colony);
+          // HP is boosted immediately (shields activate)
+          colony.defensePlatform.hp = Math.min(colony.defensePlatform.hp + bDef.defensePlatformHPBonus, colony.defensePlatform.maxHp);
+        }
+
+        if (colony.buildingQueue.length === 0 && colony.buildQueue.length === 0) {
           this._emitEvent('queueEmpty', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
@@ -4415,6 +4499,7 @@ class GameEngine {
 
     // Process construction every tick
     this._processConstruction();
+    this._processBuildingConstruction();
 
     // Process defense platform construction every tick
     this._processDefensePlatformConstruction();
@@ -4553,6 +4638,54 @@ class GameEngine {
         return { ok: true, id };
       }
 
+      case 'buildBuilding': {
+        const { colonyId, buildingType } = cmd;
+        if (!colonyId || !buildingType) return { error: 'Missing parameters' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        const bDef = BUILDING_DEFS[buildingType];
+        if (!bDef) return { error: 'Invalid building type' };
+
+        // Check how many building slots are unlocked
+        let unlockedSlots = 0;
+        for (const threshold of BUILDING_SLOT_THRESHOLDS) {
+          if (colony.pops >= threshold) unlockedSlots++;
+        }
+        const usedSlots = colony.buildings.length + colony.buildingQueue.length;
+        if (usedSlots >= unlockedSlots) {
+          return { error: 'No building slots available' };
+        }
+
+        // Check duplicate — max 1 of each type per colony (built + queued)
+        const hasDuplicate = colony.buildings.some(b => b.type === buildingType) ||
+                             colony.buildingQueue.some(b => b.type === buildingType);
+        if (hasDuplicate) {
+          return { error: 'Already have this building type' };
+        }
+
+        // Check resource cost
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(bDef.cost)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(bDef.cost)) {
+          state.resources[resource] -= amount;
+        }
+
+        const slot = usedSlots; // 0-indexed slot
+        const id = this._nextId();
+        colony.buildingQueue.push({ id, type: buildingType, slot, ticksRemaining: bDef.buildTime });
+        this._dirtyPlayers.add(playerId);
+        this._invalidateColonyCache(colony);
+        return { ok: true, id };
+      }
+
       case 'demolish': {
         const { colonyId, districtId } = cmd;
         if (!colonyId || !districtId) return { error: 'Missing parameters' };
@@ -4588,6 +4721,31 @@ class GameEngine {
           colony.buildQueue.splice(qIdx, 1);
           this._dirtyPlayers.add(playerId);
           this._invalidateStateCache();
+          return { ok: true };
+        }
+
+        // Check built buildings
+        const bIdx = colony.buildings.findIndex(b => b.id === districtId);
+        if (bIdx !== -1) {
+          colony.buildings.splice(bIdx, 1);
+          this._invalidateColonyCache(colony);
+          return { ok: true };
+        }
+
+        // Check building queue — cancel with 50% resource refund
+        const bqIdx = colony.buildingQueue.findIndex(b => b.id === districtId);
+        if (bqIdx !== -1) {
+          const bqItem = colony.buildingQueue[bqIdx];
+          const bCostTable = (BUILDING_DEFS[bqItem.type] || {}).cost;
+          if (bCostTable) {
+            const player = this.playerStates.get(playerId);
+            for (const [resource, amount] of Object.entries(bCostTable)) {
+              player.resources[resource] += Math.floor(amount / 2);
+            }
+          }
+          colony.buildingQueue.splice(bqIdx, 1);
+          this._dirtyPlayers.add(playerId);
+          this._invalidateColonyCache(colony);
           return { ok: true };
         }
 
@@ -5037,10 +5195,11 @@ class GameEngine {
           state.resources[resource] -= amount;
         }
 
-        // Start construction
+        // Start construction (maxHp includes Shield Generator bonus if present)
+        const effectiveMaxHp = this._calcDefensePlatformMaxHP(colony);
         colony.defensePlatform = {
-          hp: DEFENSE_PLATFORM_MAX_HP,
-          maxHp: DEFENSE_PLATFORM_MAX_HP,
+          hp: effectiveMaxHp,
+          maxHp: effectiveMaxHp,
           building: true,
           buildTicksRemaining: DEFENSE_PLATFORM_BUILD_TIME,
         };
@@ -5674,7 +5833,9 @@ class GameEngine {
     const result = {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
       planet: { size: c.planet.size, type: c.planet.type },
-      districts: c.districts, buildQueue: queueArr,
+      districts: c.districts, buildings: c.buildings || [], buildQueue: queueArr,
+      buildingQueue: (c.buildingQueue || []).map(bq => ({ id: bq.id, type: bq.type, slot: bq.slot, ticksRemaining: bq.ticksRemaining })),
+      buildingSlotsUnlocked: BUILDING_SLOT_THRESHOLDS.filter(t => c.pops >= t).length,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
       trait: trait ? { type: trait.type, name: trait.name } : null,
@@ -5746,4 +5907,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

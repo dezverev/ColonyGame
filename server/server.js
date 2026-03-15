@@ -266,6 +266,7 @@ function startServer(options = {}) {
       }
 
       case 'buildDistrict':
+      case 'buildBuilding':
       case 'demolish':
       case 'setResearch':
       case 'buildColonyShip':

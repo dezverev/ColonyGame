@@ -2137,3 +2137,41 @@ Each entry records an iteration of automated development.
 - Victory progress included in both own-player and other-player serialization — everyone can see opponents closing in on victory
 
 **Next:** Buildings layer (Phase 2, R60-2) — Research Lab, Foundry, Shield Generator unlocked at pop thresholds. Then scouting race VP milestones (Phase 3, R60-3).
+
+---
+
+## Entry 61 — 2026-03-15 — Buildings Layer (3 Building Types)
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- **Building system:** 3 building types that occupy separate slots from the district grid, unlocked at pop thresholds (5/10/15 pops → 1/2/3 slots). Max 1 of each type per colony.
+  - **Research Lab:** +4 physics, +4 society, +4 engineering, −2 energy upkeep. Cost: 200 minerals + 50 energy. 500-tick build time.
+  - **Foundry:** +4 alloys, −2 energy upkeep. Cost: 300 minerals. 500-tick build time.
+  - **Shield Generator:** +25 defense platform max HP, −3 energy upkeep. Cost: 200 minerals + 100 alloys. 500-tick build time.
+- **Building queue processing:** Separate from district queue — buildings construct independently with their own `buildingQueue` array. Construction complete events emitted.
+- **Shield Generator + defense platform integration:** Shield Generator boosts platform maxHp dynamically. On completion, existing platform HP is immediately boosted. Repair code recalculates maxHp each month.
+- **Demolition support:** Built buildings can be demolished, queued buildings cancel with 50% resource refund (same pattern as districts).
+- **Client UI:** Building slots section in colony panel showing built buildings, queued buildings with progress, and empty slots with build buttons. Each empty slot shows available building types with costs and affordability.
+- **Serialization:** `buildings`, `buildingQueue`, and `buildingSlotsUnlocked` included in colony state broadcast.
+
+**Files changed:**
+- `server/game-engine.js` — BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS constants, buildings/buildingQueue in _createColony, _calcJobs with building jobs, _calcProduction with building production, _calcDefensePlatformMaxHP helper, _processBuildingConstruction tick processor, buildBuilding command handler, building demolition in demolish handler, colony serialization, module exports
+- `server/server.js` — added buildBuilding to command routing
+- `src/public/js/app.js` — BUILDING_UI definitions, building slots rendering in colony panel, buildBuilding command wiring, cache key resets on colony switch
+- `src/public/css/style.css` — building slot styles (header, slots, build buttons)
+- `src/public/index.html` — building-slots-header and building-slots-list DOM elements
+- `src/tests/buildings.test.js` — **new** 35 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1931 total (35 new). All passing.
+
+**Key decisions:**
+- Building queue is separate from district queue — buildings don't compete for the 3-slot district queue. This lets players build districts and buildings concurrently.
+- Shield Generator dynamically recalculates maxHp via `_calcDefensePlatformMaxHP()` rather than storing a static bonus — cleaner for demolition/rebuild scenarios.
+- All arrays default to `|| []` for backward compatibility with colonies created before buildings existed (existing tests create colonies without buildings arrays).
+- Only first building in queue constructs per tick (sequential, same pattern as districts).
+
+**Next:** In-game chat + diplomacy pings (Phase 6, R61-2) — enable existing chat during gameplay with 4 ping types. Then scouting race VP milestones (Phase 3, R61-3).

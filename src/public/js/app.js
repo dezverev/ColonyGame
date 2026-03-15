@@ -329,6 +329,13 @@
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
+  // ── Building definitions (client-side mirror for UI) ──
+  const BUILDING_UI = {
+    researchLab:     { label: 'Research Lab',      color: '#9b59b6', cost: { minerals: 200, energy: 50 }, produces: '+4 Phys/Soc/Eng', consumes: '-2 Energy' },
+    foundry:         { label: 'Foundry',           color: '#e67e22', cost: { minerals: 300 }, produces: '+4 Alloys', consumes: '-2 Energy' },
+    shieldGenerator: { label: 'Shield Generator',  color: '#00bcd4', cost: { minerals: 200, alloys: 100 }, produces: '+25 Defense HP', consumes: '-3 Energy' },
+  };
+
   // ── Planet type bonuses (client-side mirror for UI) ──
   const PLANET_BONUSES = {
     continental: { agriculture: { food: 1 } },
@@ -617,6 +624,7 @@
   let _warningTimeout = null;
   let _lastResearchKey = '';  // tracks research state to avoid redundant DOM rebuilds
   let _lastQueueKey = '';      // tracks build queue state to avoid redundant DOM rebuilds
+  let _lastBuildingSlotsKey = ''; // tracks building slots state
   let _cachedMyPlayer = null;   // cached after each gameState update
   let _cachedMyColony = null;   // cached after each gameState update
 
@@ -1234,6 +1242,89 @@
       cpHousing.textContent = colony.pops + '/' + colony.housing;
       cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
 
+      // Building slots — show built buildings and available slots
+      const buildingSlotsHeader = document.getElementById('building-slots-header');
+      const buildingSlotsList = document.getElementById('building-slots-list');
+      if (buildingSlotsHeader && buildingSlotsList) {
+        const slotsUnlocked = colony.buildingSlotsUnlocked || 0;
+        const bKey = slotsUnlocked + '|' + (colony.buildings || []).map(b => b.id + ':' + b.type).join(',')
+          + '|' + (colony.buildingQueue || []).map(b => b.id + ':' + b.type + ':' + b.ticksRemaining).join(',');
+        if (bKey !== _lastBuildingSlotsKey) {
+          _lastBuildingSlotsKey = bKey;
+          if (slotsUnlocked > 0) {
+            buildingSlotsHeader.classList.remove('hidden');
+            buildingSlotsHeader.textContent = 'Buildings (' + ((colony.buildings || []).length + (colony.buildingQueue || []).length) + '/' + slotsUnlocked + ')';
+            buildingSlotsList.innerHTML = '';
+            // Show built buildings
+            for (const b of (colony.buildings || [])) {
+              const ui = BUILDING_UI[b.type] || {};
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-built';
+              div.innerHTML =
+                `<div class="build-option-swatch" style="background:${ui.color || '#666'}"></div>` +
+                `<span class="building-slot-name">${ui.label || b.type}</span>` +
+                `<span class="building-slot-prod">${ui.produces || ''}</span>` +
+                `<button class="queue-item-cancel building-demolish" title="Demolish">&times;</button>`;
+              div.querySelector('.building-demolish').addEventListener('click', () => {
+                send({ type: 'demolish', colonyId: colony.id, districtId: b.id });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+            // Show queued buildings
+            for (const bq of (colony.buildingQueue || [])) {
+              const ui = BUILDING_UI[bq.type] || {};
+              const pct = 500 > 0 ? Math.min(100, ((500 - bq.ticksRemaining) / 500) * 100) : 0;
+              const secLeft = (bq.ticksRemaining / 10).toFixed(0);
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-queued';
+              div.innerHTML =
+                `<div class="build-option-swatch" style="background:${ui.color || '#666'}; opacity:0.5"></div>` +
+                `<span class="building-slot-name">${ui.label || bq.type}</span>` +
+                `<span class="queue-item-time">${secLeft}s</span>` +
+                `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+                `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+              div.querySelector('.queue-item-cancel').addEventListener('click', () => {
+                send({ type: 'demolish', colonyId: colony.id, districtId: bq.id });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+            // Show empty slots with build buttons
+            const usedSlots = (colony.buildings || []).length + (colony.buildingQueue || []).length;
+            const builtTypes = new Set([...(colony.buildings || []).map(b => b.type), ...(colony.buildingQueue || []).map(b => b.type)]);
+            for (let i = usedSlots; i < slotsUnlocked; i++) {
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-empty';
+              let btnsHtml = '';
+              for (const [type, ui] of Object.entries(BUILDING_UI)) {
+                if (builtTypes.has(type)) continue;
+                const costParts = Object.entries(ui.cost).map(([r, a]) => `${a} ${r}`);
+                const myPlayer = _getMyPlayer();
+                let canAfford = true;
+                if (myPlayer) {
+                  for (const [r, a] of Object.entries(ui.cost)) {
+                    if (myPlayer.resources[r] < a) canAfford = false;
+                  }
+                }
+                btnsHtml += `<button class="building-build-btn${canAfford ? '' : ' disabled'}" data-type="${type}" title="${ui.produces} | ${costParts.join(', ')}">` +
+                  `<span class="build-option-swatch" style="background:${ui.color}; display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px"></span>` +
+                  `${ui.label} (${costParts.join(', ')})</button>`;
+              }
+              div.innerHTML = `<span class="building-slot-name" style="color:#666">Empty Slot</span>${btnsHtml}`;
+              div.querySelectorAll('.building-build-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                  if (btn.classList.contains('disabled')) return;
+                  send({ type: 'buildBuilding', colonyId: colony.id, buildingType: btn.dataset.type });
+                });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+          } else {
+            buildingSlotsHeader.classList.add('hidden');
+            buildingSlotsList.innerHTML = '';
+          }
+        }
+      }
+
       // Build queue — fingerprint to avoid redundant DOM rebuilds
       const queueKey = colony.buildQueue.map(q => q.id + ':' + q.ticksRemaining).join(',');
       if (queueKey !== _lastQueueKey) {
@@ -1317,6 +1408,7 @@
           window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _lastQueueKey = ''; // force queue rebuild
+        _lastBuildingSlotsKey = ''; // force building slots rebuild
         _lastColonyListKey = ''; // force sidebar rebuild
         _updateColonyList();
       });
@@ -2040,6 +2132,7 @@
           window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _lastQueueKey = '';
+        _lastBuildingSlotsKey = '';
         _updateColonyList();
       }
     }
