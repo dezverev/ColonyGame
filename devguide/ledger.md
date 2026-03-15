@@ -1344,3 +1344,41 @@ Each entry records an iteration of automated development.
 - Example pacing: 3 colonies with 2 traits = 8 influence/month → 50-cost Mineral Rush edict takes ~6 months (~1 min) to save for
 
 **Next:** VP formula rebalance with diminishing pop returns (game-designer R37 priority #2)
+
+---
+
+## Entry 39 — 2026-03-14 — VP Formula Rebalance (Diminishing Pop Returns)
+
+**Phase:** 1 (Foundation Pivot)
+**Status:** Complete
+
+**What was built:**
+- Diminishing pop VP returns: first 20 pops ×2 VP each, pops 21-40 ×1.5 VP each (rounded), pops 41+ ×1 VP each
+- Static `GameEngine._calcPopVP(totalPops)` method for the tiered formula
+- Colony trait VP increased from +5 to +10 per active trait
+- T3 tech VP increased from +20 to +30 each (T1: +5, T2: +10 unchanged)
+- Exploration VP: +1 VP per 5 systems surveyed (reads from `_surveyedSystems` map)
+- `_calcVPBreakdown` returns new `surveyed` and `surveyedVP` fields
+- Empty breakdown for unknown players includes `surveyed: 0, surveyedVP: 0`
+- Client game-over scoreboard shows "Explored" column with surveyed count and VP
+
+**Files changed:**
+- `server/game-engine.js` — `_calcPopVP` static method, `_calcVPBreakdown` updated: diminishing pop VP, trait VP 5→10, T3 tech VP 20→30, exploration VP from surveyedSystems, new surveyed/surveyedVP fields in breakdown and empty object
+- `src/public/js/app.js` — game-over scoreboard table: added "Explored" column header and `surveyed (surveyedVP)` cell
+- `src/tests/vp-rebalance.test.js` — **new** 27 tests
+- `src/tests/colony-traits.test.js` — updated 3 tests (traitsVP 5→10, total VP recalculated)
+- `src/tests/t3-techs-crisis-scaling.test.js` — updated 2 tests (T3 VP 20→30, all-techs total 105→135)
+- `src/tests/game-engine.test.js` — updated 1 test (gameOver popsVP assertion uses `_calcPopVP`)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 829 total (27 new: 10 _calcPopVP tier tests, 2 trait VP increase, 3 T3 tech VP increase, 7 exploration VP, 5 integrated formula). All passing.
+
+**Key decisions:**
+- Pop VP uses `Math.round` for the 1.5× tier — 21 pops = 42 VP (round(1.5) = 2), 25 pops = 48 VP (round(7.5) = 8)
+- Exploration VP reads from existing `_surveyedSystems` Map — no new data tracking needed
+- `_calcPopVP` is a static method for easy testing without engine instantiation
+- VP formula now: `popVP + districts + alloysVP + researchVP + techVP + traitsVP + surveyedVP`
+- Impact: at 8 starting pops, VP unchanged (16). At 40 pops, 70 VP vs old 80. At 100 pops, 130 VP vs old 200 — 35% reduction. Multiple strategies now viable
+
+**Next:** Starting condition draft "Opening Hands" (game-designer R38-3) or scarcity seasons (R38-7)

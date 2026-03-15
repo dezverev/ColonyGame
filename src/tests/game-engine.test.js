@@ -2185,7 +2185,8 @@ describe('GameEngine — Match Timer', () => {
     const breakdown = gameOverData.scores[0].breakdown;
     assert.ok(breakdown.pops > 0);
     assert.ok(breakdown.popsVP > 0);
-    assert.strictEqual(breakdown.popsVP, breakdown.pops * 2);
+    // Diminishing pop VP: first 20 ×2, 21-40 ×1.5, 41+ ×1
+    assert.strictEqual(breakdown.popsVP, GameEngine._calcPopVP(breakdown.pops));
     assert.ok(breakdown.districts > 0);
     assert.strictEqual(breakdown.districtsVP, breakdown.districts);
     assert.strictEqual(typeof breakdown.alloysVP, 'number');

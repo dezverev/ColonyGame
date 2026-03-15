@@ -1810,19 +1810,26 @@ class GameEngine {
     return result;
   }
 
+  // Diminishing pop VP: first 20 pops ×2, pops 21-40 ×1.5 (rounded), pops 41+ ×1
+  static _calcPopVP(totalPops) {
+    if (totalPops <= 20) return totalPops * 2;
+    if (totalPops <= 40) return 40 + Math.round((totalPops - 20) * 1.5);
+    return 40 + 30 + (totalPops - 40);
+  }
+
   // Full VP breakdown for a player — single source of truth for the VP formula.
-  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP }
+  // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP, surveyed, surveyedVP }
   _calcVPBreakdown(playerId) {
     const cached = this._vpBreakdownCache.get(playerId);
     if (cached && this._vpCacheTick === this.tickCount) return cached;
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0 };
       return empty;
     }
 
-    // Pops × 2 + Districts × 1 (single pass) + count traits
+    // Diminishing pop VP + Districts × 1 (single pass) + count traits
     let totalPops = 0;
     let totalDistricts = 0;
     let traitCount = 0;
@@ -1836,8 +1843,10 @@ class GameEngine {
       }
     }
 
-    // Colony personality traits: +5 VP per active trait
-    const traitsVP = traitCount * 5;
+    const popsVP = GameEngine._calcPopVP(totalPops);
+
+    // Colony personality traits: +10 VP per active trait
+    const traitsVP = traitCount * 10;
 
     // Alloys stockpiled / 25
     const alloysVP = Math.floor(state.resources.alloys / 25);
@@ -1848,25 +1857,31 @@ class GameEngine {
       + (state.resources.research.engineering || 0);
     const researchVP = Math.floor(totalResearch / 50);
 
-    // Per-tech VP bonuses: +5 per T1 tech, +10 per T2 tech, +20 per T3 tech
+    // Per-tech VP bonuses: +5 per T1 tech, +10 per T2 tech, +30 per T3 tech
     let techVP = 0;
     for (const techId of (state.completedTechs || [])) {
       const tech = TECH_TREE[techId];
       if (tech) {
         if (tech.tier === 1) techVP += 5;
         else if (tech.tier === 2) techVP += 10;
-        else if (tech.tier === 3) techVP += 20;
+        else if (tech.tier === 3) techVP += 30;
       }
     }
 
-    const vp = (totalPops * 2) + totalDistricts + alloysVP + researchVP + techVP + traitsVP;
+    // Exploration VP: +1 per 5 systems surveyed
+    const surveyedSet = this._surveyedSystems.get(playerId);
+    const surveyed = surveyedSet ? surveyedSet.size : 0;
+    const surveyedVP = Math.floor(surveyed / 5);
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP;
     const breakdown = {
-      vp, pops: totalPops, popsVP: totalPops * 2,
+      vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
       alloys: state.resources.alloys, alloysVP,
       totalResearch, researchVP,
       techs: (state.completedTechs || []).length, techVP,
       traits: traitCount, traitsVP,
+      surveyed, surveyedVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);

@@ -276,7 +276,7 @@ describe('T3 — Automated Mining', () => {
 // ── T3 VP Bonuses ──
 
 describe('T3 — VP Tech Bonuses', () => {
-  it('T3 techs grant +20 VP each', () => {
+  it('T3 techs grant +30 VP each', () => {
     const engine = makeEngine();
     const player = getPlayer(engine);
 
@@ -286,11 +286,11 @@ describe('T3 — VP Tech Bonuses', () => {
     completeTech(engine, 'fusion_reactors');
 
     const breakdown = engine._calcVPBreakdown(player.id);
-    // T1: +5, T2: +10, T3: +20 = 35 techVP
-    assert.strictEqual(breakdown.techVP, 35);
+    // T1: +5, T2: +10, T3: +30 = 45 techVP
+    assert.strictEqual(breakdown.techVP, 45);
   });
 
-  it('all 9 techs grant +5+5+5 +10+10+10 +20+20+20 = 105 total techVP', () => {
+  it('all 9 techs grant +5+5+5 +10+10+10 +30+30+30 = 135 total techVP', () => {
     const engine = makeEngine();
 
     // Complete all techs
@@ -299,7 +299,7 @@ describe('T3 — VP Tech Bonuses', () => {
     }
 
     const breakdown = engine._calcVPBreakdown(getPlayer(engine).id);
-    assert.strictEqual(breakdown.techVP, 105); // 3*5 + 3*10 + 3*20
+    assert.strictEqual(breakdown.techVP, 135); // 3*5 + 3*10 + 3*30
   });
 });
 
