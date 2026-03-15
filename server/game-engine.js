@@ -472,17 +472,21 @@ class GameEngine {
   _hasFriendlyColonyNearby(colony) {
     if (!this._adjacency) return false;
     const ownerId = colony.ownerId;
-    // Find all players friendly with this colony's owner
-    const friendlyPlayerIds = [];
+    // Build a set of systems where friendly players have colonies (O(friendColonies) total)
+    const friendlySystems = new Set();
     for (const [pid] of this.playerStates) {
       if (pid === ownerId) continue;
-      if (this._areMutuallyFriendly(ownerId, pid)) {
-        friendlyPlayerIds.push(pid);
+      if (!this._areMutuallyFriendly(ownerId, pid)) continue;
+      const friendColonies = this._playerColonies.get(pid);
+      if (!friendColonies) continue;
+      for (const cId of friendColonies) {
+        const c = this.colonies.get(cId);
+        if (c) friendlySystems.add(c.systemId);
       }
     }
-    if (friendlyPlayerIds.length === 0) return false;
+    if (friendlySystems.size === 0) return false;
 
-    // BFS from colony's system up to FRIENDLY_HOP_RANGE hops
+    // BFS from colony's system up to FRIENDLY_HOP_RANGE hops — O(1) lookup per visited system
     const visited = new Set();
     let frontier = [colony.systemId];
     visited.add(colony.systemId);
@@ -495,14 +499,7 @@ class GameEngine {
           if (visited.has(nId)) continue;
           visited.add(nId);
           next.push(nId);
-          // Check if any friendly player has a colony in this system
-          for (const friendId of friendlyPlayerIds) {
-            const friendColonies = this._playerColonies.get(friendId) || [];
-            for (const cId of friendColonies) {
-              const c = this.colonies.get(cId);
-              if (c && c.systemId === nId) return true;
-            }
-          }
+          if (friendlySystems.has(nId)) return true;
         }
       }
       frontier = next;
@@ -2245,19 +2242,24 @@ class GameEngine {
     // Use system index — only check systems that have ships
     for (const [systemId, ships] of this._militaryShipsBySystem) {
       if (ships.length < 2) continue;
-      // Check if idle ships from hostile owners exist
-      const ownersSeen = new Set();
-      let hasHostilePair = false;
+      // Collect unique idle owners inline (no Set allocation — max 8 players)
+      let ownerCount = 0;
+      const owners = this._combatOwnersBuf || (this._combatOwnersBuf = []);
+      owners.length = 0;
       for (const ship of ships) {
         if (ship.path && ship.path.length > 0) continue; // in transit
-        ownersSeen.add(ship.ownerId);
+        let found = false;
+        for (let k = 0; k < ownerCount; k++) {
+          if (owners[k] === ship.ownerId) { found = true; break; }
+        }
+        if (!found) owners[ownerCount++] = ship.ownerId;
       }
-      if (ownersSeen.size < 2) continue;
+      if (ownerCount < 2) continue;
       // Check if any pair of owners is hostile
-      const ownersArr = [...ownersSeen];
-      for (let i = 0; i < ownersArr.length && !hasHostilePair; i++) {
-        for (let j = i + 1; j < ownersArr.length; j++) {
-          if (this._areHostile(ownersArr[i], ownersArr[j])) {
+      let hasHostilePair = false;
+      for (let i = 0; i < ownerCount && !hasHostilePair; i++) {
+        for (let j = i + 1; j < ownerCount; j++) {
+          if (this._areHostile(owners[i], owners[j])) {
             hasHostilePair = true;
             break;
           }
