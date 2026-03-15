@@ -146,7 +146,7 @@ describe('Corvette ship class — build command', () => {
 
     // Manually add MAX_CORVETTES ships
     for (let i = 0; i < MAX_CORVETTES; i++) {
-      engine._militaryShips.push({
+      engine._addMilitaryShip({
         id: engine._nextId(), ownerId: 'p1', systemId: colony.systemId,
         targetSystemId: null, path: [], hopProgress: 0,
         hp: CORVETTE_HP, attack: CORVETTE_ATTACK,
@@ -165,7 +165,7 @@ describe('Corvette ship class — build command', () => {
 
     // Add MAX_CORVETTES - 1 built ships + 1 in build queue
     for (let i = 0; i < MAX_CORVETTES - 1; i++) {
-      engine._militaryShips.push({
+      engine._addMilitaryShip({
         id: engine._nextId(), ownerId: 'p1', systemId: colony.systemId,
         targetSystemId: null, path: [], hopProgress: 0,
         hp: CORVETTE_HP, attack: CORVETTE_ATTACK,
@@ -537,5 +537,56 @@ describe('Corvette ship class — edge cases', () => {
       const result = engine.handleCommand('p1', { type: 'sendFleet', shipId: ship.id, targetSystemId: target2 });
       assert.ok(result.ok);
     }
+  });
+});
+
+describe('Corvette ship class — index consistency', () => {
+  it('_militaryShipsByPlayer tracks adds correctly', () => {
+    const engine = createEngine();
+    const colony = getFirstColony(engine);
+    assert.strictEqual(engine._playerCorvetteCount('p1'), 0);
+
+    engine._addMilitaryShip({
+      id: 900, ownerId: 'p1', systemId: colony.systemId,
+      targetSystemId: null, path: [], hopProgress: 0,
+      hp: CORVETTE_HP, attack: CORVETTE_ATTACK,
+    });
+    assert.strictEqual(engine._playerCorvetteCount('p1'), 1);
+    assert.strictEqual(engine._militaryShipsById.get(900).id, 900);
+  });
+
+  it('_removeMilitaryShip updates both indices', () => {
+    const engine = createEngine();
+    const colony = getFirstColony(engine);
+
+    const ship = {
+      id: 901, ownerId: 'p1', systemId: colony.systemId,
+      targetSystemId: null, path: [], hopProgress: 0,
+      hp: CORVETTE_HP, attack: CORVETTE_ATTACK,
+    };
+    engine._addMilitaryShip(ship);
+    assert.strictEqual(engine._playerCorvetteCount('p1'), 1);
+
+    engine._removeMilitaryShip(ship);
+    assert.strictEqual(engine._playerCorvetteCount('p1'), 0);
+    assert.strictEqual(engine._militaryShipsById.get(901), undefined);
+    assert.strictEqual(engine._militaryShips.length, 0);
+  });
+
+  it('construction-spawned corvettes are indexed', () => {
+    const engine = createEngine();
+    const ship = buildAndCompleteCorvette(engine);
+    assert.strictEqual(engine._playerCorvetteCount('p1'), 1);
+    assert.strictEqual(engine._militaryShipsById.get(ship.id), ship);
+  });
+
+  it('getPlayerState corvette count uses O(1) index', () => {
+    const engine = createEngine();
+    buildAndCompleteCorvette(engine);
+    buildAndCompleteCorvette(engine);
+
+    const state = engine.getPlayerState('p1');
+    const me = state.players[0];
+    assert.strictEqual(me.corvettes, 2);
   });
 });

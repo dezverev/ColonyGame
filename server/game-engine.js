@@ -292,6 +292,8 @@ class GameEngine {
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
     this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
     this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
+    this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
+    this._militaryShipsById = new Map(); // shipId -> ship — O(1) find by ID
     this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
@@ -1243,7 +1245,7 @@ class GameEngine {
         } else if (item.type === 'corvette') {
           // Spawn corvette at colony's system
           const shipId = this._nextId();
-          this._militaryShips.push({
+          this._addMilitaryShip({
             id: shipId,
             ownerId: colony.ownerId,
             systemId: colony.systemId,
@@ -2036,10 +2038,31 @@ class GameEngine {
     if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
-  // Remove a military ship by reference (in-place splice, no new array)
+  // Add a military ship and update indices
+  _addMilitaryShip(ship) {
+    this._militaryShips.push(ship);
+    this._militaryShipsById.set(ship.id, ship);
+    let arr = this._militaryShipsByPlayer.get(ship.ownerId);
+    if (!arr) { arr = []; this._militaryShipsByPlayer.set(ship.ownerId, arr); }
+    arr.push(ship);
+  }
+
+  // Remove a military ship by reference and update indices
   _removeMilitaryShip(ship) {
     const idx = this._militaryShips.indexOf(ship);
     if (idx !== -1) this._militaryShips.splice(idx, 1);
+    this._militaryShipsById.delete(ship.id);
+    const arr = this._militaryShipsByPlayer.get(ship.ownerId);
+    if (arr) {
+      const pi = arr.indexOf(ship);
+      if (pi !== -1) arr.splice(pi, 1);
+    }
+  }
+
+  // Get corvette count for a player — O(1)
+  _playerCorvetteCount(playerId) {
+    const arr = this._militaryShipsByPlayer.get(playerId);
+    return arr ? arr.length : 0;
   }
 
   // Remove a colony ship by reference (in-place splice, no new array)
@@ -2389,7 +2412,7 @@ class GameEngine {
     const raidersVP = raidersDestroyed * RAIDER_DESTROY_VP;
 
     // Military VP: +1 per corvette owned
-    const corvettes = this._militaryShips.filter(s => s.ownerId === playerId).length;
+    const corvettes = this._playerCorvetteCount(playerId);
     const militaryVP = corvettes;
 
     const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP;
@@ -2930,7 +2953,7 @@ class GameEngine {
         if (colony.ownerId !== playerId) return { error: 'Not your colony' };
 
         // Check corvette cap (owned + building)
-        const ownedCorvettes = this._militaryShips.filter(s => s.ownerId === playerId).length;
+        const ownedCorvettes = this._playerCorvetteCount(playerId);
         let buildingCorvettes = 0;
         for (const [, c] of this.colonies) {
           if (c.ownerId === playerId) {
@@ -2974,8 +2997,8 @@ class GameEngine {
         if (targetSystemId == null || !Number.isFinite(Number(targetSystemId))) return { error: 'Missing targetSystemId' };
 
         const targetSysId = Number(targetSystemId);
-        const ship = this._militaryShips.find(s => s.id === shipId && s.ownerId === playerId);
-        if (!ship) return { error: 'Corvette not found' };
+        const ship = this._militaryShipsById.get(shipId);
+        if (!ship || ship.ownerId !== playerId) return { error: 'Corvette not found' };
         if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
 
         // Validate target system exists
@@ -3245,7 +3268,7 @@ class GameEngine {
       vp: this._calcVictoryPoints(playerId),
       techs: (player.completedTechs || []).length,
       raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
-      corvettes: this._militaryShips.filter(s => s.ownerId === playerId).length,
+      corvettes: this._playerCorvetteCount(playerId),
       ...mySummary,
     };
 
@@ -3259,7 +3282,7 @@ class GameEngine {
         vp: this._calcVictoryPoints(p.id),
         techs: (p.completedTechs || []).length,
         raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
-        corvettes: this._militaryShips.filter(s => s.ownerId === p.id).length,
+        corvettes: this._playerCorvetteCount(p.id),
         ...summary,
       });
     }
