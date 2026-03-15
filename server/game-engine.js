@@ -2258,20 +2258,34 @@ class GameEngine {
       const systemId = colony.systemId;
       if (systemId == null) continue;
 
-      const shipsHere = this._militaryShipsBySystem.get(systemId) || [];
+      const shipsHere = this._militaryShipsBySystem.get(systemId);
 
-      // Find which players have idle military ships in this system
-      const ownersHere = new Set();
+      // Fast path: no military ships in system at all
+      if (!shipsHere || shipsHere.length === 0) {
+        if (colony.occupiedBy) continue; // occupied but no ships — status quo
+        if (colony.occupationProgress > 0) {
+          colony.occupationProgress = 0;
+          changed = true;
+        }
+        continue;
+      }
+
+      // Scan idle ships — track defender/attacker presence inline (no Set allocation)
+      let defenderPresent = false;
+      let occupierPresent = false;
+      let attackerId = null;
       for (const ship of shipsHere) {
         if (ship.path && ship.path.length > 0) continue; // in transit
-        ownersHere.add(ship.ownerId);
+        if (ship.ownerId === colony.ownerId) {
+          defenderPresent = true;
+        } else {
+          if (colony.occupiedBy && ship.ownerId === colony.occupiedBy) occupierPresent = true;
+          if (!attackerId) attackerId = ship.ownerId;
+        }
       }
 
       // Check if colony is already occupied — handle liberation
       if (colony.occupiedBy) {
-        const occupierPresent = ownersHere.has(colony.occupiedBy);
-        const defenderPresent = ownersHere.has(colony.ownerId);
-
         // Liberation: defender has ships, occupier does not
         if (defenderPresent && !occupierPresent) {
           const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
@@ -2288,8 +2302,6 @@ class GameEngine {
         continue; // already occupied, skip occupation progress
       }
 
-      // Check for attackers — enemy player with ships at this system, no defender ships
-      const defenderPresent = ownersHere.has(colony.ownerId);
       if (defenderPresent) {
         // Defender has ships — reset any occupation progress
         if (colony.occupationProgress > 0) {
@@ -2299,17 +2311,8 @@ class GameEngine {
         continue;
       }
 
-      // Find an attacker (enemy with ships here)
-      let attackerId = null;
-      for (const ownerId of ownersHere) {
-        if (ownerId !== colony.ownerId) {
-          attackerId = ownerId;
-          break;
-        }
-      }
-
       if (!attackerId) {
-        // No one here — reset progress
+        // Only defender's in-transit ships here — reset progress
         if (colony.occupationProgress > 0) {
           colony.occupationProgress = 0;
           changed = true;

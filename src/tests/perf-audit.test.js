@@ -203,6 +203,27 @@ describe('Performance Audit', () => {
     // P2 may be dirty due to growth — that's fine, we're checking construction specifically
   });
 
+  it('_processOccupation skips colonies with no ships nearby (no Set allocation)', () => {
+    const engine = new GameEngine(createRoom(4), { tickRate: 10 });
+    buildUpColonies(engine);
+
+    // Most colonies have no military ships in their system — _processOccupation
+    // should fast-path these without allocating a Set per colony per tick.
+    // Verify by running 1000 ticks with no ships and checking timing.
+    const durations = [];
+    for (let i = 0; i < 1000; i++) {
+      const t0 = process.hrtime.bigint();
+      engine._processOccupation();
+      const ns = Number(process.hrtime.bigint() - t0);
+      durations.push(ns);
+    }
+    const avgNs = durations.reduce((a, b) => a + b, 0) / durations.length;
+    const avgUs = avgNs / 1000;
+    console.log(`  _processOccupation (no ships): avg=${avgUs.toFixed(1)}µs`);
+    // With fast-path, should be well under 100µs for 4-player game
+    assert.ok(avgUs < 100, `_processOccupation took ${avgUs.toFixed(1)}µs, expected <100µs`);
+  });
+
   it('object allocation in tick loop (GC pressure check)', () => {
     const engine = new GameEngine(createRoom(4), { tickRate: 10 });
     buildUpColonies(engine);
