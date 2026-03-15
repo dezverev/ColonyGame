@@ -1832,4 +1832,35 @@ Each entry records an iteration of automated development.
 
 **Next:** Underdog production bonus (Phase 6, R50-3) — +15% production per colony gap vs leader (cap +45%), prevents death spirals
 
-**Next:** VP formula rebalance (Phase 1, R49-4) — battle VP 5→3, survey VP surveyed/3, colony-founded VP +5/colony, alloy VP alloys/20
+---
+
+## Entry 52 — 2026-03-15 — Underdog Bonus + Gunboat Balance Tweak
+
+**Phase:** 6 (Diplomacy & Interaction) + Phase 5 (Balance)
+**Status:** Complete
+
+**What was built:**
+- **Underdog production bonus:** Players with fewer colonies than the leader get +15% production per colony gap (max +45% at 3+ gap). Applied as multiplicative modifier in `_calcProduction` after friendly bonus. Only active in 2+ player games. Production cache invalidated when colony count changes.
+- **Tech cost discount:** Each tech costs 15% less per player who has already completed it. Applied in `_processResearch` via `_calcTechDiscount()` — trailing players can catch up faster on the tech tree.
+- **Client indicator:** Green "Underdog Bonus: +X%" badge in status bar, visible when bonus is active. `underdogBonus` field in player state serialization.
+- **Gunboat ATK 4→3:** Tightens the corvette rock-paper-scissors triangle. Gunboat HP×ATK drops from 60 to 45, closer to Interceptor's 40 and Sentinel's 36+regen. Gunboat's strength is now durability (15 HP), not damage.
+
+**Files changed:**
+- `server/game-engine.js` — UNDERDOG_BONUS_PER_COLONY/UNDERDOG_BONUS_CAP/UNDERDOG_TECH_DISCOUNT constants, `_calcUnderdogBonus` and `_calcTechDiscount` methods, underdog multiplier in `_calcProduction`, tech discount in `_processResearch`, `underdogBonus` in `getPlayerState`, production cache invalidation on colony founding, Gunboat attack 4→3, module.exports updated
+- `src/public/js/app.js` — underdog indicator in `_updateHUD`
+- `src/public/index.html` — underdog-indicator span element
+- `src/tests/underdog-bonus.test.js` — **new** 26 tests
+- `src/tests/corvette-variants.test.js` — updated 2 tests (gunboat attack 4→3)
+- `devguide/design.md` — marked 3 tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1562 total (26 new: 3 constants, 6 _calcUnderdogBonus, 2 production multiplier, 5 tech cost discount, 3 serialization, 3 edge cases, 4 gunboat balance). All passing (1 pre-existing doctrine-choice-deep flaky test unrelated).
+
+**Key decisions:**
+- Underdog bonus applied in `_calcProduction` (per-colony) rather than `_processMonthlyResources` (per-player) — consistent with how all other production modifiers work, and production cache handles performance
+- Tech discount computed dynamically in `_processResearch` — no stored state needed, just counts completedTechs across all players
+- Bonus caps at +45% (3 colony gap) — prevents absurd multipliers in extreme scenarios while providing meaningful catch-up
+- Production cache invalidated on colony founding via `_invalidateAllProductionCaches` — underdog ratio changes affect all players when any player founds a colony
+- Gunboat ATK 3 makes all three variants closer in raw power (40/45/36+regen), shifting the balance toward rock-paper-scissors counter-targeting rather than raw stats
+
+**Next:** Mid-game catalyst events (Phase 7, R51-1) — 3 timed events at 30/45/55% match time. Or fleet intelligence/espionage (Phase 5, R51-6)

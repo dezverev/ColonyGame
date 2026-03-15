@@ -95,7 +95,7 @@ describe('Corvette variants — constants', () => {
   it('gunboat stats match spec', () => {
     const v = CORVETTE_VARIANTS.gunboat;
     assert.strictEqual(v.hp, 15);
-    assert.strictEqual(v.attack, 4);
+    assert.strictEqual(v.attack, 3);
     assert.strictEqual(v.hopTicks, 50);
     assert.strictEqual(v.regen, 0);
     assert.strictEqual(v.requiredTech, 'deep_mining');
@@ -194,7 +194,7 @@ describe('Corvette variants — build and spawn', () => {
     const ship = buildAndCompleteVariant(engine, 'p1', 'gunboat');
     assert.strictEqual(ship.variant, 'gunboat');
     assert.strictEqual(ship.hp, 15);
-    assert.strictEqual(ship.attack, 4);
+    assert.strictEqual(ship.attack, 3);
     assert.strictEqual(ship.maxHp, 15);
     assert.strictEqual(ship.regen, 0);
   });

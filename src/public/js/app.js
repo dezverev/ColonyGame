@@ -1038,6 +1038,19 @@
       }
     }
 
+    // Underdog bonus indicator
+    const underdogEl = document.getElementById('underdog-indicator');
+    if (underdogEl && player) {
+      const bonus = player.underdogBonus;
+      if (bonus && bonus > 1.0) {
+        const pct = Math.round((bonus - 1) * 100);
+        underdogEl.textContent = '\u2B06 Underdog Bonus: +' + pct + '%';
+        underdogEl.classList.remove('hidden');
+      } else {
+        underdogEl.classList.add('hidden');
+      }
+    }
+
     // Fleet indicator
     const fleetEl = document.getElementById('fleet-indicator');
     if (fleetEl && gameState.militaryShips) {

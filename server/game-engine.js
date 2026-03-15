@@ -195,7 +195,7 @@ const CORVETTE_VARIANTS = {
   },
   gunboat: {
     name: 'Gunboat',
-    hp: 15, attack: 4, hopTicks: 50, regen: 0,
+    hp: 15, attack: 3, hopTicks: 50, regen: 0,
     requiredTech: 'deep_mining',        // Engineering T2
     maintenance: { energy: 2, alloys: 1 },
     priority: 1, // attacks last (lowest priority)
@@ -279,6 +279,11 @@ const PRECURSOR_HOP_TICKS = 30;          // 3 seconds per hop (faster than raide
 const PRECURSOR_COMBAT_TICKS = 8;        // more combat rounds than raiders
 const PRECURSOR_DESTROY_VP = 15;         // +15 VP for destroying precursor fleet
 const PRECURSOR_OCCUPY_VP = -5;          // -5 VP if precursor occupies your colony
+
+// Underdog catch-up mechanics
+const UNDERDOG_BONUS_PER_COLONY = 0.15;   // +15% production per colony gap vs leader
+const UNDERDOG_BONUS_CAP = 0.45;          // max +45% (3 colony gap)
+const UNDERDOG_TECH_DISCOUNT = 0.15;      // -15% tech cost per player who already completed it
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
@@ -551,6 +556,35 @@ class GameEngine {
   _areMutuallyFriendly(playerA, playerB) {
     return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.FRIENDLY &&
            this._getStance(playerB, playerA) === DIPLOMACY_STANCES.FRIENDLY;
+  }
+
+  // Calculate underdog production bonus for a player based on colony gap vs leader
+  // Returns multiplier (e.g., 1.15 for +15%, 1.45 for +45% cap). Returns 1.0 if no bonus.
+  _calcUnderdogBonus(playerId) {
+    // Only active in 2+ player games
+    if (this.playerStates.size < 2) return 1.0;
+    let maxColonies = 0;
+    let playerColonies = 0;
+    for (const [pid] of this.playerStates) {
+      const count = (this._playerColonies.get(pid) || []).length;
+      if (count > maxColonies) maxColonies = count;
+      if (pid === playerId) playerColonies = count;
+    }
+    const gap = maxColonies - playerColonies;
+    if (gap <= 0) return 1.0;
+    const bonus = Math.min(gap * UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP);
+    return 1 + bonus;
+  }
+
+  // Calculate tech cost discount based on how many other players already completed a tech
+  _calcTechDiscount(techId) {
+    let completedCount = 0;
+    for (const [, state] of this.playerStates) {
+      if (state.completedTechs && state.completedTechs.includes(techId)) {
+        completedCount++;
+      }
+    }
+    return Math.max(0, 1 - completedCount * UNDERDOG_TECH_DISCOUNT);
   }
 
   // Check if colony has a friendly player's colony within N hops (BFS)
@@ -1044,6 +1078,16 @@ class GameEngine {
       for (const resource of Object.keys(production)) {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
+        }
+      }
+    }
+
+    // Underdog production bonus: +15% per colony gap vs leader, cap +45%
+    const underdogMult = this._calcUnderdogBonus(colony.ownerId);
+    if (underdogMult > 1.0) {
+      for (const resource of Object.keys(production)) {
+        if (production[resource] > 0) {
+          production[resource] = Math.round(production[resource] * underdogMult * 100) / 100;
         }
       }
     }
@@ -3203,6 +3247,8 @@ class GameEngine {
       playerName: playerState ? playerState.name : 'Unknown',
     }, true);
 
+    // Underdog bonus changes when colony count changes — invalidate all production caches
+    this._invalidateAllProductionCaches();
     this._invalidateStateCache();
     this._vpCacheTick = -1;
   }
@@ -3664,8 +3710,9 @@ class GameEngine {
         state.researchProgress[techId] = (state.researchProgress[techId] || 0) + available;
         state.resources.research[track] = 0;
 
-        // Check completion
-        if (state.researchProgress[techId] >= tech.cost) {
+        // Check completion (tech discount: -15% cost per player who already completed it)
+        const effectiveCost = Math.round(tech.cost * this._calcTechDiscount(techId));
+        if (state.researchProgress[techId] >= effectiveCost) {
           state.completedTechs.push(techId);
           state.currentResearch[track] = null;
           delete state.researchProgress[techId];
@@ -4750,6 +4797,7 @@ class GameEngine {
       battlesWon: this._battlesWon.get(playerId) || 0,
       shipsLost: this._shipsLost.get(playerId) || 0,
       diplomacy: this._serializeDiplomacy(playerId),
+      underdogBonus: this._calcUnderdogBonus(playerId),
       ...mySummary,
     };
 
@@ -4960,4 +5008,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, generateGalaxy, assignStartingSystems };
