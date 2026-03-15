@@ -256,3 +256,53 @@ describe('Performance — galaxy generation', () => {
     assert.ok(durationMs < 50, `Large galaxy took ${durationMs.toFixed(2)}ms, budget 50ms`);
   });
 });
+
+describe('Performance — serialization trim', () => {
+  it('serialized colony omits habitability, isStartingColony, playerBuiltDistricts', () => {
+    const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    for (let i = 0; i < 10; i++) engine.tick();
+    const state = JSON.parse(engine.getPlayerStateJSON(1));
+    const colony = state.colonies[0];
+    assert.strictEqual(colony.isStartingColony, undefined, 'isStartingColony should not be in payload');
+    assert.strictEqual(colony.playerBuiltDistricts, undefined, 'playerBuiltDistricts should not be in payload');
+    assert.strictEqual(colony.planet.habitability, undefined, 'habitability should not be in tick payload');
+    assert.ok(colony.planet.size > 0, 'planet.size should still be present');
+    assert.ok(colony.planet.type, 'planet.type should still be present');
+    engine.stop();
+  });
+
+  it('5-colony player payload stays under 5.5KB', () => {
+    const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
+    for (let p = 1; p <= 8; p++) {
+      engine.handleCommand(p, { type: 'selectDoctrine', doctrine: 'industrialist' });
+      const s = engine.playerStates.get(p);
+      s.resources.minerals = 99999;
+      s.resources.energy = 99999;
+      // Fill starting colony
+      const colonyIds = engine._playerColonies.get(p) || [];
+      for (const cId of colonyIds) {
+        const colony = engine.colonies.get(cId);
+        const remaining = colony.planet.size - colony.districts.length - colony.buildQueue.length;
+        const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+        for (let d = 0; d < remaining; d++) {
+          engine.handleCommand(p, { type: 'buildDistrict', colonyId: cId, districtType: types[d % types.length] });
+        }
+      }
+      // Add 4 more colonies
+      for (let c = 0; c < 4; c++) {
+        const sys = engine.galaxy.systems[p * 5 + c];
+        if (!sys) continue;
+        const colony = engine._createColony(p, `C-${p}-${c}`, { size: 12, type: 'continental', habitability: 80 }, sys.id);
+        const rem = colony.planet.size - colony.districts.length;
+        const types = ['generator', 'mining', 'agriculture', 'industrial', 'research', 'housing'];
+        for (let d = 0; d < rem; d++) {
+          engine.handleCommand(p, { type: 'buildDistrict', colonyId: colony.id, districtType: types[d % types.length] });
+        }
+      }
+    }
+    for (let i = 0; i < 500; i++) engine.tick();
+    const json = engine.getPlayerStateJSON(1);
+    assert.ok(json.length < 5632, `5-colony payload ${json.length} bytes exceeds 5.5KB`);
+    engine.stop();
+  });
+});

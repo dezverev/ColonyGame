@@ -75,11 +75,16 @@ describe('GameEngine — Initialization', () => {
 
   it('starting colony is on a habitable planet from the galaxy', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
-    const state = engine.getState();
-    const colony = state.colonies[0];
+    // Check internal colony object for full planet data (serialized state omits habitability)
+    const colony = [...engine.colonies.values()][0];
     assert.ok(colony.planet.habitability >= 60, 'Starting planet should be habitable');
     assert.ok(colony.planet.size >= 8, 'Starting planet should have reasonable size');
     assert.ok(colony.systemId != null, 'Colony should be placed in a galaxy system');
+    // Serialized colony should still have planet size and type
+    const state = engine.getState();
+    const serialized = state.colonies[0];
+    assert.strictEqual(serialized.planet.size, colony.planet.size);
+    assert.strictEqual(serialized.planet.type, colony.planet.type);
   });
 
   it('each player gets their own colony', () => {
@@ -237,12 +242,12 @@ describe('GameEngine — District Building', () => {
     assert.strictEqual(colony.playerBuiltDistricts, 0);
   });
 
-  it('serializes isStartingColony and playerBuiltDistricts in getState', () => {
+  it('serialized colony omits server-internal fields (isStartingColony, playerBuiltDistricts)', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     const state = engine.getState();
     const colony = state.colonies[0];
-    assert.strictEqual(colony.isStartingColony, true, 'starting colony serialized as isStartingColony=true');
-    assert.strictEqual(colony.playerBuiltDistricts, 0, 'playerBuiltDistricts serialized');
+    assert.strictEqual(colony.isStartingColony, undefined, 'isStartingColony should not be serialized');
+    assert.strictEqual(colony.playerBuiltDistricts, undefined, 'playerBuiltDistricts should not be serialized');
   });
 });
 

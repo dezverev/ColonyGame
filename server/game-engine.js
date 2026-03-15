@@ -1201,8 +1201,9 @@ class GameEngine {
       colonySystems.add(colony.systemId);
     }
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    let qi = 0;
+    while (qi < queue.length) {
+      const current = queue[qi++];
       if (colonySystems.has(current) && current !== fromSystemId) {
         return current;
       }
@@ -2267,8 +2268,9 @@ class GameEngine {
     const queue = [fromSystemId];
     let found = false;
 
-    while (queue.length > 0) {
-      const current = queue.shift();
+    let qi = 0;
+    while (qi < queue.length) {
+      const current = queue[qi++];
       const neighbors = adj.get(current) || [];
       for (const neighbor of neighbors) {
         if (visited.has(neighbor)) continue;
@@ -4373,8 +4375,8 @@ class GameEngine {
       };
     }
     const result = {
-      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId, planet: c.planet,
-      isStartingColony: c.isStartingColony, playerBuiltDistricts: c.playerBuiltDistricts,
+      id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
+      planet: { size: c.planet.size, type: c.planet.type },
       districts: c.districts, buildQueue: queueArr,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
