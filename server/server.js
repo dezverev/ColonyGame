@@ -252,7 +252,8 @@ function startServer(options = {}) {
       case 'acceptDiplomacy':
       case 'selectDoctrine':
       case 'auctionBid':
-      case 'respondIncident': {
+      case 'respondIncident':
+      case 'giftResources': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);

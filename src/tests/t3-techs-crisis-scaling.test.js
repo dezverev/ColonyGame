@@ -42,28 +42,28 @@ describe('T3 Tech Tree — Structure', () => {
     assert.strictEqual(Object.keys(TECH_TREE).length, 9);
   });
 
-  it('fusion_reactors is physics T3, requires advanced_reactors, cost 1000', () => {
+  it('fusion_reactors is physics T3, requires advanced_reactors, cost 800', () => {
     const tech = TECH_TREE.fusion_reactors;
     assert.strictEqual(tech.track, 'physics');
     assert.strictEqual(tech.tier, 3);
     assert.strictEqual(tech.requires, 'advanced_reactors');
-    assert.strictEqual(tech.cost, 1000);
+    assert.strictEqual(tech.cost, 800);
   });
 
-  it('genetic_engineering is society T3, requires gene_crops, cost 1000', () => {
+  it('genetic_engineering is society T3, requires gene_crops, cost 800', () => {
     const tech = TECH_TREE.genetic_engineering;
     assert.strictEqual(tech.track, 'society');
     assert.strictEqual(tech.tier, 3);
     assert.strictEqual(tech.requires, 'gene_crops');
-    assert.strictEqual(tech.cost, 1000);
+    assert.strictEqual(tech.cost, 800);
   });
 
-  it('automated_mining is engineering T3, requires deep_mining, cost 1000', () => {
+  it('automated_mining is engineering T3, requires deep_mining, cost 800', () => {
     const tech = TECH_TREE.automated_mining;
     assert.strictEqual(tech.track, 'engineering');
     assert.strictEqual(tech.tier, 3);
     assert.strictEqual(tech.requires, 'deep_mining');
-    assert.strictEqual(tech.cost, 1000);
+    assert.strictEqual(tech.cost, 800);
   });
 
   it('each track has exactly 3 tiers', () => {

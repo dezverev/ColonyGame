@@ -255,6 +255,12 @@
           } else {
             _showMatchWarning('Border Incident: one party escalated — diplomatic fallout!');
           }
+        } else if (msg.eventType === 'resourceGift') {
+          if (msg.direction === 'received') {
+            _showToast(msg.senderName + ' sent you ' + msg.amount + ' ' + msg.resource + '!', 'info');
+          } else {
+            _showToast('You sent ' + msg.amount + ' ' + msg.resource + ' to ' + msg.targetName, 'info');
+          }
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -264,7 +270,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat' || msg.eventType === 'resourceRush' || msg.eventType === 'resourceRushClaimed' || msg.eventType === 'techAuction' || msg.eventType === 'techAuctionResult' || msg.eventType === 'borderIncident' || msg.eventType === 'borderIncidentResult') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat' || msg.eventType === 'resourceRush' || msg.eventType === 'resourceRushClaimed' || msg.eventType === 'techAuction' || msg.eventType === 'techAuctionResult' || msg.eventType === 'borderIncident' || msg.eventType === 'borderIncidentResult' || msg.eventType === 'resourceGift') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -565,6 +571,10 @@
         if (r === 'both_deescalate') return `<span style="color:#2ecc71">\u2726 Border Incident resolved peacefully — +5 VP each!</span>`;
         if (r === 'both_escalate') return `<span style="color:#e74c3c">\u2694 Border Incident escalated — both parties now hostile!</span>`;
         return `<span style="color:#f39c12">\u2694 Border Incident: one party escalated — diplomatic tensions rise!</span>`;
+      }
+      case 'resourceGift': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#2ecc71">\u{1F381} ${msg.senderName || 'Unknown'} sent ${msg.amount} ${rn} to ${msg.targetName || 'Unknown'}</span>`;
       }
       default:
         return null;
@@ -1676,6 +1686,7 @@
         if (myStance !== 'friendly' && !pendingToThem) btns += `<button class="stance-btn stance-friendly" onclick="window._setDiplomacy('${p.id}','friendly')" title="Propose Alliance">&#x2726;</button>`;
         if (pendingToThem) btns += '<span class="stance-pending">pending...</span>';
         if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
+        btns += `<button class="stance-btn stance-gift" onclick="window._giftResources('${p.id}')" title="Send Resources">&#x1F381;</button>`;
         stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
       }
       const docBadge = p.doctrine ? ` <span class="doctrine-badge" title="${(DOCTRINE_INFO[p.doctrine] || {}).name || p.doctrine}">${p.doctrine === 'industrialist' ? '⚒' : p.doctrine === 'scholar' ? '📚' : p.doctrine === 'expansionist' ? '🚀' : ''}</span>` : '';
@@ -2127,6 +2138,15 @@
     };
     window._acceptDiplomacy = function(targetPlayerId) {
       send({ type: 'acceptDiplomacy', targetPlayerId });
+    };
+    window._giftResources = function(targetPlayerId) {
+      const resource = prompt('Resource to gift (energy, minerals, food, alloys):');
+      if (!resource) return;
+      const amountStr = prompt('Amount (minimum 25):');
+      if (!amountStr) return;
+      const amount = parseInt(amountStr, 10);
+      if (!amount || amount < 25) { alert('Minimum gift is 25'); return; }
+      send({ type: 'giftResources', targetPlayerId, resource: resource.trim().toLowerCase(), amount });
     };
   }
 

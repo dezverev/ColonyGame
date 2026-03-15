@@ -55,17 +55,17 @@ describe('Catalyst Events — constants', () => {
   it('Border Incident fires at 55% match time', () => {
     assert.strictEqual(CATALYST_BORDER_INCIDENT_PCT, 0.55);
   });
-  it('Rush income is 100/month', () => {
-    assert.strictEqual(CATALYST_RUSH_INCOME, 100);
+  it('Rush income is 75/month', () => {
+    assert.strictEqual(CATALYST_RUSH_INCOME, 75);
   });
   it('Rush duration is 1800 ticks', () => {
     assert.strictEqual(CATALYST_RUSH_DURATION, 1800);
   });
-  it('Auction window is 60 ticks', () => {
-    assert.strictEqual(CATALYST_AUCTION_WINDOW, 60);
+  it('Auction window is 120 ticks', () => {
+    assert.strictEqual(CATALYST_AUCTION_WINDOW, 120);
   });
-  it('Incident window is 60 ticks', () => {
-    assert.strictEqual(CATALYST_INCIDENT_WINDOW, 60);
+  it('Incident window is 100 ticks', () => {
+    assert.strictEqual(CATALYST_INCIDENT_WINDOW, 100);
   });
   it('Incident hop range is 3', () => {
     assert.strictEqual(CATALYST_INCIDENT_HOP_RANGE, 3);

@@ -292,13 +292,18 @@ const UNDERDOG_TECH_DISCOUNT = 0.15;      // -15% tech cost per player who alrea
 const CATALYST_RESOURCE_RUSH_PCT = 0.30;     // fires at 30% match time elapsed
 const CATALYST_TECH_AUCTION_PCT = 0.45;      // fires at 45% match time elapsed
 const CATALYST_BORDER_INCIDENT_PCT = 0.55;   // fires at 55% match time elapsed
-const CATALYST_RUSH_INCOME = 100;            // +100 resource/month from motherlode
+const CATALYST_RUSH_INCOME = 75;             // +75 resource/month from motherlode
 const CATALYST_RUSH_DURATION = 1800;         // 1800 ticks (3 minutes)
-const CATALYST_AUCTION_WINDOW = 60;          // 60-tick bidding window (6 seconds)
-const CATALYST_INCIDENT_WINDOW = 60;         // 60-tick response window (6 seconds)
+const CATALYST_AUCTION_WINDOW = 120;         // 120-tick bidding window (12 seconds)
+const CATALYST_INCIDENT_WINDOW = 100;        // 100-tick response window (10 seconds)
 const CATALYST_INCIDENT_BOTH_DEESCALATE_VP = 5;  // +5 VP each
 const CATALYST_INCIDENT_ESCALATE_VP = 3;         // +3 VP for sole escalator
 const CATALYST_INCIDENT_HOP_RANGE = 3;           // colonies within 3 hops
+
+// Resource gifting
+const GIFT_MIN_AMOUNT = 25;                      // minimum 25 per gift
+const GIFT_COOLDOWN_TICKS = 200;                 // 200-tick cooldown per sender (global)
+const GIFT_ALLOWED_RESOURCES = ['energy', 'minerals', 'food', 'alloys']; // no influence or research
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
@@ -369,7 +374,7 @@ const TECH_TREE = {
     track: 'physics', tier: 3,
     name: 'Fusion Reactors',
     description: '+100% Generator output, generators produce +1 alloy',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonus', district: 'generator', multiplier: 2.0, alloysBonus: 1 },
     requires: 'advanced_reactors',
   },
@@ -377,7 +382,7 @@ const TECH_TREE = {
     track: 'society', tier: 3,
     name: 'Genetic Engineering',
     description: '+100% Agriculture output, pop growth halved',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonusAndGrowth', district: 'agriculture', multiplier: 2.0, growthMultiplier: 0.5 },
     requires: 'gene_crops',
   },
@@ -385,7 +390,7 @@ const TECH_TREE = {
     track: 'engineering', tier: 3,
     name: 'Automated Mining',
     description: '+100% Mining output, mining costs 0 jobs',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonus', district: 'mining', multiplier: 2.0, jobOverride: 0 },
     requires: 'deep_mining',
   },
@@ -505,6 +510,9 @@ class GameEngine {
     this._incidentPlayers = null;        // [playerId1, playerId2] or null
     this._incidentChoices = null;        // Map<playerId, 'escalate'|'deescalate'> during window
     this._incidentDeadlineTick = 0;      // tick when incident resolves
+
+    // Resource gifting cooldowns
+    this._giftCooldowns = new Map();      // playerId -> tick when cooldown expires
 
     this._initPlayerStates();
 
@@ -5029,6 +5037,51 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'giftResources': {
+        const { targetPlayerId, resource, amount } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot gift resources to yourself' };
+        if (!resource || !GIFT_ALLOWED_RESOURCES.includes(resource)) return { error: 'Invalid resource type' };
+        if (!Number.isFinite(amount) || amount < GIFT_MIN_AMOUNT) return { error: `Minimum gift is ${GIFT_MIN_AMOUNT}` };
+        if (Math.floor(amount) !== amount) return { error: 'Amount must be a whole number' };
+
+        const senderState = this.playerStates.get(playerId);
+        if (!senderState) return { error: 'Player not found' };
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Check cooldown
+        const cooldownExpiry = this._giftCooldowns.get(playerId) || 0;
+        if (this.tickCount < cooldownExpiry) return { error: 'Gift on cooldown' };
+
+        // Check sender has enough
+        if (senderState.resources[resource] < amount) return { error: 'Not enough resources' };
+
+        // Execute transfer
+        senderState.resources[resource] -= amount;
+        targetState.resources[resource] += amount;
+
+        // Set cooldown
+        this._giftCooldowns.set(playerId, this.tickCount + GIFT_COOLDOWN_TICKS);
+
+        // Emit events to both players
+        this._emitEvent('resourceGift', playerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          resource, amount, direction: 'sent',
+        });
+        this._emitEvent('resourceGift', targetPlayerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          resource, amount, direction: 'received',
+        });
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -5464,4 +5517,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, generateGalaxy, assignStartingSystems };
