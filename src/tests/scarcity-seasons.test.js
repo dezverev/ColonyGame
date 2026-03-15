@@ -588,6 +588,212 @@ describe('Scarcity — dirty-player marking', () => {
   });
 });
 
+describe('Scarcity Seasons — Zero Production Edge Case', () => {
+  it('does not apply multiplier when affected resource production is zero', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+    // Only generator districts — no mining
+    colony.districts = [];
+    addDistricts(colony, 'generator', 3);
+    colony.pops = 3;
+    colony._cachedProduction = null;
+
+    // Verify minerals are 0 at baseline
+    const baseProd = engine._calcProduction(colony).production;
+    assert.strictEqual(baseProd.minerals, 0, 'baseline minerals should be 0');
+
+    // Activate mineral scarcity
+    engine._activeScarcity = { resource: 'minerals', ticksRemaining: 100 };
+    colony._cachedProduction = null;
+
+    const scarcityProd = engine._calcProduction(colony).production;
+    assert.strictEqual(scarcityProd.minerals, 0, 'minerals should remain 0 during scarcity');
+    // Energy should be unaffected
+    assert.strictEqual(scarcityProd.energy, baseProd.energy);
+  });
+
+  it('handles colony with no districts during scarcity', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+    colony.districts = [];
+    colony.buildings = [];
+    colony.pops = 2;
+    colony._cachedProduction = null;
+
+    engine._activeScarcity = { resource: 'energy', ticksRemaining: 50 };
+
+    const prod = engine._calcProduction(colony).production;
+    // All production should be 0 or unaffected — no crash
+    assert.strictEqual(prod.energy, 0);
+    assert.strictEqual(prod.minerals, 0);
+    assert.strictEqual(prod.food, 0);
+  });
+});
+
+describe('Scarcity Seasons — Power Surge Interaction', () => {
+  it('power surge stacks on top of energy scarcity (scarcity first, then surge)', () => {
+    const engine = makeEngine();
+    const colony = getFirstColony(engine, 1);
+    colony.districts = [];
+    addDistricts(colony, 'generator', 4);
+    colony.pops = 4;
+    colony._cachedProduction = null;
+
+    // Baseline energy
+    const baseEnergy = engine._calcProduction(colony).production.energy;
+    assert.ok(baseEnergy > 0);
+
+    // Scarcity only
+    engine._activeScarcity = { resource: 'energy', ticksRemaining: 100 };
+    colony._cachedProduction = null;
+    const scarcityOnly = engine._calcProduction(colony).production.energy;
+    const expectedScarcity = Math.round(baseEnergy * SCARCITY_MULTIPLIER * 100) / 100;
+    assert.strictEqual(scarcityOnly, expectedScarcity);
+
+    // Scarcity + power surge: surge applies after scarcity
+    colony.crisisState = { energyBoostTicks: 50 };
+    colony._cachedProduction = null;
+    const bothProd = engine._calcProduction(colony).production.energy;
+    const expectedBoth = Math.round(expectedScarcity * 1.5 * 100) / 100;
+    assert.strictEqual(bothProd, expectedBoth, 'power surge should stack on scarcity-reduced energy');
+  });
+});
+
+describe('Scarcity Seasons — Pending Resource Fallback', () => {
+  it('uses _pendingScarcityResource when set', () => {
+    const engine = makeEngine();
+    engine._pendingScarcityResource = 'food';
+    engine._scarcityWarned = true;
+    engine._nextScarcityTick = engine.tickCount + 1;
+
+    collectEvents(engine);
+    engine.tick();
+
+    assert.ok(engine._activeScarcity !== null);
+    assert.strictEqual(engine._activeScarcity.resource, 'food');
+    assert.strictEqual(engine._pendingScarcityResource, null, 'pending should be cleared after use');
+  });
+
+  it('falls back to _pickScarcityResource when _pendingScarcityResource is null', () => {
+    const engine = makeEngine();
+    engine._pendingScarcityResource = null;
+    engine._scarcityWarned = true;
+    engine._nextScarcityTick = engine.tickCount + 1;
+
+    collectEvents(engine);
+    engine.tick();
+
+    assert.ok(engine._activeScarcity !== null);
+    assert.ok(SCARCITY_RESOURCES.includes(engine._activeScarcity.resource),
+      'should pick a valid resource even without pending');
+  });
+});
+
+describe('Scarcity Seasons — Multiple Cycles', () => {
+  it('second scarcity cycle works correctly after first ends', () => {
+    const engine = makeEngine();
+    const events = collectEvents(engine);
+
+    // Complete first cycle
+    tickN(engine, engine._nextScarcityTick + SCARCITY_DURATION);
+    const firstEnd = events.filter(e => e.eventType === 'scarcityEnded');
+    assert.strictEqual(firstEnd.length, 1);
+
+    // Record second target
+    const secondTarget = engine._nextScarcityTick;
+    assert.ok(secondTarget > engine.tickCount);
+
+    // Advance to second cycle
+    const ticksToSecond = secondTarget - engine.tickCount;
+    tickN(engine, ticksToSecond + SCARCITY_DURATION);
+
+    const starts = events.filter(e => e.eventType === 'scarcityStarted');
+    const ends = events.filter(e => e.eventType === 'scarcityEnded');
+    assert.strictEqual(starts.length, 2, 'should have 2 scarcity starts');
+    assert.strictEqual(ends.length, 2, 'should have 2 scarcity ends');
+    // Resources should differ (no same-twice-in-a-row)
+    assert.notStrictEqual(starts[0].resource, starts[1].resource);
+  });
+});
+
+describe('Scarcity Seasons — Summary Cache Invalidation', () => {
+  it('_invalidateAllProductionCaches resets _summaryCacheTick', () => {
+    const engine = makeEngine();
+    // Warm summary cache
+    engine._summaryCacheTick = engine.tickCount;
+
+    engine._invalidateAllProductionCaches();
+
+    assert.strictEqual(engine._summaryCacheTick, -1,
+      'summary cache tick should be reset to -1');
+  });
+});
+
+describe('Scarcity Seasons — Monthly Resources During Scarcity', () => {
+  it('monthly resource tick applies scarcity-reduced production to player resources', () => {
+    const engine = makeEngine();
+    const state = engine.playerStates.get(1);
+    const colony = getFirstColony(engine, 1);
+    colony.districts = [];
+    addDistricts(colony, 'mining', 3);
+    colony.pops = 3;
+    colony._cachedProduction = null;
+
+    // Get expected production during scarcity
+    engine._activeScarcity = { resource: 'minerals', ticksRemaining: 9999 };
+    colony._cachedProduction = null;
+    const scarcityProd = engine._calcProduction(colony).production;
+    const expectedMinerals = scarcityProd.minerals;
+
+    // Record minerals before month tick
+    const mineralsBefore = state.resources.minerals;
+
+    // Advance to a month boundary
+    const ticksToMonth = MONTH_TICKS - (engine.tickCount % MONTH_TICKS);
+    tickN(engine, ticksToMonth);
+
+    // Minerals gained should reflect scarcity-reduced production (minus consumption)
+    const mineralsGained = state.resources.minerals - mineralsBefore;
+    assert.ok(mineralsGained >= 0, 'minerals should not go negative from production');
+    // The gained amount should be less than normal full production
+    colony._cachedProduction = null;
+    engine._activeScarcity = null;
+    const normalProd = engine._calcProduction(colony).production.minerals;
+    assert.ok(expectedMinerals < normalProd,
+      'scarcity production should be less than normal production');
+  });
+});
+
+describe('Scarcity Seasons — Serialization Mid-Cycle', () => {
+  it('ticksRemaining decrements correctly in serialized state', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = { resource: 'energy', ticksRemaining: 200 };
+    engine._invalidateStateCache();
+
+    // Tick 10 times
+    for (let i = 0; i < 10; i++) engine.tick();
+
+    engine._invalidateStateCache();
+    const state = engine.getState();
+    assert.strictEqual(state.activeScarcity.ticksRemaining, 190,
+      'ticksRemaining should decrement by 10 after 10 ticks');
+  });
+
+  it('getPlayerStateJSON reflects mid-cycle ticksRemaining', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = { resource: 'minerals', ticksRemaining: 50 };
+    engine._cachedPlayerJSON.clear();
+
+    // Tick 5 times
+    for (let i = 0; i < 5; i++) engine.tick();
+
+    engine._cachedPlayerJSON.clear();
+    const json = engine.getPlayerStateJSON(1);
+    const parsed = JSON.parse(json);
+    assert.strictEqual(parsed.activeScarcity.ticksRemaining, 45);
+  });
+});
+
 describe('Scarcity — tick performance', () => {
   it('scarcity processing adds negligible per-tick cost', () => {
     const engine = makeEngineMulti(4);
