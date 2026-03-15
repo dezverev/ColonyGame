@@ -3819,6 +3819,8 @@ class GameEngine {
           // Clear any pending friendly requests
           state.pendingFriendly.delete(targetPlayerId);
           targetState.pendingFriendly.delete(playerId);
+          // Breaking a friendly alliance affects production bonuses
+          this._invalidateProductionCaches();
           // Broadcast war declared
           for (const [pid] of this.playerStates) {
             this._emitEvent('warDeclared', pid, {
