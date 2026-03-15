@@ -1525,3 +1525,39 @@ Each entry records an iteration of automated development.
 - Cone geometry distinguishes corvettes visually from the octahedron shapes used for colony/science ships and raiders
 
 **Next:** Basic fleet combat (game-designer R34) — auto-resolve when hostile military ships occupy the same system. This completes the "Exterminate" pillar
+
+---
+
+## Entry 44 — 2026-03-14 — Fleet Combat Resolution (PvP Combat)
+
+**Phase:** 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Fleet combat resolution: when corvettes from different players occupy the same system, combat auto-resolves via `_resolveFleetCombat`. Both sides attack simultaneously each round, focusing fire on lowest-HP enemy. Up to 10 rounds per battle.
+- `retreatFleet` command: corvettes can flee from hostile systems; all enemy corvettes get 1 free attack during retreat. Ship may be destroyed if retreat damage exceeds HP.
+- VP integration: +5 VP per fleet battle won (`battlesWon`), -2 VP per own ship lost in combat (`shipsLost`). Both tracked as lifetime counters.
+- System control: enemy corvettes at a system block colonization — colony ships fail to found if enemy military present.
+- Combat events: `combatStarted` (with combatant list) and `combatResult` (with winner, losses, survivors) emitted to all players.
+- Client: combat events in event ticker with player names, "Battles" column in live and game-over scoreboards.
+- Galaxy map: combat flash — expanding red sphere at combat system, fades over 1.5 seconds.
+
+**Files changed:**
+- `server/game-engine.js` — 3 new constants (FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP), `_battlesWon`/`_shipsLost` tracking maps, `_checkFleetCombat` and `_resolveFleetCombat` methods, `retreatFleet` command handler, system control check in `_foundColonyFromShip`, VP breakdown extended, state serialization extended
+- `src/public/js/app.js` — combatStarted/combatResult event formatting in ticker, combat flash trigger, "Battles" column in live and game-over scoreboards
+- `src/public/js/galaxy-view.js` — `showCombatFlash` function with expanding/fading sphere, `_updateCombatFlashes` in render loop
+- `src/tests/fleet-combat.test.js` — **new** 38 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1104 total (38 new: 2 constants, 9 combat resolution, 3 combat events, 4 VP integration, 5 serialization, 8 retreat, 2 system control, 1 tick-driven, 4 edge cases). All passing.
+
+**Key decisions:**
+- Combat resolves instantly when `_checkFleetCombat` runs (after movement processing), not over multiple ticks — simpler and avoids tracking in-progress combats
+- Simultaneous damage model (both sides attack each round before casualties) — fairer than sequential and creates the classic "mutual destruction" scenario with equal forces
+- Focus fire on lowest-HP target — creates deterministic, explainable outcomes and rewards having more ships (overwhelming fire)
+- Retreat uses free attack from ALL enemy ships, not just one — retreating from a large fleet is much more dangerous than from a single corvette
+- System control is a simple "any enemy corvette blocks colonization" check — no need for formal ownership tracking
+- Combat flash is a Three.js sphere that expands and fades — gives visual feedback on galaxy map without complex particle effects
+
+**Next:** Ship maintenance costs (R43-2) — 1 energy + 1 alloy/month per corvette creates military-economic tension

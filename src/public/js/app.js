@@ -202,6 +202,11 @@
           if (researchPanel && !researchPanel.classList.contains('hidden')) {
             _renderResearchPanel();
           }
+        } else if (msg.eventType === 'combatStarted') {
+          // Trigger combat flash on galaxy map
+          if (window.GalaxyView && msg.systemId != null) {
+            window.GalaxyView.showCombatFlash(msg.systemId);
+          }
         } else if (msg.eventType === 'matchWarning') {
           _showMatchWarning('2 minutes remaining!');
         } else if (msg.eventType === 'finalCountdown') {
@@ -214,8 +219,8 @@
             _showToast(toastText, TOAST_TYPE_MAP[msg.eventType] || 'info');
           }
         }
-        // Show event ticker for broadcast events (all players)
-        if (msg.broadcast) {
+        // Show event ticker for broadcast events (all players) and combat events
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -459,6 +464,20 @@
         return `<span style="color:#2ecc71">Defense platform destroyed raider at ${msg.colonyName || 'colony'}! +5 VP</span>`;
       case 'colonyRaided':
         return `<span style="color:#e74c3c">\u26A0 ${msg.colonyName || 'Colony'} was raided! ${msg.districtsDisabled || 0} districts disabled.</span>`;
+      case 'combatStarted': {
+        const _pn = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        const sides = (msg.combatants || []).map(c => `${_pn(c.playerId)}(${c.ships})`).join(' vs ');
+        return `<span style="color:#ff6b6b">\u2694 Fleet combat at ${msg.systemName || 'system'}! ${sides}</span>`;
+      }
+      case 'combatResult': {
+        if (msg.retreatFailed) {
+          return `<span style="color:#e74c3c">Ship destroyed during retreat at ${msg.systemName || 'system'}!</span>`;
+        }
+        const _pn2 = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
+        const winner = msg.winnerId ? _pn2(msg.winnerId) : 'Draw';
+        const lossStr = Object.entries(msg.losses || {}).map(([pid, n]) => `${_pn2(pid)} lost ${n}`).join(', ');
+        return `<span style="color:#f39c12">\u2694 Battle at ${msg.systemName || 'system'}: ${winner} wins! ${lossStr}</span>`;
+      }
       default:
         return null;
     }
@@ -1477,7 +1496,7 @@
 
     const month = gameState.tick ? Math.floor(gameState.tick / 100) : 0;
     let html = `<div class="scoreboard-month">Month ${month}</div>`;
-    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
+    html += '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Colonies</th><th>Pops</th><th>Techs</th><th>Fleet</th><th>Battles</th><th>Raiders</th><th>⚡</th><th>⛏</th><th>🌾</th><th>⚙</th></tr>';
     players.forEach((p, i) => {
       const isMe = p.id === gameState.yourId;
       const cls = isMe ? ' class="scoreboard-me"' : '';
@@ -1490,6 +1509,7 @@
         `<td>${p.totalPops || 0}</td>` +
         `<td>${p.techs || 0}</td>` +
         `<td>${p.corvettes || 0}</td>` +
+        `<td>${p.battlesWon || 0}</td>` +
         `<td>${p.raidersDestroyed || 0}</td>` +
         `<td class="${(inc.energy || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.energy)}</td>` +
         `<td class="${(inc.minerals || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.minerals)}</td>` +
@@ -1513,7 +1533,7 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Raiders</th></tr>';
+    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
@@ -1525,6 +1545,7 @@
         `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
         `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
         `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
+        `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
         `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td></tr>`;
     });
     scoresHtml += '</table>';

@@ -166,6 +166,9 @@ const CORVETTE_HOP_TICKS = 40;      // 4 seconds per hyperlane hop
 const CORVETTE_HP = 10;
 const CORVETTE_ATTACK = 3;
 const MAX_CORVETTES = 10;           // max per player
+const FLEET_COMBAT_MAX_ROUNDS = 10; // max rounds per fleet battle
+const FLEET_BATTLE_WON_VP = 5;      // VP per fleet battle won
+const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
 
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
@@ -345,6 +348,10 @@ class GameEngine {
     this._cachedEdgeSystems = null; // cached galaxy-edge system IDs (topology never changes)
     this._raiderDisableTimers = new Set(); // colony IDs with active raider disable timers
     this._defensePlatformBuilding = new Set(); // colony IDs actively building a defense platform
+
+    // Fleet combat tracking
+    this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
+    this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
 
     this._initPlayerStates();
 
@@ -2038,6 +2045,144 @@ class GameEngine {
     if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
+  // Check all systems for fleet combat after movement processing
+  _checkFleetCombat() {
+    // Collect systems with ships from multiple players
+    const systemPlayers = new Map(); // systemId -> Set of ownerIds
+    for (const ship of this._militaryShips) {
+      if (ship.path && ship.path.length > 0) continue; // in transit
+      let owners = systemPlayers.get(ship.systemId);
+      if (!owners) { owners = new Set(); systemPlayers.set(ship.systemId, owners); }
+      owners.add(ship.ownerId);
+    }
+
+    for (const [systemId, owners] of systemPlayers) {
+      if (owners.size >= 2) {
+        this._resolveFleetCombat(systemId);
+      }
+    }
+  }
+
+  // Resolve combat in a system between all hostile players' ships
+  _resolveFleetCombat(systemId) {
+    // Gather all idle ships at this system, grouped by owner
+    const shipsByOwner = new Map();
+    for (const ship of this._militaryShips) {
+      if (ship.systemId !== systemId) continue;
+      if (ship.path && ship.path.length > 0) continue;
+      let arr = shipsByOwner.get(ship.ownerId);
+      if (!arr) { arr = []; shipsByOwner.set(ship.ownerId, arr); }
+      arr.push(ship);
+    }
+
+    const ownerIds = [...shipsByOwner.keys()];
+    if (ownerIds.length < 2) return;
+
+    // Record starting counts for event
+    const startCounts = new Map();
+    for (const [ownerId, ships] of shipsByOwner) {
+      startCounts.set(ownerId, ships.length);
+    }
+
+    // Emit combatStarted event to all involved players
+    const systemName = (this.galaxy && this.galaxy.systems[systemId]) ? this.galaxy.systems[systemId].name : `System ${systemId}`;
+    const combatants = ownerIds.map(id => ({ playerId: id, ships: startCounts.get(id) }));
+    for (const ownerId of ownerIds) {
+      this._emitEvent('combatStarted', ownerId, { systemId, systemName, combatants });
+    }
+    // Broadcast to non-combatant players too
+    for (const [pid] of this.playerStates) {
+      if (!shipsByOwner.has(pid)) {
+        this._emitEvent('combatStarted', pid, { systemId, systemName, combatants });
+      }
+    }
+
+    // Combat rounds: up to FLEET_COMBAT_MAX_ROUNDS
+    for (let round = 0; round < FLEET_COMBAT_MAX_ROUNDS; round++) {
+      // All living ships attack simultaneously
+      const damageMap = new Map(); // ship -> accumulated damage this round
+
+      for (const [ownerId, ships] of shipsByOwner) {
+        for (const ship of ships) {
+          if (ship.hp <= 0) continue;
+          // Find enemy ship with lowest HP (focus fire)
+          let target = null;
+          for (const [enemyId, enemyShips] of shipsByOwner) {
+            if (enemyId === ownerId) continue;
+            for (const es of enemyShips) {
+              if (es.hp <= 0) continue;
+              if (!target || es.hp < target.hp) target = es;
+            }
+          }
+          if (target) {
+            damageMap.set(target, (damageMap.get(target) || 0) + ship.attack);
+          }
+        }
+      }
+
+      // Apply damage simultaneously
+      for (const [ship, dmg] of damageMap) {
+        ship.hp -= dmg;
+      }
+
+      // Remove destroyed ships and count losses
+      for (const [ownerId, ships] of shipsByOwner) {
+        for (let i = ships.length - 1; i >= 0; i--) {
+          if (ships[i].hp <= 0) {
+            this._removeMilitaryShip(ships[i]);
+            ships.splice(i, 1);
+            const lost = (this._shipsLost.get(ownerId) || 0) + 1;
+            this._shipsLost.set(ownerId, lost);
+          }
+        }
+      }
+
+      // Check if combat is over (only one side or zero remaining)
+      let sidesAlive = 0;
+      for (const [, ships] of shipsByOwner) {
+        if (ships.length > 0) sidesAlive++;
+      }
+      if (sidesAlive <= 1) break;
+    }
+
+    // Determine winner (side with surviving ships)
+    let winnerId = null;
+    const losses = {};
+    for (const ownerId of ownerIds) {
+      const remaining = (shipsByOwner.get(ownerId) || []).length;
+      const started = startCounts.get(ownerId);
+      losses[ownerId] = started - remaining;
+      if (remaining > 0) winnerId = ownerId;
+    }
+
+    // Award VP for battle won
+    if (winnerId) {
+      const won = (this._battlesWon.get(winnerId) || 0) + 1;
+      this._battlesWon.set(winnerId, won);
+    }
+
+    // Invalidate VP cache
+    this._vpCacheTick = -1;
+
+    // Emit combatResult to all players
+    const result = {
+      systemId, systemName, winnerId, losses,
+      survivors: {},
+    };
+    for (const ownerId of ownerIds) {
+      result.survivors[ownerId] = (shipsByOwner.get(ownerId) || []).length;
+    }
+    for (const [pid] of this.playerStates) {
+      this._emitEvent('combatResult', pid, { ...result });
+    }
+
+    // Mark all combatants dirty
+    for (const ownerId of ownerIds) {
+      this._dirtyPlayers.add(ownerId);
+    }
+    this._invalidateStateCache();
+  }
+
   // Add a military ship and update indices
   _addMilitaryShip(ship) {
     this._militaryShips.push(ship);
@@ -2088,6 +2233,21 @@ class GameEngine {
       this._emitEvent('colonyShipFailed', ship.ownerId, {
         systemName: system.name,
         reason: 'Colony cap reached',
+      });
+      this._removeColonyShip(ship);
+      this._dirtyPlayers.add(ship.ownerId);
+      return;
+    }
+
+    // Check system control — enemy corvettes block colonization
+    const enemyMilitary = this._militaryShips.some(s =>
+      s.systemId === ship.targetSystemId && s.ownerId !== ship.ownerId &&
+      (!s.path || s.path.length === 0)
+    );
+    if (enemyMilitary) {
+      this._emitEvent('colonyShipFailed', ship.ownerId, {
+        systemName: system.name,
+        reason: 'Enemy fleet controls system',
       });
       this._removeColonyShip(ship);
       this._dirtyPlayers.add(ship.ownerId);
@@ -2361,7 +2521,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0 };
       return empty;
     }
 
@@ -2417,7 +2577,13 @@ class GameEngine {
     const corvettes = this._playerCorvetteCount(playerId);
     const militaryVP = corvettes;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP;
+    // Fleet combat VP: +5 per battle won, -2 per own ship lost
+    const battlesWon = this._battlesWon.get(playerId) || 0;
+    const battlesWonVP = battlesWon * FLEET_BATTLE_WON_VP;
+    const shipsLost = this._shipsLost.get(playerId) || 0;
+    const shipsLostVP = shipsLost > 0 ? shipsLost * FLEET_SHIP_LOST_VP : 0;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -2428,6 +2594,8 @@ class GameEngine {
       surveyed, surveyedVP,
       raidersDestroyed, raidersVP,
       corvettes, militaryVP,
+      battlesWon, battlesWonVP,
+      shipsLost, shipsLostVP,
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -2631,6 +2799,9 @@ class GameEngine {
 
     // Process military ship (corvette) movement every tick
     this._processMilitaryShipMovement();
+
+    // Check for fleet combat after movement
+    this._checkFleetCombat();
 
     // Process science ship movement and surveying every tick
     this._processScienceShipMovement();
@@ -3025,6 +3196,75 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'retreatFleet': {
+        const { shipId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+
+        const ship = this._militaryShipsById.get(shipId);
+        if (!ship || ship.ownerId !== playerId) return { error: 'Corvette not found' };
+        if (ship.path && ship.path.length > 0) return { error: 'Ship already in transit' };
+
+        // Must be in a system with enemy ships
+        const hasEnemies = this._militaryShips.some(s =>
+          s.systemId === ship.systemId && s.ownerId !== playerId &&
+          (!s.path || s.path.length === 0)
+        );
+        if (!hasEnemies) return { error: 'No enemies to retreat from' };
+
+        // Find adjacent system via hyperlanes
+        if (!this.galaxy) return { error: 'No galaxy' };
+        const adjacentSystems = [];
+        for (const hl of this.galaxy.hyperlanes) {
+          if (hl[0] === ship.systemId) adjacentSystems.push(hl[1]);
+          else if (hl[1] === ship.systemId) adjacentSystems.push(hl[0]);
+        }
+        if (adjacentSystems.length === 0) return { error: 'No adjacent system to retreat to' };
+
+        // Pick first adjacent system (prefer one without enemy ships)
+        let retreatTarget = adjacentSystems[0];
+        for (const sysId of adjacentSystems) {
+          const hasEnemyShips = this._militaryShips.some(s =>
+            s.systemId === sysId && s.ownerId !== playerId &&
+            (!s.path || s.path.length === 0)
+          );
+          if (!hasEnemyShips) { retreatTarget = sysId; break; }
+        }
+
+        // Enemy corvettes get 1 free attack during retreat
+        const enemyShips = this._militaryShips.filter(s =>
+          s.systemId === ship.systemId && s.ownerId !== playerId &&
+          (!s.path || s.path.length === 0)
+        );
+        let retreatDamage = 0;
+        for (const es of enemyShips) {
+          retreatDamage += es.attack;
+        }
+        ship.hp -= retreatDamage;
+
+        if (ship.hp <= 0) {
+          // Ship destroyed during retreat
+          const lost = (this._shipsLost.get(playerId) || 0) + 1;
+          this._shipsLost.set(playerId, lost);
+          this._removeMilitaryShip(ship);
+          this._vpCacheTick = -1;
+          this._emitEvent('combatResult', playerId, {
+            systemId: ship.systemId,
+            systemName: (this.galaxy.systems[ship.systemId] || {}).name || `System ${ship.systemId}`,
+            retreatFailed: true, shipId,
+            retreatDamage,
+          });
+          return { ok: true, destroyed: true };
+        }
+
+        // Set path to retreat target
+        ship.targetSystemId = retreatTarget;
+        ship.path = [retreatTarget];
+        ship.hopProgress = 0;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true, retreatTarget, retreatDamage, hpRemaining: ship.hp };
+      }
+
       case 'setResearch': {
         const { techId } = cmd;
         if (!techId) return { error: 'Missing techId' };
@@ -3271,6 +3511,8 @@ class GameEngine {
       techs: (player.completedTechs || []).length,
       raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
       corvettes: this._playerCorvetteCount(playerId),
+      battlesWon: this._battlesWon.get(playerId) || 0,
+      shipsLost: this._shipsLost.get(playerId) || 0,
       ...mySummary,
     };
 
@@ -3285,6 +3527,8 @@ class GameEngine {
         techs: (p.completedTechs || []).length,
         raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
         corvettes: this._playerCorvetteCount(p.id),
+        battlesWon: this._battlesWon.get(p.id) || 0,
+        shipsLost: this._shipsLost.get(p.id) || 0,
         ...summary,
       });
     }
@@ -3454,4 +3698,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, generateGalaxy, assignStartingSystems };

@@ -940,6 +940,7 @@
   function render() {
     if (renderer && scene && camera) {
       _animateShips();
+      _updateCombatFlashes();
       renderer.render(scene, camera);
     }
   }
@@ -972,6 +973,40 @@
     container = null;
   }
 
+  // ── Combat Flash ──
+  const _combatFlashes = []; // { mesh, startTime, duration }
+
+  function showCombatFlash(systemId) {
+    if (!scene || !galaxyData || !galaxyData.systems[systemId]) return;
+    const sys = galaxyData.systems[systemId];
+    const THREE = window.THREE;
+    if (!THREE) return;
+    const geo = new THREE.SphereGeometry(4, 16, 12);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff4444, transparent: true, opacity: 0.8 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(sys.x, sys.y || 0, sys.z);
+    scene.add(mesh);
+    _combatFlashes.push({ mesh, startTime: performance.now(), duration: 1500 });
+  }
+
+  function _updateCombatFlashes() {
+    const now = performance.now();
+    for (let i = _combatFlashes.length - 1; i >= 0; i--) {
+      const f = _combatFlashes[i];
+      const elapsed = now - f.startTime;
+      if (elapsed >= f.duration) {
+        scene.remove(f.mesh);
+        f.mesh.geometry.dispose();
+        f.mesh.material.dispose();
+        _combatFlashes.splice(i, 1);
+      } else {
+        const t = elapsed / f.duration;
+        f.mesh.material.opacity = 0.8 * (1 - t);
+        f.mesh.scale.setScalar(1 + t * 2);
+      }
+    }
+  }
+
   // ── Public API ──
   const GalaxyView = {
     init,
@@ -981,6 +1016,7 @@
     updateScienceShips,
     updateRaiders,
     updateCorvettes,
+    showCombatFlash,
     render,
     destroy,
     getSelectedSystem: () => selectedSystemId >= 0 && galaxyData ? galaxyData.systems[selectedSystemId] : null,
