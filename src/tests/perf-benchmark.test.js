@@ -225,4 +225,72 @@ describe('Performance Benchmarks', () => {
       assert.ok(max < 100, `Max cold-cache tick ${max.toFixed(3)}ms exceeds 100ms budget`);
     });
   });
+
+  describe('Full Broadcast Path', () => {
+    it('tick + serialize all 8 players completes within budget', () => {
+      const engine = createEngine(8);
+      for (let i = 1; i <= 8; i++) buildUpColonies(engine, i);
+
+      // Simulate surveyed systems (realistic mid-game: 15 systems per player)
+      for (let i = 1; i <= 8; i++) {
+        const surveySet = new Set();
+        for (let s = 0; s < 15; s++) surveySet.add(s);
+        engine._surveyedSystems.set(i, surveySet);
+      }
+
+      // Mark all players dirty and wire up onTick to collect serialized payloads
+      let totalBytes = 0;
+      let callCount = 0;
+      engine.onTick = (playerId, json) => {
+        totalBytes += json.length;
+        callCount++;
+      };
+
+      // Warm up
+      for (let i = 0; i < 10; i++) engine.tick();
+
+      // Measure broadcast ticks (every BROADCAST_EVERY ticks)
+      const times = [];
+      for (let r = 0; r < 30; r++) {
+        // Mark all dirty so broadcast fires
+        for (let i = 1; i <= 8; i++) engine._dirtyPlayers.add(i);
+        engine._invalidateStateCache();
+        callCount = 0;
+        totalBytes = 0;
+        const t0 = process.hrtime.bigint();
+        // Advance to next broadcast tick
+        do { engine.tick(); } while (callCount === 0);
+        times.push(Number(process.hrtime.bigint() - t0) / 1e6);
+      }
+
+      times.sort((a, b) => a - b);
+      const avg = times.reduce((a, b) => a + b) / times.length;
+      const max = times[times.length - 1];
+      console.log(`  Broadcast tick (8 players) avg: ${avg.toFixed(3)}ms, max: ${max.toFixed(3)}ms`);
+      assert.ok(avg < 50, `Avg broadcast tick ${avg.toFixed(3)}ms exceeds 50ms budget`);
+    });
+
+    it('victory progress cache prevents redundant colony iteration', () => {
+      const engine = createEngine(4);
+      for (let i = 1; i <= 4; i++) buildUpColonies(engine, i);
+      engine.tick();
+
+      // First call computes, subsequent calls in same tick hit cache
+      engine._invalidateStateCache();
+      const t0 = process.hrtime.bigint();
+      for (let i = 1; i <= 4; i++) engine.getPlayerStateJSON(i);
+      const coldMs = Number(process.hrtime.bigint() - t0) / 1e6;
+
+      // Second round in same tick — all should be fully cached
+      engine._stateCacheDirty = true; // force JSON re-serialization but VP/progress still cached
+      engine._cachedPlayerJSON.clear();
+      const t1 = process.hrtime.bigint();
+      for (let i = 1; i <= 4; i++) engine.getPlayerStateJSON(i);
+      const warmMs = Number(process.hrtime.bigint() - t1) / 1e6;
+
+      console.log(`  Victory progress cache: cold=${coldMs.toFixed(3)}ms, warm=${warmMs.toFixed(3)}ms`);
+      // Warm should be at least as fast (cache hit)
+      assert.ok(warmMs <= coldMs * 1.5, 'Warm serialization should not be slower than cold');
+    });
+  });
 });

@@ -444,6 +444,9 @@ class GameEngine {
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._traitBonusesCache = new Map(); // playerId -> bonuses — cleared on colony trait change
     this._cachedShipData = null; // cached serialized ship arrays (shared across all players)
+    this._victoryProgressCache = new Map(); // playerId -> progress, tick-scoped
+    this._victoryProgressCacheTick = -1;
+    this._cachedSurveyedArrays = new Map(); // playerId -> { size, array } — avoids Set→Array on every broadcast
     this._gameOver = false; // true after game ends
 
     // Game speed & pause
@@ -4166,8 +4169,17 @@ class GameEngine {
     }
   }
 
-  // Calculate victory progress for all players (used in serialization)
+  // Calculate victory progress for all players (tick-scoped cache — avoids re-iterating all
+  // colonies per player during serialization, which is called once per dirty player per broadcast)
   _calcVictoryProgress(playerId) {
+    if (this._victoryProgressCacheTick === this.tickCount) {
+      const cached = this._victoryProgressCache.get(playerId);
+      if (cached) return cached;
+    } else {
+      this._victoryProgressCacheTick = this.tickCount;
+      this._victoryProgressCache.clear();
+    }
+
     const state = this.playerStates.get(playerId);
     if (!state) return { scientific: { current: 0, target: TOTAL_TECHS }, military: { current: 0, target: MILITARY_VICTORY_OCCUPATIONS }, economic: { alloys: 0, alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: 0, traitsTarget: ECONOMIC_VICTORY_TRAITS } };
 
@@ -4187,11 +4199,13 @@ class GameEngine {
       if (colony && this._calcColonyTrait(colony)) traitCount++;
     }
 
-    return {
+    const progress = {
       scientific: { current: techCount, target: TOTAL_TECHS },
       military: { current: occupying, target: MILITARY_VICTORY_OCCUPATIONS },
       economic: { alloys: Math.floor(state.resources.alloys), alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: traitCount, traitsTarget: ECONOMIC_VICTORY_TRAITS },
     };
+    this._victoryProgressCache.set(playerId, progress);
+    return progress;
   }
 
   // Process match timer countdown
@@ -5524,10 +5538,18 @@ class GameEngine {
     state.scienceShips = shipData.scienceShips;
     state.militaryShips = shipData.militaryShips;
     // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
+    // Cached array avoids Set→Array spread on every broadcast
     state.surveyedSystems = {};
     const mySurveyed = this._surveyedSystems.get(playerId);
     if (mySurveyed) {
-      state.surveyedSystems[playerId] = [...mySurveyed];
+      const cached = this._cachedSurveyedArrays.get(playerId);
+      if (cached && cached.size === mySurveyed.size) {
+        state.surveyedSystems[playerId] = cached.array;
+      } else {
+        const arr = [...mySurveyed];
+        this._cachedSurveyedArrays.set(playerId, { size: mySurveyed.size, array: arr });
+        state.surveyedSystems[playerId] = arr;
+      }
     }
 
     // Include match timer info
