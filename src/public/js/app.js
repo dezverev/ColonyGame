@@ -464,6 +464,8 @@
         return `<span style="color:#2ecc71">Defense platform destroyed raider at ${msg.colonyName || 'colony'}! +5 VP</span>`;
       case 'colonyRaided':
         return `<span style="color:#e74c3c">\u26A0 ${msg.colonyName || 'Colony'} was raided! ${msg.districtsDisabled || 0} districts disabled.</span>`;
+      case 'maintenanceAttrition':
+        return `<span style="color:#e74c3c">⚠ ${player} lost ${msg.shipsLost} corvette${msg.shipsLost > 1 ? 's' : ''} — cannot afford fleet maintenance!</span>`;
       case 'combatStarted': {
         const _pn = (id) => { const pp = (gameState && gameState.players || []).find(x => x.id === id); return pp ? pp.name : 'Unknown'; };
         const sides = (msg.combatants || []).map(c => `${_pn(c.playerId)}(${c.ships})`).join(' vs ');
@@ -700,7 +702,7 @@
       corvBtn.innerHTML =
         '<div class="build-option-swatch" style="background:#ff4444"></div>' +
         '<div class="build-option-name">Corvette</div>' +
-        '<div class="build-option-prod">Military warship (10 HP, 3 ATK)</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK) | Upkeep: 1⚡ 1🔩/mo</div>' +
         `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
 
       corvBtn.addEventListener('click', () => {

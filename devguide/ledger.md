@@ -1561,3 +1561,36 @@ Each entry records an iteration of automated development.
 - Combat flash is a Three.js sphere that expands and fades — gives visual feedback on galaxy map without complex particle effects
 
 **Next:** Ship maintenance costs (R43-2) — 1 energy + 1 alloy/month per corvette creates military-economic tension
+
+---
+
+## Entry 45 — 2026-03-14 — Ship Maintenance Costs (Military-Economic Tension)
+
+**Phase:** 1 (Foundation Pivot) / 5 (Fleets & Combat)
+**Status:** Complete
+
+**What was built:**
+- Ship maintenance system: corvettes cost 1 energy + 1 alloy per month, processed in `_processMonthlyResources`
+- Civilian ship maintenance: idle colony ships and idle science ships cost 1 energy/month each (ships in transit or surveying are exempt)
+- HP degradation: when energy or alloys go negative from maintenance, all player corvettes take 2 HP damage. Ships at 0 HP are destroyed
+- Maintenance attrition events: `shipLostMaintenance` (per destroyed ship) and `maintenanceAttrition` (broadcast, total count) emitted when ships scrapped
+- Income display: `_getPlayerSummary` includes maintenance costs in energy/alloy income, so resource bar shows net income after fleet upkeep
+- Client: corvette build tooltip shows "Upkeep: 1⚡ 1🔩/mo", ticker and toast messages for maintenance attrition events
+
+**Files changed:**
+- `server/game-engine.js` — 3 new constants (CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE), maintenance processing in `_processMonthlyResources`, maintenance deduction in `_getPlayerSummary`, updated module.exports
+- `src/public/js/app.js` — corvette build tooltip updated with upkeep info, `maintenanceAttrition` ticker event formatter
+- `src/public/js/toast-format.js` — `shipLostMaintenance` and `maintenanceAttrition` toast formatting + type map entries
+- `src/tests/ship-maintenance.test.js` — **new** 21 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1155 total (21 new: 3 constants, 3 corvette cost deduction, 5 HP degradation/attrition, 3 event emission, 2 civilian ship maintenance, 2 income display, 3 edge cases). All passing.
+
+**Key decisions:**
+- Maintenance deducted after colony production in same monthly pass — conceptually correct (production funds maintenance) and avoids extra iteration
+- HP degradation applies to ALL player corvettes when resources go negative, not just "unpaid" ones — simpler and creates stronger pressure to balance fleet size with economy
+- Idle-only maintenance for civilian ships: ships in transit or surveying are "operational" and don't incur idle cost — rewards active use of civilian fleet
+- Attrition event is broadcast so all players see when an opponent's fleet degrades — creates strategic information
+
+**Next:** Colony occupation after fleet combat (R44-2) — winning battles should change the map

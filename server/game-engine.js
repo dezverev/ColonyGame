@@ -169,6 +169,9 @@ const MAX_CORVETTES = 10;           // max per player
 const FLEET_COMBAT_MAX_ROUNDS = 10; // max rounds per fleet battle
 const FLEET_BATTLE_WON_VP = 5;      // VP per fleet battle won
 const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
+const CORVETTE_MAINTENANCE = { energy: 1, alloys: 1 };  // per corvette per month
+const CIVILIAN_SHIP_MAINTENANCE = { energy: 1 };         // per idle colony/science ship per month
+const MAINTENANCE_DAMAGE = 2;       // HP lost per corvette when maintenance unpaid
 
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
@@ -744,6 +747,35 @@ class GameEngine {
           food: state.resources.food,
         });
       }
+
+      // Ship maintenance costs
+      const corvetteCount = this._playerCorvetteCount(playerId);
+      const idleColonyShips = this._colonyShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0)).length;
+      const idleScienceShips = this._scienceShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0) && !s.surveying).length;
+      const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
+
+      state.resources.energy -= corvetteCount * CORVETTE_MAINTENANCE.energy + civilianMaintenance;
+      state.resources.alloys -= corvetteCount * CORVETTE_MAINTENANCE.alloys;
+
+      // If energy or alloys went negative from maintenance, degrade corvettes
+      if ((corvetteCount > 0) && (state.resources.energy < 0 || state.resources.alloys < 0)) {
+        const playerShips = this._militaryShipsByPlayer.get(playerId) || [];
+        const toRemove = [];
+        for (const ship of playerShips) {
+          ship.hp -= MAINTENANCE_DAMAGE;
+          if (ship.hp <= 0) {
+            toRemove.push(ship);
+          }
+        }
+        for (const ship of toRemove) {
+          this._removeMilitaryShip(ship);
+          this._emitEvent('shipLostMaintenance', playerId, { shipId: ship.id, systemId: ship.systemId });
+        }
+        if (toRemove.length > 0) {
+          this._emitEvent('maintenanceAttrition', playerId, { shipsLost: toRemove.length }, true);
+        }
+      }
+
       this._dirtyPlayers.add(playerId);
     }
     this._invalidateStateCache();
@@ -3430,6 +3462,15 @@ class GameEngine {
       if (this._calcColonyTrait(colony)) traitCount++;
     }
     income.influence = colonyIds.length * INFLUENCE_BASE_INCOME + traitCount * INFLUENCE_TRAIT_INCOME;
+
+    // Subtract ship maintenance from income display
+    const corvetteCount = this._playerCorvetteCount(playerId);
+    const idleColonyShips = this._colonyShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0)).length;
+    const idleScienceShips = this._scienceShips.filter(s => s.ownerId === playerId && (!s.path || s.path.length === 0) && !s.surveying).length;
+    const civilianMaintenance = (idleColonyShips + idleScienceShips) * CIVILIAN_SHIP_MAINTENANCE.energy;
+    income.energy -= corvetteCount * CORVETTE_MAINTENANCE.energy + civilianMaintenance;
+    income.alloys -= corvetteCount * CORVETTE_MAINTENANCE.alloys;
+
     const summary = { colonyCount: colonyIds.length, totalPops, income };
     this._summaryCache.set(playerId, summary);
     return summary;
@@ -3709,4 +3750,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, generateGalaxy, assignStartingSystems };

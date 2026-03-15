@@ -27,6 +27,8 @@
     raiderSpawned: 'warning',
     raiderDefeated: 'positive',
     colonyRaided: 'crisis',
+    shipLostMaintenance: 'crisis',
+    maintenanceAttrition: 'crisis',
   };
 
   function formatGameEvent(msg) {
@@ -87,6 +89,10 @@
         return 'Defense platform destroyed raider at ' + (d.colonyName || 'colony') + '! +5 VP';
       case 'colonyRaided':
         return 'RAIDED: ' + (d.colonyName || 'Colony') + ' was raided! ' + (d.districtsDisabled || 0) + ' districts disabled.';
+      case 'shipLostMaintenance':
+        return 'Corvette lost — cannot afford fleet maintenance!';
+      case 'maintenanceAttrition':
+        return 'Fleet attrition: ' + (d.shipsLost || 0) + ' corvette' + ((d.shipsLost || 0) > 1 ? 's' : '') + ' scrapped — resources too low!';
       default:
         return null;
     }
