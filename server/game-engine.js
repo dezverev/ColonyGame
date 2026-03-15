@@ -484,6 +484,10 @@ class GameEngine {
     this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
     this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
 
+    // Match stats tracking (for post-game score screen)
+    this._matchStats = new Map(); // playerId -> { coloniesFounded, districtsBuilt, shipsBuilt, resourcesGathered }
+    this._matchStartTime = Date.now(); // wall-clock match start time
+
     // Endgame crisis tracking
     this._endgameCrisis = null;      // null | { type: 'galacticStorm' | 'precursorAwakening', triggered: true }
     this._endgameCrisisWarned = false;
@@ -576,6 +580,13 @@ class GameEngine {
         activeEdict: null, // { type, monthsRemaining } or null
         diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
         pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
+      });
+      // Initialize match stats for post-game score screen
+      this._matchStats.set(playerId, {
+        coloniesFounded: 0,
+        districtsBuilt: 0,
+        shipsBuilt: 0,
+        resourcesGathered: { energy: 0, minerals: 0, food: 0, alloys: 0 },
       });
     }
   }
@@ -1159,6 +1170,15 @@ class GameEngine {
         state.resources.research.physics += production.physics;
         state.resources.research.society += production.society;
         state.resources.research.engineering += production.engineering;
+
+        // Track total resources gathered for post-game stats
+        const ms = this._matchStats.get(playerId);
+        if (ms) {
+          ms.resourcesGathered.energy += production.energy;
+          ms.resourcesGathered.minerals += production.minerals;
+          ms.resourcesGathered.food += production.food;
+          ms.resourcesGathered.alloys += production.alloys;
+        }
 
         // Apply consumption
         state.resources.energy -= consumption.energy;
@@ -2354,7 +2374,11 @@ class GameEngine {
       if (item.ticksRemaining <= 0) {
         colony.buildQueue.shift();
 
+        // Track match stats for construction
+        const buildStats = this._matchStats.get(colony.ownerId);
+
         if (item.type === 'colonyShip') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn colony ship at colony's system
           const shipId = this._nextId();
           const colonyShip = {
@@ -2378,6 +2402,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else if (item.type === 'scienceShip') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn science ship at colony's system
           const shipId = this._nextId();
           const sciShip = {
@@ -2403,6 +2428,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else if (item.type === 'corvette') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn corvette at colony's system — use variant stats if specified
           const shipId = this._nextId();
           const vDef = item.variant ? CORVETTE_VARIANTS[item.variant] : null;
@@ -2429,6 +2455,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else {
+          if (buildStats) buildStats.districtsBuilt++;
           const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
@@ -3639,6 +3666,10 @@ class GameEngine {
     // Remove ship
     this._removeColonyShip(ship);
 
+    // Track match stats
+    const stats = this._matchStats.get(ship.ownerId);
+    if (stats) stats.coloniesFounded++;
+
     // Emit colony founded event (broadcast to all players)
     const playerState = this.playerStates.get(ship.ownerId);
     this._emitEvent('colonyFounded', ship.ownerId, {
@@ -4089,10 +4120,24 @@ class GameEngine {
     scores.sort((a, b) => b.vp - a.vp);
     const winner = scores.length > 0 ? scores[0] : null;
 
+    // Compute match duration in seconds (wall clock)
+    const matchDurationMs = Date.now() - this._matchStartTime;
+    const matchDurationSec = Math.floor(matchDurationMs / 1000);
+
+    // Attach per-player match stats to scores
+    for (const s of scores) {
+      const ms = this._matchStats.get(s.playerId);
+      s.matchStats = ms ? { ...ms, resourcesGathered: { ...ms.resourcesGathered } } : {
+        coloniesFounded: 0, districtsBuilt: 0, shipsBuilt: 0,
+        resourcesGathered: { energy: 0, minerals: 0, food: 0, alloys: 0 },
+      };
+    }
+
     const gameOverData = {
       winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
       scores,
       finalTick: this.tickCount,
+      matchDurationSec,
     };
 
     if (this.onGameOver) {

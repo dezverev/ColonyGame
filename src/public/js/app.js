@@ -440,8 +440,11 @@
   const gameOverOverlay = document.getElementById('game-over-overlay');
   const gameOverTitle = document.getElementById('game-over-title');
   const gameOverWinner = document.getElementById('game-over-winner');
+  const gameOverDuration = document.getElementById('game-over-duration');
   const gameOverScores = document.getElementById('game-over-scores');
+  const gameOverStats = document.getElementById('game-over-stats');
   const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
+  const gameOverRematchBtn = document.getElementById('game-over-rematch-btn');
 
   // ── Timer & warning refs ──
   const statusTimer = document.getElementById('status-timer');
@@ -1709,7 +1712,7 @@
     scoreboardBody.innerHTML = html;
   }
 
-  // ── Game Over ──
+  // ── Game Over — Post-Game Score Screen ──
   function _showGameOver(data) {
     if (!gameOverOverlay) return;
     if (_uiInterval) { clearInterval(_uiInterval); _uiInterval = null; }
@@ -1722,26 +1725,59 @@
       ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th><th>Crisis</th></tr>';
+    // Match duration
+    if (gameOverDuration && data.matchDurationSec != null) {
+      const mins = Math.floor(data.matchDurationSec / 60);
+      const secs = data.matchDurationSec % 60;
+      gameOverDuration.textContent = `Match Duration: ${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+    } else if (gameOverDuration) {
+      gameOverDuration.textContent = '';
+    }
+
+    // VP Breakdown table
+    let scoresHtml = '<h3 class="go-section-title">Victory Points</h3>';
+    scoresHtml += '<div class="go-table-wrap"><table class="scoreboard-table go-vp-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Diplomacy</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
-        `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
-        `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
-        `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
-        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
-        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
-        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
-        `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
-        `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
-        `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
-        `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
-        `<td>${(s.breakdown.friendlyCount || 0) + (s.breakdown.mutualFriendlyCount || 0)} (${s.breakdown.diplomacyVP || 0})</td>` +
-        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td>` +
-        `<td>${s.breakdown.precursorVP || 0}</td></tr>`;
+        `<td>${s.breakdown.popsVP}</td>` +
+        `<td>${s.breakdown.districtsVP}</td>` +
+        `<td>${s.breakdown.alloysVP}</td>` +
+        `<td>${s.breakdown.researchVP}</td>` +
+        `<td>${s.breakdown.techVP || 0}</td>` +
+        `<td>${s.breakdown.traitsVP || 0}</td>` +
+        `<td>${s.breakdown.surveyedVP || 0}</td>` +
+        `<td>${s.breakdown.militaryVP || 0}</td>` +
+        `<td>${s.breakdown.battlesWonVP || 0}</td>` +
+        `<td>${s.breakdown.diplomacyVP || 0}</td>` +
+        `<td>${s.breakdown.raidersVP || 0}</td></tr>`;
     });
-    scoresHtml += '</table>';
+    scoresHtml += '</table></div>';
     gameOverScores.innerHTML = scoresHtml;
+
+    // Per-player match stats
+    if (gameOverStats) {
+      let statsHtml = '<h3 class="go-section-title">Match Statistics</h3>';
+      statsHtml += '<div class="go-table-wrap"><table class="scoreboard-table go-stats-table"><tr><th>Player</th><th>Colonies</th><th>Districts</th><th>Ships</th><th>Battles Won</th><th>Ships Lost</th><th>Raiders Killed</th><th>Energy</th><th>Minerals</th><th>Food</th><th>Alloys</th></tr>';
+      (data.scores || []).forEach((s) => {
+        const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
+        const ms = s.matchStats || {};
+        const rg = ms.resourcesGathered || {};
+        statsHtml += `<tr${cls}><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td>` +
+          `<td>${ms.coloniesFounded || 0}</td>` +
+          `<td>${ms.districtsBuilt || 0}</td>` +
+          `<td>${ms.shipsBuilt || 0}</td>` +
+          `<td>${s.breakdown.battlesWon || 0}</td>` +
+          `<td>${s.breakdown.shipsLost || 0}</td>` +
+          `<td>${s.breakdown.raidersDestroyed || 0}</td>` +
+          `<td>${Math.floor(rg.energy || 0)}</td>` +
+          `<td>${Math.floor(rg.minerals || 0)}</td>` +
+          `<td>${Math.floor(rg.food || 0)}</td>` +
+          `<td>${Math.floor(rg.alloys || 0)}</td></tr>`;
+      });
+      statsHtml += '</table></div>';
+      gameOverStats.innerHTML = statsHtml;
+    }
 
     gameOverOverlay.classList.remove('hidden');
   }
@@ -2039,6 +2075,13 @@
     gameOverOverlay.classList.add('hidden');
     gameState = null;
     send({ type: 'leaveRoom' });
+  });
+
+  // Rematch: leave current room and create a new one with same settings
+  if (gameOverRematchBtn) gameOverRematchBtn.addEventListener('click', () => {
+    gameOverOverlay.classList.add('hidden');
+    gameState = null;
+    send({ type: 'rematch' });
   });
 
   chatInput.addEventListener('keydown', (e) => {

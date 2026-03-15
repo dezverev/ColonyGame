@@ -1962,3 +1962,40 @@ Each entry records an iteration of automated development.
 - Catalyst windows widened per game-designer R55 feedback — 6s was too tight for multiplayer. 12s auction / 10s incident gives time to read, decide, and act.
 
 **Next:** In-game chat + diplomacy pings (Phase 6, R53-2 PRIORITY) — enable existing chat during gameplay, add ping system. Or science ship expeditions (Phase 3, R54-3) — re-exploration system for idle ships.
+
+---
+
+## Entry 56 — 2026-03-15 — Post-Game Score Screen
+
+**Phase:** 7 (Events, Polish & Win Conditions)
+**Status:** Complete
+
+**What was built:**
+- **Full post-game score screen:** Redesigned game-over overlay with VP breakdown table, match statistics table, match duration display, and two action buttons (Rematch + Return to Lobby)
+- **Server match stats tracking:** Per-player `_matchStats` map tracks: colonies founded, districts built, ships built, and total resources gathered (energy/minerals/food/alloys) across the entire match
+- **Match duration:** Wall-clock `_matchStartTime` recorded at engine construction, `matchDurationSec` included in gameOver payload
+- **VP breakdown table:** Cleaner layout with dedicated VP-per-category columns (Pops, Districts, Alloys, Research, Techs, Traits, Explored, Fleet, Battles, Diplomacy, Raiders)
+- **Match statistics table:** Per-player row showing colonies founded, districts built, ships built, battles won, ships lost, raiders killed, and total resources gathered per type
+- **Rematch button:** Creates a new room with identical settings (matchTimer, galaxySize, practiceMode, maxPlayers) and puts the player directly into it. Server `rematch` message handler leaves old room, creates new room, sends `roomJoined`
+- **Polished UI:** Dark blur backdrop (8px), wider max-width (900px), section headers, scrollable table wraps, green Rematch + red Return to Lobby button pair, box shadow glow
+
+**Files changed:**
+- `server/game-engine.js` — `_matchStats` Map + `_matchStartTime` in constructor, stats init in `_initPlayerStates`, tracking in `_processConstruction` (ships/districts), `_processMonthlyResources` (resources gathered), `_foundColonyFromShip` (colonies founded), `matchDurationSec` + `matchStats` in `_triggerGameOver`
+- `server/server.js` — added `rematch` message handler (leave room + create new with same settings)
+- `src/public/index.html` — redesigned game-over overlay with duration div, stats div, buttons div, rematch button
+- `src/public/js/app.js` — new DOM refs (gameOverDuration, gameOverStats, gameOverRematchBtn), rewritten `_showGameOver` with VP table + stats table + duration display, rematch button click handler
+- `src/public/css/style.css` — redesigned game-over styles (wider panel, blur backdrop, section titles, table wraps, dual buttons, green rematch styling)
+- `src/tests/post-game-score.test.js` — **new** 16 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1749 total (16 new: 3 match stats init, 1 district tracking, 3 ship tracking, 2 resource gathering, 1 colony founded, 5 gameOver payload structure, 1 rematch). All passing (1 pre-existing doctrine-choice-deep flaky test unrelated).
+
+**Key decisions:**
+- Match stats use a flat object per player (not nested) — simple to serialize, no cache invalidation needed since stats only grow
+- Resources gathered tracks gross production, not net (doesn't subtract consumption) — shows total economic output which is more meaningful for bragging rights
+- Rematch creates a brand new room rather than resetting the existing one — simpler implementation, avoids state cleanup issues, and other players in multiplayer can join the new room normally
+- VP breakdown table simplified: removed raw-value columns (just show VP earned per category) for cleaner readability at a glance
+- `_matchStartTime` uses wall-clock `Date.now()` rather than tick count for human-readable duration — tick-based would require knowing effective tick rate accounting for pauses and speed changes
+
+**Next:** Colony established bonus (R54-4) — auto-build 1 mining district on founding. Or colony ship build time reduction (R54-5) — 600→500 ticks. Or distinct victory conditions (R54-7) — Scientific/Military/Economic instant-win paths.
