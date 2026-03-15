@@ -56,6 +56,12 @@
   let _lastHoverTime = 0;
   const _HOVER_INTERVAL = 33; // ms
 
+  // Variant hop ticks — hoisted from _animateShips to avoid per-frame object allocation
+  const _variantHopTicks = { interceptor: 30, gunboat: 50, sentinel: 40 };
+
+  // Reusable temp position object for ship interpolation (avoids per-ship GC pressure)
+  const _tempPos = { x: 0, y: 0, z: 0 };
+
   // Shared materials/geometries
   const _matCache = {};
   const _geoCache = {};
@@ -840,33 +846,37 @@
   // that update × correct tick rate → compute exact position on the lane.
   // Mesh is reused across updates so position is continuous.
 
+  // Cached game speed state for per-frame use (set once in _animateShips, read per ship)
+  let _frameGameSpeed = 2;
+  let _framePaused = false;
+  let _frameMsPerTick = 100;
+
   function _extrapolateTransitPos(ship, hopTicks, yOffset, updateTime, now) {
     if (!ship.path || ship.path.length === 0) return null;
     const fromSys = galaxyData.systems[ship.systemId];
     const toSys = galaxyData.systems[ship.path[0]];
     if (!fromSys || !toSys) return null;
 
-    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
-    const gameSpeed = (gs && gs.gameSpeed) || 2;
-    const paused = gs && gs.paused;
-
-    // Correct tick rate from SPEED_INTERVALS (NOT 100/gameSpeed which is wrong)
-    const msPerTick = SPEED_INTERVALS[gameSpeed] || 100;
-    const elapsedTicks = paused ? 0 : (now - updateTime) / msPerTick;
+    const elapsedTicks = _framePaused ? 0 : (now - updateTime) / _frameMsPerTick;
     // Clamp: never predict past end of hop (server will tell us when hop completes)
     const hp = Math.min((ship.hopProgress || 0) + elapsedTicks, hopTicks - 0.5);
     const t = hp / hopTicks;
 
-    return {
-      x: fromSys.x + (toSys.x - fromSys.x) * t,
-      y: (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset,
-      z: fromSys.z + (toSys.z - fromSys.z) * t,
-    };
+    _tempPos.x = fromSys.x + (toSys.x - fromSys.x) * t;
+    _tempPos.y = (fromSys.y || 0) + ((toSys.y || 0) - (fromSys.y || 0)) * t + yOffset;
+    _tempPos.z = fromSys.z + (toSys.z - fromSys.z) * t;
+    return _tempPos;
   }
 
   function _animateShips() {
     if (!galaxyData) return;
     const now = performance.now();
+
+    // Fetch game speed once per frame (was previously per-ship inside _extrapolateTransitPos)
+    const gs = (typeof window !== 'undefined' && window.GameClient) ? window.GameClient.getState() : null;
+    _frameGameSpeed = (gs && gs.gameSpeed) || 2;
+    _framePaused = !!(gs && gs.paused);
+    _frameMsPerTick = SPEED_INTERVALS[_frameGameSpeed] || 100;
 
     // Colony ships
     for (const mesh of colonyShipMeshes) {
@@ -912,7 +922,6 @@
     }
 
     // Corvettes (military ships) — variant-aware hop speed
-    const _variantHopTicks = { interceptor: 30, gunboat: 50, sentinel: 40 };
     for (const mesh of corvetteMeshes) {
       const ship = mesh.userData.shipData;
       if (!ship) continue;
