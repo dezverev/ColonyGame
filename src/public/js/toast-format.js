@@ -34,6 +34,8 @@
     warDeclared: 'crisis',
     allianceFormed: 'positive',
     friendlyProposed: 'info',
+    doctrineChosen: 'positive',
+    doctrineAutoAssigned: 'info',
   };
 
   function formatGameEvent(msg) {
@@ -108,6 +110,10 @@
         return 'ALLIANCE FORMED: ' + (d.player1Name || 'Unknown') + ' and ' + (d.player2Name || 'Unknown') + ' are now allies!';
       case 'friendlyProposed':
         return (d.fromName || 'Unknown') + ' proposes an alliance with you!';
+      case 'doctrineChosen':
+        return (d.playerName || 'A player') + ' chose the ' + (d.name || 'Unknown') + ' doctrine';
+      case 'doctrineAutoAssigned':
+        return 'Auto-assigned ' + (d.name || 'Unknown') + ' doctrine (selection timer expired)';
       default:
         return null;
     }

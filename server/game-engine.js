@@ -187,6 +187,34 @@ const OCCUPATION_PRODUCTION_MULT = 0.5; // occupied colonies produce at 50%
 const OCCUPATION_ATTACKER_VP = 3;   // VP per occupied colony for attacker
 const OCCUPATION_DEFENDER_VP = -5;  // VP penalty per occupied colony for defender
 
+// Doctrine choice at game start — 3 asymmetric starting doctrines
+const DOCTRINE_SELECTION_TICKS = 300; // 30 seconds at 10Hz
+const DOCTRINE_DEFS = {
+  industrialist: {
+    name: 'Industrialist',
+    description: '+25% Mining and Industrial output, +1 starting Mining district, -10% research output',
+    productionBonus: { mining: 0.25, industrial: 0.25 },
+    productionPenalty: { research: -0.10 },
+    startingBonus: { extraDistrict: 'mining' },
+  },
+  scholar: {
+    name: 'Scholar',
+    description: '+25% Research output, T1 research 33% complete, -10% mineral output',
+    productionBonus: { research: 0.25 },
+    productionPenalty: { mining: -0.10 },
+    startingBonus: { researchHead: 50 }, // set T1 research progress to 50 (33% of 150)
+  },
+  expansionist: {
+    name: 'Expansionist',
+    description: 'Colony ships -25% cost/time, +2 starting pops, -10% alloy output',
+    productionBonus: {},
+    productionPenalty: { industrial: -0.10 },
+    startingBonus: { extraPops: 2 },
+    colonyShipCostMult: 0.75,
+    colonyShipTimeMult: 0.75,
+  },
+};
+
 // Diplomatic stance constants
 const DIPLOMACY_STANCES = { NEUTRAL: 'neutral', HOSTILE: 'hostile', FRIENDLY: 'friendly' };
 const DIPLOMACY_INFLUENCE_COST = 25;   // influence cost to change stance
@@ -381,6 +409,10 @@ class GameEngine {
     this._raiderDisableTimers = new Set(); // colony IDs with active raider disable timers
     this._defensePlatformBuilding = new Set(); // colony IDs actively building a defense platform
 
+    // Doctrine selection phase — 30-second timer at game start
+    this._doctrinePhase = true;     // true while doctrine selection is active
+    this._doctrineDeadlineTick = DOCTRINE_SELECTION_TICKS; // auto-assign at this tick
+
     // Fleet combat tracking
     this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
     this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
@@ -442,6 +474,7 @@ class GameEngine {
         currentResearch: { physics: null, society: null, engineering: null },
         researchProgress: {},
         completedTechs: [],
+        doctrine: null,    // chosen doctrine type string or null (pending selection)
         activeEdict: null, // { type, monthsRemaining } or null
         diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
         pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
@@ -536,6 +569,69 @@ class GameEngine {
       this._addBuiltDistrict(colony, 'agriculture');
       this._addBuiltDistrict(colony, 'agriculture');
     }
+  }
+
+  // Apply starting bonuses when a player selects (or is auto-assigned) a doctrine
+  _applyDoctrineStartingBonus(playerId, doctrineType) {
+    const def = DOCTRINE_DEFS[doctrineType];
+    if (!def || !def.startingBonus) return;
+
+    const bonus = def.startingBonus;
+
+    // Industrialist: +1 extra mining district on starting colony
+    if (bonus.extraDistrict) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (colonyIds && colonyIds.length > 0) {
+        const colony = this.colonies.get(colonyIds[0]);
+        if (colony && colony.districts.length < colony.planet.size) {
+          this._addBuiltDistrict(colony, bonus.extraDistrict);
+          this._invalidateColonyCache(colony);
+        }
+      }
+    }
+
+    // Scholar: T1 research 33% complete (progress = 50 out of 150 cost)
+    if (bonus.researchHead) {
+      const state = this.playerStates.get(playerId);
+      const t1Techs = ['improved_power_plants', 'frontier_medicine', 'improved_mining'];
+      for (const techId of t1Techs) {
+        if (!state.researchProgress[techId]) {
+          state.researchProgress[techId] = bonus.researchHead;
+        }
+      }
+    }
+
+    // Expansionist: +2 starting pops
+    if (bonus.extraPops) {
+      const colonyIds = this._playerColonies.get(playerId);
+      if (colonyIds && colonyIds.length > 0) {
+        const colony = this.colonies.get(colonyIds[0]);
+        if (colony) {
+          colony.pops += bonus.extraPops;
+          this._invalidateColonyCache(colony);
+        }
+      }
+    }
+  }
+
+  // Process doctrine selection phase — auto-assign random doctrine when timer expires
+  _processDoctrinePhase() {
+    if (!this._doctrinePhase) return;
+    if (this.tickCount < this._doctrineDeadlineTick) return;
+
+    // Timer expired — auto-assign random doctrine to players who haven't chosen
+    const doctrineTypes = Object.keys(DOCTRINE_DEFS);
+    for (const [playerId, state] of this.playerStates) {
+      if (state.doctrine !== null) continue;
+      const randomType = doctrineTypes[Math.floor(Math.random() * doctrineTypes.length)];
+      state.doctrine = randomType;
+      this._applyDoctrineStartingBonus(playerId, randomType);
+      this._emitEvent('doctrineAutoAssigned', playerId, { doctrine: randomType, name: DOCTRINE_DEFS[randomType].name });
+      this._dirtyPlayers.add(playerId);
+    }
+    this._doctrinePhase = false;
+    this._invalidateProductionCaches();
+    this._invalidateStateCache();
   }
 
   _createColony(ownerId, name, planet, systemId) {
@@ -815,6 +911,38 @@ class GameEngine {
           if (production.physics > 0) production.physics = Math.round(production.physics * edictDef.effect.multiplier * 100) / 100;
           if (production.society > 0) production.society = Math.round(production.society * edictDef.effect.multiplier * 100) / 100;
           if (production.engineering > 0) production.engineering = Math.round(production.engineering * edictDef.effect.multiplier * 100) / 100;
+        }
+      }
+    }
+
+    // Doctrine production modifiers (multiplicative, after edict bonuses)
+    if (playerState && playerState.doctrine) {
+      const docDef = DOCTRINE_DEFS[playerState.doctrine];
+      if (docDef) {
+        // Apply bonuses: +25% to matching district types
+        for (const [distType, bonus] of Object.entries(docDef.productionBonus)) {
+          if (distType === 'research') {
+            // Research bonus applies to all 3 research resources
+            if (production.physics > 0) production.physics = Math.round(production.physics * (1 + bonus) * 100) / 100;
+            if (production.society > 0) production.society = Math.round(production.society * (1 + bonus) * 100) / 100;
+            if (production.engineering > 0) production.engineering = Math.round(production.engineering * (1 + bonus) * 100) / 100;
+          } else if (distType === 'mining') {
+            if (production.minerals > 0) production.minerals = Math.round(production.minerals * (1 + bonus) * 100) / 100;
+          } else if (distType === 'industrial') {
+            if (production.alloys > 0) production.alloys = Math.round(production.alloys * (1 + bonus) * 100) / 100;
+          }
+        }
+        // Apply penalties: -10% to penalized resources
+        for (const [distType, penalty] of Object.entries(docDef.productionPenalty)) {
+          if (distType === 'research') {
+            if (production.physics > 0) production.physics = Math.round(production.physics * (1 + penalty) * 100) / 100;
+            if (production.society > 0) production.society = Math.round(production.society * (1 + penalty) * 100) / 100;
+            if (production.engineering > 0) production.engineering = Math.round(production.engineering * (1 + penalty) * 100) / 100;
+          } else if (distType === 'mining') {
+            if (production.minerals > 0) production.minerals = Math.round(production.minerals * (1 + penalty) * 100) / 100;
+          } else if (distType === 'industrial') {
+            if (production.alloys > 0) production.alloys = Math.round(production.alloys * (1 + penalty) * 100) / 100;
+          }
         }
       }
     }
@@ -3179,6 +3307,9 @@ class GameEngine {
       if (this._gameOver) return; // game ended this tick
     }
 
+    // Process doctrine selection phase (auto-assign after 30 seconds)
+    this._processDoctrinePhase();
+
     // Process construction every tick
     this._processConstruction();
 
@@ -3371,21 +3502,26 @@ class GameEngine {
           return { error: 'Build queue full (max 3)' };
         }
 
-        // Check resources
+        // Check resources (Expansionist doctrine: -25% cost)
         const state = this.playerStates.get(playerId);
+        const docCostMult = (state.doctrine && DOCTRINE_DEFS[state.doctrine] && DOCTRINE_DEFS[state.doctrine].colonyShipCostMult) || 1;
         for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
-          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+          const effectiveCost = Math.ceil(amount * docCostMult);
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < effectiveCost) {
             return { error: `Not enough ${resource}` };
           }
         }
 
         // Deduct resources
         for (const [resource, amount] of Object.entries(COLONY_SHIP_COST)) {
-          state.resources[resource] -= amount;
+          state.resources[resource] -= Math.ceil(amount * docCostMult);
         }
 
+        // Expansionist doctrine: -25% build time
+        const docTimeMult = (state.doctrine && DOCTRINE_DEFS[state.doctrine] && DOCTRINE_DEFS[state.doctrine].colonyShipTimeMult) || 1;
+        const buildTime = Math.ceil(COLONY_SHIP_BUILD_TIME * docTimeMult);
         const id = this._nextId();
-        colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: COLONY_SHIP_BUILD_TIME });
+        colony.buildQueue.push({ id, type: 'colonyShip', ticksRemaining: buildTime });
         this._dirtyPlayers.add(playerId);
         this._invalidateStateCache();
         return { ok: true, id };
@@ -3917,6 +4053,36 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'selectDoctrine': {
+        const { doctrineType } = cmd;
+        if (!doctrineType) return { error: 'Missing doctrineType' };
+        if (!DOCTRINE_DEFS[doctrineType]) return { error: 'Invalid doctrine type' };
+
+        const state = this.playerStates.get(playerId);
+        if (!state) return { error: 'Player not found' };
+        if (state.doctrine !== null) return { error: 'Doctrine already chosen' };
+        if (!this._doctrinePhase) return { error: 'Doctrine selection phase ended' };
+
+        state.doctrine = doctrineType;
+        this._applyDoctrineStartingBonus(playerId, doctrineType);
+        this._emitEvent('doctrineChosen', playerId, {
+          doctrine: doctrineType,
+          name: DOCTRINE_DEFS[doctrineType].name,
+        }, true); // broadcast to all
+        this._invalidateProductionCaches();
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+
+        // If all players have chosen, end doctrine phase early
+        let allChosen = true;
+        for (const [, ps] of this.playerStates) {
+          if (ps.doctrine === null) { allChosen = false; break; }
+        }
+        if (allChosen) this._doctrinePhase = false;
+
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -4080,6 +4246,7 @@ class GameEngine {
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
       activeEdict: player.activeEdict,
+      doctrine: player.doctrine,
       vp: this._calcVictoryPoints(playerId),
       techs: (player.completedTechs || []).length,
       raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
@@ -4104,6 +4271,7 @@ class GameEngine {
         battlesWon: this._battlesWon.get(p.id) || 0,
         shipsLost: this._shipsLost.get(p.id) || 0,
         stanceTowardMe: this._getStance(p.id, playerId),
+        doctrine: p.doctrine,
         ...summary,
       });
     }
@@ -4142,6 +4310,12 @@ class GameEngine {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
     }
     state.raiders = shipData.raiders;
+
+    // Doctrine selection phase info
+    if (this._doctrinePhase) {
+      state.doctrinePhase = true;
+      state.doctrineDeadlineTick = this._doctrineDeadlineTick;
+    }
 
     return state;
   }
@@ -4273,4 +4447,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, generateGalaxy, assignStartingSystems };

@@ -395,6 +395,7 @@ describe('GameEngine — Population', () => {
 describe('GameEngine — Pop Growth', () => {
   it('pop grows after appropriate growth ticks when food surplus > 0', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     const pb = calcPlanetBonus(colony);
     // Starting: 8 pops, 10 housing — 2 slots for growth
@@ -442,6 +443,7 @@ describe('GameEngine — Pop Growth', () => {
 
   it('faster growth with food surplus > 5', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     // Starting surplus = 12 - 8 = 4. Need surplus > 5 for FAST rate.
     // Add 1 agriculture: production = 18, consumption = 8, surplus = 10 (> 5, ≤ 10) → FAST
@@ -472,6 +474,7 @@ describe('GameEngine — Pop Growth', () => {
 
   it('no growth when food surplus is 0 or negative', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     engine._addBuiltDistrict(colony, 'housing'); // need housing to isolate test
     // Remove all agriculture to create food deficit
@@ -937,6 +940,7 @@ describe('GameEngine — Event Notifications', () => {
 
   it('emits popMilestone at multiples of 5 pops', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     // Set pops to 9 so next growth hits 10 (multiple of 5)
     colony.pops = 9;
@@ -959,6 +963,7 @@ describe('GameEngine — Event Notifications', () => {
 
   it('does not emit popMilestone at non-multiples of 5', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     // Starting at 8, grows to 9 — not a multiple of 5
 
@@ -976,6 +981,7 @@ describe('GameEngine — Event Notifications', () => {
 
   it('emits housingFull when pops reach housing cap', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     // Set pops to 9, housing is 10 (base) — next growth fills it
     colony.pops = 9;
@@ -2502,6 +2508,7 @@ describe('GameEngine — Match Timer Edge Cases', () => {
       tickRate: 10,
       onGameOver: (data) => { gameOverData = data; },
     });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment to keep VP equal
     // Equalize resources so VP is the same
     const p1 = engine.playerStates.get(1);
     const p2 = engine.playerStates.get(2);
@@ -3244,6 +3251,7 @@ describe('GameEngine — Research Progression', () => {
 describe('GameEngine — Pop Growth Tech Bonus', () => {
   it('frontier_medicine reduces growth target by 25%', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = Array.from(engine.colonies.values())[0];
     const state = engine.playerStates.get(1);
 
@@ -3810,6 +3818,7 @@ describe('GameEngine — Edict System', () => {
 
   it('production returns to base values after edict expires', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colonies = engine._playerColonies.get(1);
     const colony = engine.colonies.get(colonies[0]);
 

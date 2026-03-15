@@ -387,6 +387,32 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 #game-over-lobby-btn:hover { background: #c73652; }
 
+/* ── Doctrine Selection Overlay ── */
+#doctrine-overlay {
+  position: absolute; inset: 0; z-index: 90;
+  display: flex; justify-content: center; align-items: center;
+  background: rgba(0,0,0,0.80); backdrop-filter: blur(3px);
+  pointer-events: auto;
+}
+#doctrine-overlay.hidden { display: none; }
+#doctrine-content {
+  background: rgba(26,26,46,0.95); border: 1px solid #2a2a4e; border-radius: 8px;
+  padding: 2rem; min-width: 500px; max-width: 700px; text-align: center;
+}
+#doctrine-content h2 { font-size: 1.6rem; margin-bottom: 0.5rem; color: #f1c40f; }
+#doctrine-timer { font-size: 0.9rem; color: #aaa; margin-bottom: 1.2rem; }
+#doctrine-options { display: flex; gap: 1rem; justify-content: center; }
+.doctrine-card {
+  flex: 1; background: rgba(42,42,78,0.8); border: 2px solid #3a3a6e; border-radius: 8px;
+  padding: 1rem; cursor: pointer; transition: border-color 0.2s, transform 0.1s;
+  text-align: left; max-width: 200px;
+}
+.doctrine-card:hover { border-color: #f1c40f; transform: translateY(-2px); }
+.doctrine-card h3 { color: #f1c40f; font-size: 1rem; margin: 0 0 0.5rem 0; }
+.doctrine-card .doctrine-bonus { color: #2ecc71; font-size: 0.8rem; margin-bottom: 0.3rem; }
+.doctrine-card .doctrine-penalty { color: #e74c3c; font-size: 0.8rem; margin-bottom: 0.3rem; }
+.doctrine-card .doctrine-special { color: #3498db; font-size: 0.8rem; }
+
 /* ── In-Game Chat (bottom-left, collapsible) ── */
 #game-chat {
   pointer-events: auto;

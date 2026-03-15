@@ -376,6 +376,7 @@ describe('Colony trait serialization', () => {
 describe('colonyTraitEarned event', () => {
   it('should emit event when district completion earns a trait', () => {
     const engine = makeEngine();
+    engine._doctrinePhase = false; // skip doctrine auto-assignment
     const colony = getFirstColony(engine, 1);
     colony.districts = [];
     colony.planet.type = 'barren';

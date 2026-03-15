@@ -133,6 +133,8 @@
           galaxy: msg.galaxy || null,
           gameSpeed: msg.gameSpeed || 2,
           paused: msg.paused || false,
+          doctrinePhase: msg.doctrinePhase || false,
+          doctrineDeadlineTick: msg.doctrineDeadlineTick || 0,
         };
         _refreshPlayerCache();
         // Reset game-over state
@@ -153,6 +155,9 @@
         if (_uiInterval) clearInterval(_uiInterval);
         _uiInterval = setInterval(_updateHUD, 500);
         _updateHUD();
+        // Show doctrine selection overlay at game start
+        doctrineChosen = false;
+        _showDoctrineSelection();
         break;
 
       case 'gameState':
@@ -167,6 +172,8 @@
           if (msg.matchTicksRemaining !== undefined) gameState.matchTicksRemaining = msg.matchTicksRemaining;
           if (msg.gameSpeed !== undefined) gameState.gameSpeed = msg.gameSpeed;
           if (msg.paused !== undefined) gameState.paused = msg.paused;
+          gameState.doctrinePhase = msg.doctrinePhase || false;
+          gameState.doctrineDeadlineTick = msg.doctrineDeadlineTick || 0;
           _refreshPlayerCache();
           // Update Three.js colony view
           if (currentView === 'colony' && window.ColonyRenderer) {
@@ -331,6 +338,10 @@
   };
   const statusSpeed = document.getElementById('status-speed');
   const pauseOverlay = document.getElementById('pause-overlay');
+  const doctrineOverlay = document.getElementById('doctrine-overlay');
+  const doctrineOptions = document.getElementById('doctrine-options');
+  const doctrineTimer = document.getElementById('doctrine-timer');
+  let doctrineChosen = false;
   const statusMonth = document.getElementById('status-month');
   const statusPops = document.getElementById('status-pops');
   const statusGrowth = document.getElementById('status-growth');
@@ -881,6 +892,7 @@
 
   function _updateHUD() {
     if (!gameState) return;
+    _updateDoctrineTimer();
     const player = _getMyPlayer();
     const colony = _getMyColony();
 
@@ -1545,8 +1557,9 @@
         if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
         stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
       }
+      const docBadge = p.doctrine ? ` <span class="doctrine-badge" title="${(DOCTRINE_INFO[p.doctrine] || {}).name || p.doctrine}">${p.doctrine === 'industrialist' ? '⚒' : p.doctrine === 'scholar' ? '📚' : p.doctrine === 'expansionist' ? '🚀' : ''}</span>` : '';
       html += `<tr${cls}><td>${i + 1}</td>` +
-        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}</td>` +
+        `<td><span class="scoreboard-color" style="background:${p.color}"></span>${p.name}${docBadge}</td>` +
         `<td class="stance-cell">${stanceCell}</td>` +
         `<td><strong>${p.vp || 0}</strong></td>` +
         `<td>${p.colonyCount || 0}</td>` +
@@ -1823,6 +1836,60 @@
         }
       }, 300);
     });
+  }
+
+  // Doctrine selection overlay
+  const DOCTRINE_INFO = {
+    industrialist: {
+      name: 'Industrialist',
+      bonuses: ['+25% Mining output', '+25% Industrial output', '+1 starting Mining district'],
+      penalties: ['-10% Research output'],
+    },
+    scholar: {
+      name: 'Scholar',
+      bonuses: ['+25% Research output', 'T1 research 33% complete'],
+      penalties: ['-10% Mineral output'],
+    },
+    expansionist: {
+      name: 'Expansionist',
+      bonuses: ['Colony ships -25% cost & time', '+2 starting pops'],
+      penalties: ['-10% Alloy output'],
+    },
+  };
+
+  function _showDoctrineSelection() {
+    if (!doctrineOverlay || !doctrineOptions) return;
+    doctrineOptions.innerHTML = '';
+    for (const [type, info] of Object.entries(DOCTRINE_INFO)) {
+      const card = document.createElement('div');
+      card.className = 'doctrine-card';
+      card.innerHTML = `<h3>${info.name}</h3>` +
+        info.bonuses.map(b => `<div class="doctrine-bonus">+ ${b}</div>`).join('') +
+        info.penalties.map(p => `<div class="doctrine-penalty">${p}</div>`).join('');
+      card.onclick = function() {
+        send({ type: 'selectDoctrine', doctrineType: type });
+        doctrineChosen = true;
+        doctrineOverlay.classList.add('hidden');
+      };
+      doctrineOptions.appendChild(card);
+    }
+    doctrineOverlay.classList.remove('hidden');
+  }
+
+  function _updateDoctrineTimer() {
+    if (!doctrineOverlay || doctrineChosen) return;
+    if (!gameState) return;
+    const me = _getMyPlayer();
+    // Hide if player has chosen or phase is over
+    if ((me && me.doctrine) || !gameState.doctrinePhase) {
+      doctrineOverlay.classList.add('hidden');
+      return;
+    }
+    if (gameState.doctrineDeadlineTick && doctrineTimer) {
+      const ticksLeft = Math.max(0, gameState.doctrineDeadlineTick - gameState.tick);
+      const secsLeft = Math.ceil(ticksLeft / 10);
+      doctrineTimer.textContent = `Auto-assign in ${secsLeft}s`;
+    }
   }
 
   // Diplomacy command helpers

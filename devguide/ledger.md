@@ -1705,4 +1705,50 @@ Each entry records an iteration of automated development.
 
 **Next:** Doctrine choice at game start (Phase 4, game-designer R47-2) — 3 asymmetric doctrines (Industrialist/Scholar/Expansionist) that break the solved opening build order
 
+---
+
+## Entry 49 — 2026-03-15 — Doctrine Choice at Game Start
+
+**Phase:** 4 (Technology & Progression)
+**Status:** Complete
+
+**What was built:**
+- Doctrine selection system: 3 asymmetric doctrines (Industrialist, Scholar, Expansionist) chosen during first 30 seconds of game start. Breaks the solved opening build order with meaningful strategic divergence.
+- **Industrialist:** +25% Mining and Industrial output, +1 extra starting Mining district, -10% research output. Economy-first path.
+- **Scholar:** +25% Research output, T1 research 33% complete in all 3 tracks (progress = 50/150), -10% mineral output. Tech-rush path.
+- **Expansionist:** Colony ships -25% cost and -25% build time, +2 starting pops (10 instead of 8), -10% alloy output. Wide expansion path.
+- `selectDoctrine` command: validates doctrine type, prevents double-selection, rejects after 30-second timer. Emits `doctrineChosen` broadcast event.
+- Auto-assignment: random doctrine assigned to undecided players when 300-tick timer expires. Emits `doctrineAutoAssigned` event. Phase ends early when all players choose.
+- Production modifiers: applied multiplicatively in `_calcProduction` after edict bonuses, before scarcity. Bonuses and penalties target specific resource types.
+- Expansionist colony ship discount: per-player cost/time multipliers applied in `buildColonyShip` handler. Uses `Math.ceil` for fractional costs.
+- Client: doctrine selection overlay with 3 clickable cards showing bonuses/penalties, countdown timer, auto-hides on selection or phase end. Doctrine badge (emoji) shown on scoreboard next to player names.
+- Serialization: `doctrine` field in both own and other players' state. `doctrinePhase` and `doctrineDeadlineTick` in gameState during selection window.
+- Toast formatting: `doctrineChosen` and `doctrineAutoAssigned` events in toast-format.js.
+
+**Files changed:**
+- `server/game-engine.js` — `DOCTRINE_DEFS` and `DOCTRINE_SELECTION_TICKS` constants, `doctrine: null` in player state, `_doctrinePhase`/`_doctrineDeadlineTick` in constructor, `_applyDoctrineStartingBonus` method, `_processDoctrinePhase` method (called in tick loop), `selectDoctrine` case in `handleCommand`, doctrine production modifiers in `_calcProduction`, Expansionist colony ship cost/time discount in `buildColonyShip`, doctrine in player state serialization (`getPlayerState`), `doctrinePhase`/`doctrineDeadlineTick` in state broadcast, module.exports
+- `server/server.js` — added `selectDoctrine` to command routing
+- `src/public/index.html` — doctrine selection overlay HTML
+- `src/public/css/style.css` — doctrine overlay and card styles
+- `src/public/js/app.js` — doctrine overlay DOM refs, `_showDoctrineSelection` function, `_updateDoctrineTimer` in HUD loop, doctrine badge in scoreboard, `doctrinePhase`/`doctrineDeadlineTick` in gameState handling
+- `src/public/js/toast-format.js` — `doctrineChosen` and `doctrineAutoAssigned` toast types and formatters
+- `src/tests/doctrine-choice.test.js` — **new** 30 tests
+- `src/tests/game-engine.test.js` — updated 7 tests (skip doctrine phase to prevent auto-assignment interference)
+- `src/tests/colony-traits.test.js` — updated 1 test (skip doctrine phase)
+- `src/tests/scarcity-seasons.test.js` — updated 1 test (skip doctrine phase)
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1366 total (30 new: 3 constants, 3 initial state, 7 selectDoctrine command, 3 auto-assignment, 4 Industrialist, 4 Scholar, 4 Expansionist, 5 serialization, 2 production interactions, 5 edge cases). All passing.
+
+**Key decisions:**
+- Doctrine modifiers are multiplicative on production, applied after edicts but before scarcity — same stacking layer as other empire-wide modifiers
+- Auto-assignment is random (not deterministic) — mirrors the "random if no choice" spec. Tests that tick past 300 skip the doctrine phase to avoid interference
+- Expansionist colony ship discount uses `Math.ceil` on fractional costs — ensures player always pays at least 1 of each resource
+- Scholar's T1 research head start (50/150 = 33%) doesn't overwrite existing progress — handles edge case where a player might somehow have more
+- Starting bonuses (extra district, extra pops, research progress) are applied immediately on selection, not deferred — creates visible feedback in colony view
+- All three doctrines have a penalty (-10% on one resource type) to prevent any doctrine from being strictly dominant
+
+**Next:** Endgame crisis event (Phase 7, R48-2) — Galactic Storm or Precursor Awakening at 75% match timer. Creates the climax every match needs
+
 **Next:** Diplomatic stances (Phase 6, R46-2) — minimum viable multiplayer social layer with Neutral/Hostile/Friendly stance-based combat gating
