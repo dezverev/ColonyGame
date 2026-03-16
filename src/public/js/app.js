@@ -343,6 +343,7 @@
     colonyShip:  { label: 'Colony Ship',  color: '#00ffaa', cost: { minerals: 175, food: 75, alloys: 75 }, buildTime: 600 },
     scienceShip: { label: 'Science Ship', color: '#00e5ff', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
     corvette:    { label: 'Corvette',     color: '#ff4444', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
+    destroyer:   { label: 'Destroyer',    color: '#ff2200', cost: { minerals: 200, alloys: 100 }, buildTime: 600 },
   };
 
   // ── Building definitions (client-side mirror for UI) ──
@@ -876,6 +877,48 @@
           if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
         });
         buildMenuOptions.appendChild(vBtn);
+      }
+
+      // Destroyer — unlocked by deep_mining (Engineering T2)
+      {
+        const desCost = { minerals: 200, alloys: 100 };
+        let canAffordDes = true;
+        const desCostParts = [];
+        for (const [res, amt] of Object.entries(desCost)) {
+          desCostParts.push(`${amt} ${res}`);
+          if (!myPlayer || myPlayer.resources[res] < amt) canAffordDes = false;
+        }
+        const hasDesTech = completedTechs.includes('deep_mining');
+        // Check destroyer cap (5 max, including building)
+        const myDestroyers = gameState && gameState.militaryShips ? gameState.militaryShips.filter(s => s.ownerId === gameState.yourId && s.shipClass === 'destroyer') : [];
+        let desBuildingCount = 0;
+        if (gameState) {
+          const myCols = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+          for (const c of myCols) {
+            for (const q of (c.buildQueue || [])) {
+              if (q.type === 'destroyer') desBuildingCount++;
+            }
+          }
+        }
+        const atDesCap = myDestroyers.length + desBuildingCount >= 5;
+
+        const desBtn = document.createElement('div');
+        desBtn.className = 'build-option build-option-ship';
+        if (!hasDesTech || !canAffordDes || queueFull || atDesCap) desBtn.classList.add('disabled');
+        const desLockLabel = hasDesTech ? '' : ' [Requires Deep Mining]';
+        desBtn.innerHTML =
+          '<div class="build-option-swatch" style="background:#ff2200"></div>' +
+          `<div class="build-option-name">Destroyer${desLockLabel}</div>` +
+          '<div class="build-option-prod">Heavy warship (80 HP, 8 ATK, 6s/hop) | Upkeep: 3⚡ 2🔩/mo</div>' +
+          `<div class="build-option-cost">${desCostParts.join(', ')}</div>`;
+        desBtn.addEventListener('click', () => {
+          if (desBtn.classList.contains('disabled')) return;
+          if (!myColony) return;
+          send({ type: 'buildDestroyer', colonyId: myColony.id });
+          _hideAllPanels();
+          if (window.ColonyRenderer) window.ColonyRenderer.deselectTile();
+        });
+        buildMenuOptions.appendChild(desBtn);
       }
     }
 

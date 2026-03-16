@@ -215,7 +215,7 @@ describe('Corvette deep — input validation', () => {
       type: 'sendFleet', shipId: 999999, targetSystemId: 0,
     });
     assert.ok(result.error);
-    assert.match(result.error, /Corvette not found/);
+    assert.match(result.error, /not found/);
   });
 });
 

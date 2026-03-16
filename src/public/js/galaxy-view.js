@@ -184,6 +184,7 @@
     _geoCache.interceptor = new THREE.ConeGeometry(1.5, 5.0, 3);   // narrow tri-cone — fast
     _geoCache.gunboat = new THREE.BoxGeometry(2.5, 2.5, 4.5);      // chunky box — tanky
     _geoCache.sentinel = new THREE.OctahedronGeometry(2.2, 0);      // diamond — balanced
+    _geoCache.destroyer = new THREE.BoxGeometry(3.0, 2.0, 6.0);     // large box — heavy warship
   }
 
   // ── Build galaxy scene ──
@@ -682,7 +683,7 @@
 
     for (const ship of ships) {
       const shipKey = 'm' + ship.id;
-      const geoKey = ship.variant || 'corvette';
+      const geoKey = ship.shipClass === 'destroyer' ? 'destroyer' : (ship.variant || 'corvette');
       const { mesh, isNew } = _getOrCreateShipMesh(shipKey, geoKey, _getPlayerColor(ship.ownerId), meshByKey, corvettePool);
       const sys = galaxyData.systems[ship.systemId];
       if (!sys) { mesh.visible = false; mesh.userData._shipKey = null; corvettePool.push(mesh); continue; }
