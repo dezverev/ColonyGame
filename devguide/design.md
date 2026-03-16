@@ -43,7 +43,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE TWEAK — Housing district food production**
 - [x] **BALANCE TWEAK — Foundry cost reduction**
 - [x] **BALANCE TWEAK — Defense platform repair rate increase**
-- [ ] **Starting planet variety:** Random planet type and size (12-20). Fairness mode = same for all.
+- [x] **Starting planet variety:** Random planet type and size (12-20). Fairness mode = same for all.
 - [x] **Score timer victory condition**
 - [ ] **Scarcity pre-warning system:** Warning 100 ticks before scarcity starts.
 - [ ] **Colony saturation indicator:** "Nearing Capacity" at 80%+, "Fully Developed" at 100%.

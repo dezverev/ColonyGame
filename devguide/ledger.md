@@ -2485,3 +2485,6 @@ Three.js system orbital view with star, orbital rings, and clickable planets. Ga
 
 ## Entry 71 — 2026-03-16 — Construction queue HUD (R71-1)
 Enhanced build queue display with per-item costs, cumulative ETA header, deficit warnings, refund tooltips, and total invested summary. Added SHIP_UI client-side cost mirror. Files: app.js, style.css. Tests: 13 new, 2234 passing.
+
+## Entry 72 — 2026-03-16 — Starting planet variety (R71-2)
+Starting planets now get random habitable type and size (12-20) instead of always inheriting the system's best planet. Fairness mode (default on) gives all players identical type/size. Files: game-engine.js, room-manager.js, starting-planet-variety.test.js. Tests: 13 new, 2294 passing.
