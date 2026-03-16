@@ -19,11 +19,8 @@ Before writing any code, read CLAUDE.md at the project root for the full archite
 Read these files to understand what's been done and what's next:
 
 1. **`CLAUDE.md`** — Project architecture, conventions, module map
-2. **`devguide/design.md`** — **Do NOT read the entire file** (it is ~75KB). Instead:
-   - Use Grep to find `PRIORITY ORDER` entries that are unchecked `- [ ]` — these specify the build order
-   - If a priority order exists, read only the specific tasks it references
-   - If no priority order, use Grep for `- [ ]` to find the first unchecked task, then read just that section
-3. **`devguide/ledger.md`** — Read only the **last 40 lines** (recent entries). Do NOT read the entire file — it is very large.
+2. **`devguide/design.md`** — Read the full file (~15KB). Find the unchecked PRIORITY ORDER for build order.
+3. **`devguide/ledger.md`** — Do NOT read this file. Run `tail -5 devguide/ledger.md` to get the last entry number only.
 
 **IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed.**
 
@@ -43,14 +40,7 @@ Skip anything already checked `[x]`.
 
 ### 3. Plan Before Coding
 
-Before writing any code, identify:
-
-1. **Which layers does this touch?** Server → Protocol → Client → Rendering
-2. **What existing pattern does this follow?** Name the closest existing feature
-3. **What files will be created or modified?** List them
-4. **What message types are needed?** Client→Server and Server→Client
-5. **What tests are needed?** Unit tests and/or integration tests
-6. **Does this involve Three.js?** Plan the 3D scene graph additions (geometries, materials, meshes, camera setup)
+Briefly identify which files to modify and what pattern to follow. Do NOT write a lengthy plan — just start implementing.
 
 ### 4. Implement
 
@@ -121,27 +111,14 @@ Create or update a PR if on a feature branch.
 
 ### 8. Update Ledger
 
-Append a new entry to `devguide/ledger.md`:
+Append a **short** entry to `devguide/ledger.md` (max 5 lines):
 
 ```markdown
 ## Entry N — YYYY-MM-DD — <Title>
-
-**Phase:** <phase number and name>
-**Status:** Complete
-
-**What was built:**
-- <bullet points>
-
-**Files changed:**
-- <list of files created/modified>
-
-**Tests:** <count and description>
-
-**Key decisions:**
-- <any non-obvious choices made>
-
-**Next:** <what the next iteration should tackle>
+<1-2 sentence summary of what was built>. Files: <comma-separated list>. Tests: <count> new, <total> passing.
 ```
+
+Do NOT include "Key decisions", "What was built" bullet lists, "Files changed" bullet lists, or "Next" sections. Keep it brief — the git log has the details.
 
 ### 9. Update Design Doc
 
@@ -150,44 +127,4 @@ Mark completed tasks in `devguide/design.md`:
 
 ### 10. Report
 
-Output a summary:
-1. **Task completed** — what was built (2-3 sentences)
-2. **Files changed** — grouped by category
-3. **Test results** — passing count
-4. **What's next** — recommended next task
-
----
-
-## Quality Standards
-
-### Code
-- Follow existing conventions exactly
-- No over-engineering — implement exactly what the task calls for
-- No TODOs or placeholder code
-- Keep it simple and working
-
-### Tests
-- Minimum 3 tests per new feature
-- Cover happy path + validation + edge cases
-- Integration tests for new protocol messages
-
-### Security
-- Validate colony/fleet/building ownership on every command
-- Validate numeric inputs with `Number.isFinite()`
-- Never trust client data — server computes all game state
-- Rate limit considerations for future phases
-
----
-
-## Choosing What to Build
-
-When no focus is specified, prefer tasks that:
-1. **Are self-contained** — can be fully built and tested in isolation
-2. **Follow existing patterns** — less risk of mistakes
-3. **Have clear specs** — unambiguous in the design doc
-4. **Unblock future work** — Three.js setup enables all visual features
-
-Avoid picking tasks that:
-- Require assets that don't exist yet
-- Are vaguely specified
-- Would require major architectural changes
+Output a 2-3 line summary: what was built, test count, what's next.
