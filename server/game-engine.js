@@ -1631,6 +1631,7 @@ class GameEngine {
       const resource = this._pickScarcityResource();
       this._pendingScarcityResource = resource;
       this._scarcityWarned = true;
+      this._invalidateStateCache();
       this._emitEvent('scarcityWarning', null, { resource }, true);
     }
 
@@ -6385,6 +6386,8 @@ class GameEngine {
     state.paused = this._paused;
     if (this._activeScarcity) {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    } else if (this._scarcityWarned && this._pendingScarcityResource) {
+      state.scarcityWarning = { resource: this._pendingScarcityResource, ticksUntil: Math.max(0, this._nextScarcityTick - this.tickCount) };
     }
     // Include raider fleets
     state.raiders = this._raiders.map(r => ({
@@ -6562,6 +6565,8 @@ class GameEngine {
     state.paused = this._paused;
     if (this._activeScarcity) {
       state.activeScarcity = { resource: this._activeScarcity.resource, ticksRemaining: this._activeScarcity.ticksRemaining };
+    } else if (this._scarcityWarned && this._pendingScarcityResource) {
+      state.scarcityWarning = { resource: this._pendingScarcityResource, ticksUntil: Math.max(0, this._nextScarcityTick - this.tickCount) };
     }
     state.raiders = shipData.raiders;
 

@@ -1160,7 +1160,15 @@
         const sr = gameState.activeScarcity.resource;
         const rName = sr.charAt(0).toUpperCase() + sr.slice(1);
         const secsLeft = Math.max(0, Math.ceil(gameState.activeScarcity.ticksRemaining / 10));
-        scarcityEl.textContent = rName + ' Scarcity (' + secsLeft + 's)';
+        scarcityEl.textContent = '\u26A0 ' + rName + ' Scarcity (' + secsLeft + 's)';
+        scarcityEl.style.color = '#e74c3c';
+        scarcityEl.classList.remove('hidden');
+      } else if (gameState.scarcityWarning) {
+        const sr = gameState.scarcityWarning.resource;
+        const rName = sr.charAt(0).toUpperCase() + sr.slice(1);
+        const secsLeft = Math.max(0, Math.ceil(gameState.scarcityWarning.ticksUntil / 10));
+        scarcityEl.textContent = '\u26A0 ' + rName + ' Scarcity in ' + secsLeft + 's';
+        scarcityEl.style.color = '#f39c12';
         scarcityEl.classList.remove('hidden');
       } else {
         scarcityEl.classList.add('hidden');

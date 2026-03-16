@@ -469,6 +469,93 @@ describe('Scarcity Seasons — State Serialization', () => {
     assert.ok(parsed.activeScarcity);
     assert.strictEqual(parsed.activeScarcity.resource, 'minerals');
   });
+
+  it('includes scarcityWarning in getState() during warning phase', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = null;
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'food';
+    engine._nextScarcityTick = engine.tickCount + 50;
+    engine._invalidateStateCache();
+
+    const state = engine.getState();
+    assert.ok(state.scarcityWarning, 'should have scarcityWarning');
+    assert.strictEqual(state.scarcityWarning.resource, 'food');
+    assert.strictEqual(state.scarcityWarning.ticksUntil, 50);
+    assert.strictEqual(state.activeScarcity, undefined, 'should not have activeScarcity');
+  });
+
+  it('includes scarcityWarning in getPlayerState() during warning phase', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = null;
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'energy';
+    engine._nextScarcityTick = engine.tickCount + 80;
+    engine._invalidateStateCache();
+
+    const state = engine.getPlayerState(1);
+    assert.ok(state.scarcityWarning, 'should have scarcityWarning');
+    assert.strictEqual(state.scarcityWarning.resource, 'energy');
+    assert.strictEqual(state.scarcityWarning.ticksUntil, 80);
+  });
+
+  it('scarcityWarning appears in getPlayerStateJSON during warning phase', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = null;
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'minerals';
+    engine._nextScarcityTick = engine.tickCount + 30;
+    engine._invalidateStateCache();
+
+    const json = engine.getPlayerStateJSON(1);
+    const parsed = JSON.parse(json);
+    assert.ok(parsed.scarcityWarning);
+    assert.strictEqual(parsed.scarcityWarning.resource, 'minerals');
+    assert.strictEqual(parsed.scarcityWarning.ticksUntil, 30);
+    assert.strictEqual(parsed.activeScarcity, undefined);
+  });
+
+  it('does not include scarcityWarning when scarcity is active', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = { resource: 'energy', ticksRemaining: 100 };
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'energy';
+    engine._invalidateStateCache();
+
+    const state = engine.getState();
+    assert.ok(state.activeScarcity);
+    assert.strictEqual(state.scarcityWarning, undefined, 'warning should not appear when scarcity is active');
+  });
+
+  it('does not include scarcityWarning when not in warning phase', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = null;
+    engine._scarcityWarned = false;
+    engine._pendingScarcityResource = null;
+    engine._invalidateStateCache();
+
+    const state = engine.getState();
+    assert.strictEqual(state.scarcityWarning, undefined);
+    assert.strictEqual(state.activeScarcity, undefined);
+  });
+
+  it('scarcityWarning ticksUntil counts down each tick', () => {
+    const engine = makeEngine();
+    engine._activeScarcity = null;
+    engine._scarcityWarned = true;
+    engine._pendingScarcityResource = 'food';
+    engine._nextScarcityTick = engine.tickCount + 60;
+
+    engine._invalidateStateCache();
+    const state1 = engine.getState();
+    assert.strictEqual(state1.scarcityWarning.ticksUntil, 60);
+
+    // Tick 10 times (don't reach start)
+    for (let i = 0; i < 10; i++) engine.tick();
+    engine._invalidateStateCache();
+    const state2 = engine.getState();
+    assert.strictEqual(state2.scarcityWarning.ticksUntil, 50);
+  });
 });
 
 describe('Scarcity Seasons — Edict Interaction', () => {
