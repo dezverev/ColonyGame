@@ -6537,7 +6537,7 @@ class GameEngine {
     }
     const result = {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
-      planet: { size: c.planet.size, type: c.planet.type },
+      planet: { size: c.planet.size, type: c.planet.type, habitability: c.planet.habitability },
       districts: c.districts, buildings: c.buildings || [], buildQueue: queueArr,
       buildingQueue: (c.buildingQueue || []).map(bq => ({ id: bq.id, type: bq.type, slot: bq.slot, ticksRemaining: bq.ticksRemaining })),
       buildingSlotsUnlocked: BUILDING_SLOT_THRESHOLDS.filter(t => c.pops >= t).length,

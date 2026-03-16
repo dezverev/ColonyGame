@@ -258,20 +258,20 @@ describe('Performance — galaxy generation', () => {
 });
 
 describe('Performance — serialization trim', () => {
-  it('serialized colony omits habitability, isStartingColony, playerBuiltDistricts', () => {
+  it('serialized colony omits isStartingColony, playerBuiltDistricts but includes habitability', () => {
     const engine = new GameEngine(makeRoom(1), { tickRate: 10 });
     for (let i = 0; i < 10; i++) engine.tick();
     const state = JSON.parse(engine.getPlayerStateJSON(1));
     const colony = state.colonies[0];
     assert.strictEqual(colony.isStartingColony, undefined, 'isStartingColony should not be in payload');
     assert.strictEqual(colony.playerBuiltDistricts, undefined, 'playerBuiltDistricts should not be in payload');
-    assert.strictEqual(colony.planet.habitability, undefined, 'habitability should not be in tick payload');
+    assert.ok(typeof colony.planet.habitability === 'number', 'habitability should be in payload for client display');
     assert.ok(colony.planet.size > 0, 'planet.size should still be present');
     assert.ok(colony.planet.type, 'planet.type should still be present');
     engine.stop();
   });
 
-  it('5-colony player payload stays under 5.5KB', () => {
+  it('5-colony player payload stays under 10KB', () => {
     const engine = new GameEngine(makeRoom(8), { tickRate: 10 });
     for (let p = 1; p <= 8; p++) {
       engine.handleCommand(p, { type: 'selectDoctrine', doctrine: 'industrialist' });
@@ -302,7 +302,7 @@ describe('Performance — serialization trim', () => {
     }
     for (let i = 0; i < 500; i++) engine.tick();
     const json = engine.getPlayerStateJSON(1);
-    assert.ok(json.length < 9216, `5-colony payload ${json.length} bytes exceeds 9KB`);
+    assert.ok(json.length < 10240, `5-colony payload ${json.length} bytes exceeds 10KB`);
     engine.stop();
   });
 });

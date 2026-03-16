@@ -68,6 +68,8 @@ describe('Colony Upkeep — Broadcast Payload', () => {
   it('upkeep should combine with district production in broadcast income', () => {
     const engine = makeEngine();
     const c1 = getColony(engine, 'p1');
+    // Use continental type to avoid planet-type energy bonuses (arid gives +1 per generator)
+    c1.planet.type = 'continental';
     // Keep one generator district, strip everything else
     c1.districts = [{ type: 'generator', disabled: false }];
     c1.buildings = [];
@@ -264,6 +266,8 @@ describe('Colony Upkeep — Upkeep + Production Combined', () => {
   it('net energy should be production minus upkeep', () => {
     const engine = makeEngine();
     const c1 = getColony(engine, 'p1');
+    // Use continental type to avoid planet-type energy bonuses (arid gives +1 per generator)
+    c1.planet.type = 'continental';
     // Give colony1 three generator districts
     c1.districts = [
       { type: 'generator', disabled: false },
