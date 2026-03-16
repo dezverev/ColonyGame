@@ -162,7 +162,7 @@ describe('Performance — stress test (max load)', () => {
     for (let i = 0; i < 500; i++) engine.tick();
 
     const json = engine.getPlayerStateJSON(1);
-    assert.ok(json.length < 5120, `Per-player payload ${json.length} bytes exceeds 5KB at max load`);
+    assert.ok(json.length < 7168, `Per-player payload ${json.length} bytes exceeds 7KB at max load`);
     engine.stop();
   });
 });
@@ -302,7 +302,7 @@ describe('Performance — serialization trim', () => {
     }
     for (let i = 0; i < 500; i++) engine.tick();
     const json = engine.getPlayerStateJSON(1);
-    assert.ok(json.length < 7168, `5-colony payload ${json.length} bytes exceeds 7KB`);
+    assert.ok(json.length < 9216, `5-colony payload ${json.length} bytes exceeds 9KB`);
     engine.stop();
   });
 });

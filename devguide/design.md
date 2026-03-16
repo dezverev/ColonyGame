@@ -50,7 +50,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [ ] **BALANCE TWEAK — Starting minerals & dead resources:** Minerals 300→250, alloys 50→0.
 - [x] **BALANCE TWEAK — Research & Industrial output bump**
 - [x] **Scoreboard overlay — server VP calculation**
-- [ ] **PRIORITY: Surface anomalies — server logic:** 1-3 tile anomalies per colony (+50% output or one-time choice). Spatial puzzle.
+- [x] **PRIORITY: Surface anomalies — server logic:** 1-3 tile anomalies per colony (+50% output or one-time choice). Spatial puzzle.
 - [ ] **Surface anomaly 3D rendering:** Glowing markers per type. Requires server logic first.
 - [x] **BALANCE: Mini tech tree research costs adjustment**
 - [ ] **Disabled district 3D rendering:** Desaturated + red tint on disabled districts.

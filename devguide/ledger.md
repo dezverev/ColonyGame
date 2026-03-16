@@ -2443,3 +2443,39 @@ Each entry records an iteration of automated development.
 - Ship stays at same system during expedition (no movement) — consistent with survey behavior
 
 **Next:** Surface anomalies (R65-6) — random anomaly discoveries on colony surfaces
+
+---
+
+## Entry 70 — 2026-03-16 — Surface Anomalies
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- **Surface anomaly generation:** 1-3 anomalies placed at random district slot positions when a colony is created
+- **Four anomaly types:** richDeposit (+50% output), exoticGas (+50% output), ancientRuins (choice: 200 minerals or 100 each research), precursorCache (choice: 150 alloys or 150 each research)
+- **Discovery on district build:** When a district completes construction on an anomaly slot, the anomaly is discovered
+- **Output anomalies:** Apply +50% multiplicative production bonus to the district built on that slot (persistent via `anomalyBonus` property)
+- **Choice anomalies:** Set `choicePending` flag, emit `surfaceAnomalyDiscovered` event with choices, player resolves via `resolveAnomaly` command
+- **`resolveAnomaly` command:** Validates ownership, discovery state, choice pending, and choice validity; grants resource rewards
+- **Serialization:** Surface anomalies included in colony state with label, category, discovery status, and choices (when pending)
+
+**Files changed:**
+- `server/game-engine.js` — SURFACE_ANOMALY_TYPES constants, `_generateSurfaceAnomalies`, `_discoverSurfaceAnomaly`, `_resolveAnomaly` methods, `_calcProduction` anomaly bonus integration, `_serializeColony` anomaly data, `handleCommand` resolveAnomaly case, exports
+- `src/tests/surface-anomalies.test.js` — 27 tests across 8 suites: constants (3), generation (5), output discovery (3), choice discovery (2), resolveAnomaly command (8), precursorCache (1), serialization (3), integration with build queue (2)
+- `src/tests/game-engine.test.js` — Bumped payload size limits for anomaly data
+- `src/tests/perf.test.js` — Bumped payload size limits for anomaly data
+- `src/tests/perf-stress.test.js` — Bumped payload size limits for anomaly data
+- `devguide/design.md` — Marked surface anomalies server logic complete
+- `devguide/ledger.md` — This entry
+
+**Tests:** 2208 total (27 new). All passing.
+
+**Key decisions:**
+- Anomalies use slot-based positioning (0 to planet.size-1) — the slot index matches the district array index, creating a spatial puzzle where players must consider where to build
+- Output anomalies apply a multiplicative +50% bonus per-district via `anomalyBonus` property on the district object, integrated into `_calcProduction` alongside tech modifiers
+- Choice anomalies require explicit player action via `resolveAnomaly` command — choice stays pending until resolved, visible in serialized state
+- Starting colony pre-built districts do NOT trigger anomaly discovery (only `_processConstruction` completion does) — anomalies remain hidden until the player builds new districts
+- Research rewards use the existing `state.resources.research` object structure for physics/society/engineering
+
+**Next:** VP timeline (R65-7) — track VP changes over time for a graph/timeline view
