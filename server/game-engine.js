@@ -1149,7 +1149,7 @@ class GameEngine {
     }
 
     // Edict production bonuses (multiplicative, after trait bonuses)
-    const playerEdict = this.playerStates.get(colony.ownerId)?.activeEdict;
+    const playerEdict = playerState?.activeEdict;
     if (playerEdict) {
       const edictDef = EDICT_DEFS[playerEdict.type];
       if (edictDef && edictDef.effect.type === 'productionBonus') {
@@ -1245,9 +1245,8 @@ class GameEngine {
     }
 
     // Trade agreement bonus: +15% energy and minerals per active trade agreement partner
-    const ownerState = this.playerStates.get(colony.ownerId);
-    if (ownerState && ownerState.tradeAgreements.size > 0) {
-      const tradePartnerCount = ownerState.tradeAgreements.size;
+    if (playerState && playerState.tradeAgreements.size > 0) {
+      const tradePartnerCount = playerState.tradeAgreements.size;
       const energyMult = 1 + TRADE_AGREEMENT_ENERGY_BONUS * tradePartnerCount;
       const mineralMult = 1 + TRADE_AGREEMENT_MINERAL_BONUS * tradePartnerCount;
       if (production.energy > 0) {
