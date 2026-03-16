@@ -347,11 +347,15 @@ describe('Science ship movement and survey', () => {
       engine.tick();
     }
 
-    // Ship should be idle at the surveyed system
+    // Ship should have completed survey; with auto-chain it may have dispatched to next target
     assert.strictEqual(ship.surveying, false);
-    assert.strictEqual(ship.systemId, targetId);
-    assert.strictEqual(ship.path.length, 0);
-    assert.strictEqual(ship.targetSystemId, null);
+    if (ship.path && ship.path.length > 0) {
+      // Auto-chained to next unsurveyed system
+      assert.ok(ship.targetSystemId !== null, 'auto-chain sets a target');
+    } else {
+      // No unsurveyed within 3 hops — stays idle
+      assert.strictEqual(ship.targetSystemId, null);
+    }
   });
 });
 
@@ -721,6 +725,7 @@ describe('Science ships — return edge cases', () => {
   it('ship stays at surveyed system and can be sent to another target', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
+    ship.autoSurvey = false; // disable auto-chain for this test
     const colony = getFirstColony(engine, 1);
     const adj = engine._adjacency.get(colony.systemId) || [];
     if (adj.length < 2) return; // need 2 neighbors
@@ -853,9 +858,10 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     }
   });
 
-  it('after survey, ship is idle at surveyed system with no path', () => {
+  it('after survey with autoSurvey off, ship is idle at surveyed system with no path', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
+    ship.autoSurvey = false; // disable auto-chain for this test
     const colony = getFirstColony(engine, 1);
     const adj = engine._adjacency.get(colony.systemId) || [];
     const targetId = adj[0];
@@ -950,6 +956,7 @@ describe('Science ships — tick-by-tick movement correctness', () => {
   it('ship can be redirected immediately after survey completes', () => {
     const engine = makeEngine();
     const ship = buildAndCompleteScienceShip(engine, 1);
+    ship.autoSurvey = false; // disable auto-chain for this test
     const colony = getFirstColony(engine, 1);
     const adj = engine._adjacency.get(colony.systemId) || [];
     if (adj.length < 2) return;
@@ -1006,9 +1013,13 @@ describe('Science ships — tick-by-tick movement correctness', () => {
     engine.tick(); // final survey tick
     assert.strictEqual(ship.surveying, false, 'surveying done');
 
-    // Phase 5: Ship stays idle at surveyed system (no auto-return)
-    assert.strictEqual(ship.systemId, targetId, 'stays at surveyed system');
-    assert.strictEqual(ship.path.length, 0, 'no path');
-    assert.strictEqual(ship.targetSystemId, null, 'no target');
+    // Phase 5: Ship auto-chains to next unsurveyed system (autoSurvey=true by default)
+    assert.strictEqual(ship.surveying, false, 'no longer surveying');
+    // Ship may have auto-dispatched to a new target or stay idle if none within 3 hops
+    if (ship.path && ship.path.length > 0) {
+      assert.ok(ship.targetSystemId !== null, 'should have a target from auto-chain');
+    } else {
+      assert.strictEqual(ship.targetSystemId, null, 'no target if no unsurveyed nearby');
+    }
   });
 });

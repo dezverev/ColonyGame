@@ -226,6 +226,50 @@
           _showMatchWarning('PRECURSOR FLEET DESTROYED by ' + (msg.destroyerName || 'Unknown') + '!');
         } else if (msg.eventType === 'precursorOccupied') {
           _showMatchWarning('PRECURSOR occupies ' + (msg.colonyName || 'colony') + '!');
+        } else if (msg.eventType === 'resourceRush') {
+          _showCatalystAlert('RESOURCE RUSH', 'Motherlode discovered in ' + (msg.systemName || 'unknown system') + '! First to station a fleet or colonize claims +' + (msg.income || 100) + ' ' + (msg.resource || 'resources') + '/month!', '#f39c12');
+        } else if (msg.eventType === 'resourceRushClaimed') {
+          _showMatchWarning((msg.playerName || 'Someone') + ' claimed the Resource Rush motherlode!');
+        } else if (msg.eventType === 'techAuction') {
+          _showCatalystAlert('TECH AUCTION', 'Bid influence to instantly complete your current research! Highest bidder wins. All bidders pay.', '#9b59b6');
+          _showAuctionUI(msg);
+        } else if (msg.eventType === 'techAuctionResult') {
+          _hideAuctionUI();
+          if (msg.winner) {
+            _showMatchWarning((msg.winnerName || 'Someone') + ' won the Tech Auction (' + (msg.techName || 'research') + ') with a bid of ' + msg.winningBid + ' influence!');
+          } else {
+            _showMatchWarning('Tech Auction ended — no bids received.');
+          }
+        } else if (msg.eventType === 'borderIncident') {
+          _showCatalystAlert('BORDER INCIDENT', 'Tensions rising between ' + (msg.playerNames || []).join(' and ') + '! Choose: escalate or de-escalate.', '#e74c3c');
+          if (msg.players && gameState && msg.players.includes(gameState.yourId)) {
+            _showIncidentUI(msg);
+          }
+        } else if (msg.eventType === 'borderIncidentResult') {
+          _hideIncidentUI();
+          const r = msg.result;
+          if (r === 'both_deescalate') {
+            _showMatchWarning('Border Incident resolved peacefully — both parties gain +5 VP!');
+          } else if (r === 'both_escalate') {
+            _showMatchWarning('Border Incident escalated — both parties are now hostile!');
+          } else {
+            _showMatchWarning('Border Incident: one party escalated — diplomatic fallout!');
+          }
+        } else if (msg.eventType === 'resourceGift') {
+          if (msg.direction === 'received') {
+            _showToast(msg.senderName + ' sent you ' + msg.amount + ' ' + msg.resource + '!', 'info');
+          } else {
+            _showToast('You sent ' + msg.amount + ' ' + msg.resource + ' to ' + msg.targetName, 'info');
+          }
+        } else if (msg.eventType === 'diplomacyPing') {
+          const pingLabels = { peace: '🕊 Peace', warning: '⚠ Warning', alliance: '🤝 Alliance', rival: '🔥 Rival' };
+          const pingTypes = { peace: 'info', warning: 'warning', alliance: 'info', rival: 'crisis' };
+          const label = pingLabels[msg.pingType] || msg.pingType;
+          if (msg.direction === 'sent') {
+            _showToast('You sent ' + label + ' ping to ' + msg.targetName, 'info');
+          } else {
+            _showToast(msg.senderName + ' sent you a ' + label + ' ping!', pingTypes[msg.pingType] || 'info');
+          }
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -235,7 +279,7 @@
           }
         }
         // Show event ticker for broadcast events (all players) and combat events
-        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat') {
+        if (msg.broadcast || msg.eventType === 'combatStarted' || msg.eventType === 'combatResult' || msg.eventType === 'colonyOccupied' || msg.eventType === 'colonyLiberated' || msg.eventType === 'warDeclared' || msg.eventType === 'allianceFormed' || msg.eventType === 'friendlyProposed' || msg.eventType === 'endgameCrisis' || msg.eventType === 'endgameCrisisWarning' || msg.eventType === 'precursorDestroyed' || msg.eventType === 'precursorOccupied' || msg.eventType === 'precursorCombat' || msg.eventType === 'resourceRush' || msg.eventType === 'resourceRushClaimed' || msg.eventType === 'techAuction' || msg.eventType === 'techAuctionResult' || msg.eventType === 'borderIncident' || msg.eventType === 'borderIncidentResult' || msg.eventType === 'resourceGift') {
           const tickerHtml = _formatTickerEvent(msg);
           if (tickerHtml) _addTickerEvent(tickerHtml);
         }
@@ -286,12 +330,19 @@
 
   // ── District definitions (client-side mirror for UI) ──
   const DISTRICT_UI = {
-    housing:     { label: 'Housing',     color: '#ecf0f1', cost: { minerals: 100 }, produces: '+5 Housing', consumes: '-1 Energy' },
+    housing:     { label: 'Housing',     color: '#ecf0f1', cost: { minerals: 100 }, produces: '+5 Housing, +2 Food', consumes: '-1 Energy' },
     generator:   { label: 'Generator',   color: '#f1c40f', cost: { minerals: 100 }, produces: '+6 Energy', consumes: '' },
     mining:      { label: 'Mining',      color: '#95a5a6', cost: { minerals: 100 }, produces: '+6 Minerals', consumes: '' },
     agriculture: { label: 'Agriculture', color: '#2ecc71', cost: { minerals: 100 }, produces: '+6 Food', consumes: '' },
     industrial:  { label: 'Industrial',  color: '#3498db', cost: { minerals: 200 }, produces: '+4 Alloys', consumes: '-3 Energy' },
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
+  };
+
+  // ── Building definitions (client-side mirror for UI) ──
+  const BUILDING_UI = {
+    researchLab:     { label: 'Research Lab',      color: '#9b59b6', cost: { minerals: 200, energy: 50 }, produces: '+4 Phys/Soc/Eng', consumes: '-2 Energy' },
+    foundry:         { label: 'Foundry',           color: '#e67e22', cost: { minerals: 250 }, produces: '+4 Alloys', consumes: '-2 Energy' },
+    shieldGenerator: { label: 'Shield Generator',  color: '#00bcd4', cost: { minerals: 200, alloys: 100 }, produces: '+25 Defense HP', consumes: '-3 Energy' },
   };
 
   // ── Planet type bonuses (client-side mirror for UI) ──
@@ -405,8 +456,11 @@
   const gameOverOverlay = document.getElementById('game-over-overlay');
   const gameOverTitle = document.getElementById('game-over-title');
   const gameOverWinner = document.getElementById('game-over-winner');
+  const gameOverDuration = document.getElementById('game-over-duration');
   const gameOverScores = document.getElementById('game-over-scores');
+  const gameOverStats = document.getElementById('game-over-stats');
   const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
+  const gameOverRematchBtn = document.getElementById('game-over-rematch-btn');
 
   // ── Timer & warning refs ──
   const statusTimer = document.getElementById('status-timer');
@@ -464,6 +518,8 @@
         return `${player} researched ${msg.techName || 'a technology'}`;
       case 'surveyComplete':
         return `${player} surveyed ${msg.systemName || 'a system'}` + (msg.discoveries && msg.discoveries.length > 0 ? ` — ${msg.discoveries.length} anomal${msg.discoveries.length === 1 ? 'y' : 'ies'} found!` : '');
+      case 'scoutMilestone':
+        return `<span style="color:#f1c40f">\u2605 ${player}: First to survey ${msg.threshold} systems! +${msg.vp} VP</span>`;
       case 'crisisStarted':
         return `<span style="color:#e74c3c">⚠ ${msg.crisisLabel || 'Crisis'}</span> on ${player}'s ${msg.colonyName || 'colony'}!`;
       case 'crisisResolved':
@@ -515,6 +571,32 @@
         return `<span style="color:#3498db">\u2726 ALLIANCE FORMED: ${msg.player1Name || 'Unknown'} and ${msg.player2Name || 'Unknown'} are now allies!</span>`;
       case 'friendlyProposed':
         return `<span style="color:#3498db">\u2726 ${msg.fromName || 'Unknown'} proposes an alliance! <button class="stance-btn stance-friendly" onclick="window._acceptDiplomacy('${msg.fromId}')">Accept</button></span>`;
+      case 'resourceRush': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#f39c12">\u2B50 RESOURCE RUSH — ${rn} motherlode in ${msg.systemName || 'system'}! Claim it first!</span>`;
+      }
+      case 'resourceRushClaimed':
+        return `<span style="color:#f39c12">\u2B50 ${msg.playerName || 'Unknown'} claimed the motherlode!</span>`;
+      case 'resourceRushExpired':
+        return `<span style="color:#888">Resource Rush motherlode has been exhausted.</span>`;
+      case 'techAuction':
+        return `<span style="color:#9b59b6">\u2696 TECH AUCTION — Bid influence to complete research instantly!</span>`;
+      case 'techAuctionResult':
+        return msg.winner
+          ? `<span style="color:#9b59b6">\u2696 ${msg.winnerName || 'Unknown'} won the auction — ${msg.techName || 'tech'} completed! (Bid: ${msg.winningBid})</span>`
+          : `<span style="color:#888">\u2696 Tech Auction ended — no bids.</span>`;
+      case 'borderIncident':
+        return `<span style="color:#e74c3c">\u26A0 BORDER INCIDENT between ${(msg.playerNames || []).join(' and ')}!</span>`;
+      case 'borderIncidentResult': {
+        const r = msg.result;
+        if (r === 'both_deescalate') return `<span style="color:#2ecc71">\u2726 Border Incident resolved peacefully — +5 VP each!</span>`;
+        if (r === 'both_escalate') return `<span style="color:#e74c3c">\u2694 Border Incident escalated — both parties now hostile!</span>`;
+        return `<span style="color:#f39c12">\u2694 Border Incident: one party escalated — diplomatic tensions rise!</span>`;
+      }
+      case 'resourceGift': {
+        const rn = (msg.resource || 'resource').charAt(0).toUpperCase() + (msg.resource || '').slice(1);
+        return `<span style="color:#2ecc71">\u{1F381} ${msg.senderName || 'Unknown'} sent ${msg.amount} ${rn} to ${msg.targetName || 'Unknown'}</span>`;
+      }
       default:
         return null;
     }
@@ -553,6 +635,7 @@
   let _warningTimeout = null;
   let _lastResearchKey = '';  // tracks research state to avoid redundant DOM rebuilds
   let _lastQueueKey = '';      // tracks build queue state to avoid redundant DOM rebuilds
+  let _lastBuildingSlotsKey = ''; // tracks building slots state
   let _cachedMyPlayer = null;   // cached after each gameState update
   let _cachedMyColony = null;   // cached after each gameState update
 
@@ -637,7 +720,7 @@
     {
       const shipBtn = document.createElement('div');
       shipBtn.className = 'build-option build-option-ship';
-      const shipCost = { minerals: 200, food: 100, alloys: 100 };
+      const shipCost = { minerals: 175, food: 75, alloys: 75 };
       let canAffordShip = true;
       const costParts = [];
       for (const [res, amt] of Object.entries(shipCost)) {
@@ -739,7 +822,7 @@
       corvBtn.innerHTML =
         '<div class="build-option-swatch" style="background:#ff4444"></div>' +
         '<div class="build-option-name">Corvette</div>' +
-        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 1⚡ 1🔩/mo</div>' +
+        '<div class="build-option-prod">Military warship (10 HP, 3 ATK, 4s/hop) | Upkeep: 2⚡ 1🔩/mo</div>' +
         `<div class="build-option-cost">${corvCostParts.join(', ')}</div>`;
       corvBtn.addEventListener('click', () => {
         if (corvBtn.classList.contains('disabled')) return;
@@ -972,6 +1055,20 @@
       _setNet(resBar.researchNet, totalResNet);
     }
 
+    // Empire-wide energy income (includes colony upkeep) — show as tooltip
+    if (player && player.income && player.income.energy != null) {
+      const colCount = player.colonyCount || 0;
+      const UPKEEP = [0, 3, 8, 15, 25];
+      let upkeep = 0;
+      for (let i = 1; i < colCount; i++) upkeep += UPKEEP[Math.min(i, UPKEEP.length - 1)];
+      const energyItem = resBar.energy.closest('.res-item');
+      if (energyItem) {
+        let tip = 'Empire net: ' + (player.income.energy >= 0 ? '+' : '') + player.income.energy + '/month';
+        if (upkeep > 0) tip += '\nColony upkeep: -' + upkeep + ' energy (' + colCount + ' colonies)';
+        energyItem.title = tip;
+      }
+    }
+
     // Influence income (empire-wide, from player summary)
     if (player && player.income && player.income.influence != null) {
       _setNet(resBar.influenceNet, player.income.influence);
@@ -1170,6 +1267,89 @@
       cpHousing.textContent = colony.pops + '/' + colony.housing;
       cpHousing.style.color = colony.pops >= colony.housing ? '#e74c3c' : '';
 
+      // Building slots — show built buildings and available slots
+      const buildingSlotsHeader = document.getElementById('building-slots-header');
+      const buildingSlotsList = document.getElementById('building-slots-list');
+      if (buildingSlotsHeader && buildingSlotsList) {
+        const slotsUnlocked = colony.buildingSlotsUnlocked || 0;
+        const bKey = slotsUnlocked + '|' + (colony.buildings || []).map(b => b.id + ':' + b.type).join(',')
+          + '|' + (colony.buildingQueue || []).map(b => b.id + ':' + b.type + ':' + b.ticksRemaining).join(',');
+        if (bKey !== _lastBuildingSlotsKey) {
+          _lastBuildingSlotsKey = bKey;
+          if (slotsUnlocked > 0) {
+            buildingSlotsHeader.classList.remove('hidden');
+            buildingSlotsHeader.textContent = 'Buildings (' + ((colony.buildings || []).length + (colony.buildingQueue || []).length) + '/' + slotsUnlocked + ')';
+            buildingSlotsList.innerHTML = '';
+            // Show built buildings
+            for (const b of (colony.buildings || [])) {
+              const ui = BUILDING_UI[b.type] || {};
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-built';
+              div.innerHTML =
+                `<div class="build-option-swatch" style="background:${ui.color || '#666'}"></div>` +
+                `<span class="building-slot-name">${ui.label || b.type}</span>` +
+                `<span class="building-slot-prod">${ui.produces || ''}</span>` +
+                `<button class="queue-item-cancel building-demolish" title="Demolish">&times;</button>`;
+              div.querySelector('.building-demolish').addEventListener('click', () => {
+                send({ type: 'demolish', colonyId: colony.id, districtId: b.id });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+            // Show queued buildings
+            for (const bq of (colony.buildingQueue || [])) {
+              const ui = BUILDING_UI[bq.type] || {};
+              const pct = 500 > 0 ? Math.min(100, ((500 - bq.ticksRemaining) / 500) * 100) : 0;
+              const secLeft = (bq.ticksRemaining / 10).toFixed(0);
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-queued';
+              div.innerHTML =
+                `<div class="build-option-swatch" style="background:${ui.color || '#666'}; opacity:0.5"></div>` +
+                `<span class="building-slot-name">${ui.label || bq.type}</span>` +
+                `<span class="queue-item-time">${secLeft}s</span>` +
+                `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+                `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
+              div.querySelector('.queue-item-cancel').addEventListener('click', () => {
+                send({ type: 'demolish', colonyId: colony.id, districtId: bq.id });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+            // Show empty slots with build buttons
+            const usedSlots = (colony.buildings || []).length + (colony.buildingQueue || []).length;
+            const builtTypes = new Set([...(colony.buildings || []).map(b => b.type), ...(colony.buildingQueue || []).map(b => b.type)]);
+            for (let i = usedSlots; i < slotsUnlocked; i++) {
+              const div = document.createElement('div');
+              div.className = 'building-slot building-slot-empty';
+              let btnsHtml = '';
+              for (const [type, ui] of Object.entries(BUILDING_UI)) {
+                if (builtTypes.has(type)) continue;
+                const costParts = Object.entries(ui.cost).map(([r, a]) => `${a} ${r}`);
+                const myPlayer = _getMyPlayer();
+                let canAfford = true;
+                if (myPlayer) {
+                  for (const [r, a] of Object.entries(ui.cost)) {
+                    if (myPlayer.resources[r] < a) canAfford = false;
+                  }
+                }
+                btnsHtml += `<button class="building-build-btn${canAfford ? '' : ' disabled'}" data-type="${type}" title="${ui.produces} | ${costParts.join(', ')}">` +
+                  `<span class="build-option-swatch" style="background:${ui.color}; display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px"></span>` +
+                  `${ui.label} (${costParts.join(', ')})</button>`;
+              }
+              div.innerHTML = `<span class="building-slot-name" style="color:#666">Empty Slot</span>${btnsHtml}`;
+              div.querySelectorAll('.building-build-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                  if (btn.classList.contains('disabled')) return;
+                  send({ type: 'buildBuilding', colonyId: colony.id, buildingType: btn.dataset.type });
+                });
+              });
+              buildingSlotsList.appendChild(div);
+            }
+          } else {
+            buildingSlotsHeader.classList.add('hidden');
+            buildingSlotsList.innerHTML = '';
+          }
+        }
+      }
+
       // Build queue — fingerprint to avoid redundant DOM rebuilds
       const queueKey = colony.buildQueue.map(q => q.id + ':' + q.ticksRemaining).join(',');
       if (queueKey !== _lastQueueKey) {
@@ -1230,7 +1410,8 @@
     const sciTransit = mySciShipsAll.length - sciIdle;
     let key = _viewingColonyIndex + '|';
     for (const col of myColonies) key += col.id + ':' + col.pops + ':' + (col.trait ? col.trait.type : '') + ':' + (col.occupiedBy || '') + ',';
-    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit;
+    const sciAutoKey = mySciShipsAll.map(s => (s.autoSurvey !== false ? '1' : '0')).join('');
+    key += '|' + idle + ':' + transit + '|' + sciIdle + ':' + sciTransit + '|' + sciAutoKey;
     if (key === _lastColonyListKey) return;
     _lastColonyListKey = key;
 
@@ -1252,6 +1433,7 @@
           window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _lastQueueKey = ''; // force queue rebuild
+        _lastBuildingSlotsKey = ''; // force building slots rebuild
         _lastColonyListKey = ''; // force sidebar rebuild
         _updateColonyList();
       });
@@ -1261,8 +1443,25 @@
     if (myShips.length > 0) {
       const shipInfo = document.createElement('div');
       shipInfo.className = 'colony-list-ships';
-      shipInfo.textContent = `Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
+      shipInfo.textContent = `Colony Ships: ${idle} idle` + (transit > 0 ? `, ${transit} in transit` : '');
       sidebar.appendChild(shipInfo);
+    }
+    // Science ship list with auto-survey toggle
+    if (mySciShipsAll.length > 0) {
+      const sciInfo = document.createElement('div');
+      sciInfo.className = 'colony-list-ships';
+      const sciAutoCount = mySciShipsAll.filter(s => s.autoSurvey !== false).length;
+      sciInfo.innerHTML = `Science Ships: ${mySciShipsAll.length} (${sciAutoCount} auto)`;
+      sidebar.appendChild(sciInfo);
+      for (const ship of mySciShipsAll) {
+        const shipEntry = document.createElement('div');
+        shipEntry.className = 'colony-list-sci-ship';
+        const status = ship.surveying ? 'Surveying' : (ship.path && ship.path.length > 0) ? 'In transit' : 'Idle';
+        const autoLabel = ship.autoSurvey !== false ? 'ON' : 'OFF';
+        const autoClass = ship.autoSurvey !== false ? 'auto-on' : 'auto-off';
+        shipEntry.innerHTML = `<span class="sci-ship-status">${status}</span> <button class="auto-survey-btn ${autoClass}" onclick="window._toggleAutoSurvey('${ship.id}')">Auto: ${autoLabel}</button>`;
+        sidebar.appendChild(shipEntry);
+      }
     }
   }
 
@@ -1625,6 +1824,11 @@
         if (myStance !== 'friendly' && !pendingToThem) btns += `<button class="stance-btn stance-friendly" onclick="window._setDiplomacy('${p.id}','friendly')" title="Propose Alliance">&#x2726;</button>`;
         if (pendingToThem) btns += '<span class="stance-pending">pending...</span>';
         if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
+        btns += `<button class="stance-btn stance-gift" onclick="window._giftResources('${p.id}')" title="Send Resources">&#x1F381;</button>`;
+        btns += `<button class="stance-btn ping-peace" onclick="window._diplomacyPing('${p.id}','peace')" title="Signal Peace">&#x1F54A;</button>`;
+        btns += `<button class="stance-btn ping-warning" onclick="window._diplomacyPing('${p.id}','warning')" title="Send Warning">&#x26A0;</button>`;
+        btns += `<button class="stance-btn ping-alliance" onclick="window._diplomacyPing('${p.id}','alliance')" title="Propose Alliance">&#x1F91D;</button>`;
+        btns += `<button class="stance-btn ping-rival" onclick="window._diplomacyPing('${p.id}','rival')" title="Mark as Rival">&#x1F525;</button>`;
         stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
       }
       const docBadge = p.doctrine ? ` <span class="doctrine-badge" title="${(DOCTRINE_INFO[p.doctrine] || {}).name || p.doctrine}">${p.doctrine === 'industrialist' ? '⚒' : p.doctrine === 'scholar' ? '📚' : p.doctrine === 'expansionist' ? '🚀' : ''}</span>` : '';
@@ -1644,10 +1848,25 @@
         `<td class="${(inc.alloys || 0) >= 0 ? 'inc-pos' : 'inc-neg'}">${fmtInc(inc.alloys)}</td></tr>`;
     });
     html += '</table>';
+
+    // Victory progress bars (for local player)
+    const me = players.find(p => p.id === gameState.yourId);
+    const vp = me && me.victoryProgress;
+    if (vp) {
+      html += '<div class="victory-progress-section"><div class="victory-progress-title">Victory Paths</div>';
+      const sciPct = Math.min(100, Math.floor(vp.scientific.current / vp.scientific.target * 100));
+      const milPct = Math.min(100, Math.floor(vp.military.current / vp.military.target * 100));
+      const ecoAlloyPct = Math.min(100, Math.floor(vp.economic.alloys / vp.economic.alloysTarget * 100));
+      const ecoTraitPct = Math.min(100, Math.floor(vp.economic.traits / vp.economic.traitsTarget * 100));
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Scientific</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-sci" style="width:${sciPct}%"></div></div><span class="vp-bar-text">${vp.scientific.current}/${vp.scientific.target} techs</span></div>`;
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Military</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-mil" style="width:${milPct}%"></div></div><span class="vp-bar-text">${vp.military.current}/${vp.military.target} occupied</span></div>`;
+      html += `<div class="vp-bar-row"><span class="vp-bar-label">Economic</span><div class="vp-bar"><div class="vp-bar-fill vp-bar-eco" style="width:${Math.floor((ecoAlloyPct + ecoTraitPct) / 2)}%"></div></div><span class="vp-bar-text">${vp.economic.alloys}/${vp.economic.alloysTarget} alloys + ${vp.economic.traits}/${vp.economic.traitsTarget} traits</span></div>`;
+      html += '</div>';
+    }
     scoreboardBody.innerHTML = html;
   }
 
-  // ── Game Over ──
+  // ── Game Over — Post-Game Score Screen ──
   function _showGameOver(data) {
     if (!gameOverOverlay) return;
     if (_uiInterval) { clearInterval(_uiInterval); _uiInterval = null; }
@@ -1655,31 +1874,67 @@
     const winner = data.winner;
     const isMe = winner && winner.playerId === (gameState ? gameState.yourId : null);
 
+    const victoryLabels = { scientific: 'Scientific Victory', military: 'Military Victory', economic: 'Economic Victory', vp: 'Victory Points' };
+    const victoryType = data.victoryType || 'vp';
+    const victoryLabel = victoryLabels[victoryType] || 'Victory Points';
     gameOverTitle.textContent = isMe ? 'Victory!' : 'Game Over';
     gameOverWinner.innerHTML = winner
-      ? `<div class="game-over-winner-name">${winner.name} wins with ${winner.vp} VP</div>`
+      ? `<div class="game-over-winner-name">${winner.name} wins — ${victoryLabel}${victoryType === 'vp' ? ` (${winner.vp} VP)` : ''}</div>`
       : '<div class="game-over-winner-name">No winner</div>';
 
-    let scoresHtml = '<table class="scoreboard-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Occupation</th><th>Diplomacy</th><th>Raiders</th><th>Crisis</th></tr>';
+    // Match duration
+    if (gameOverDuration && data.matchDurationSec != null) {
+      const mins = Math.floor(data.matchDurationSec / 60);
+      const secs = data.matchDurationSec % 60;
+      gameOverDuration.textContent = `Match Duration: ${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+    } else if (gameOverDuration) {
+      gameOverDuration.textContent = '';
+    }
+
+    // VP Breakdown table
+    let scoresHtml = '<h3 class="go-section-title">Victory Points</h3>';
+    scoresHtml += '<div class="go-table-wrap"><table class="scoreboard-table go-vp-table"><tr><th>#</th><th>Player</th><th>VP</th><th>Pops</th><th>Districts</th><th>Alloys</th><th>Research</th><th>Techs</th><th>Traits</th><th>Explored</th><th>Fleet</th><th>Battles</th><th>Diplomacy</th><th>Raiders</th></tr>';
     (data.scores || []).forEach((s, i) => {
       const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
       scoresHtml += `<tr${cls}><td>${i + 1}</td><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td><td><strong>${s.vp}</strong></td>` +
-        `<td>${s.breakdown.pops} (${s.breakdown.popsVP})</td>` +
-        `<td>${s.breakdown.districts} (${s.breakdown.districtsVP})</td>` +
-        `<td>${Math.floor(s.breakdown.alloys)} (${s.breakdown.alloysVP})</td>` +
-        `<td>${Math.floor(s.breakdown.totalResearch)} (${s.breakdown.researchVP})</td>` +
-        `<td>${s.breakdown.techs || 0} (${s.breakdown.techVP || 0})</td>` +
-        `<td>${s.breakdown.traits || 0} (${s.breakdown.traitsVP || 0})</td>` +
-        `<td>${s.breakdown.surveyed || 0} (${s.breakdown.surveyedVP || 0})</td>` +
-        `<td>${s.breakdown.corvettes || 0} (${s.breakdown.militaryVP || 0})</td>` +
-        `<td>${s.breakdown.battlesWon || 0} (${s.breakdown.battlesWonVP || 0})</td>` +
-        `<td>${(s.breakdown.coloniesOccupying || 0) + (s.breakdown.coloniesOccupied || 0)} (${(s.breakdown.occupiedAttackerVP || 0) + (s.breakdown.occupiedDefenderVP || 0)})</td>` +
-        `<td>${(s.breakdown.friendlyCount || 0) + (s.breakdown.mutualFriendlyCount || 0)} (${s.breakdown.diplomacyVP || 0})</td>` +
-        `<td>${s.breakdown.raidersDestroyed || 0} (${s.breakdown.raidersVP || 0})</td>` +
-        `<td>${s.breakdown.precursorVP || 0}</td></tr>`;
+        `<td>${s.breakdown.popsVP}</td>` +
+        `<td>${s.breakdown.districtsVP}</td>` +
+        `<td>${s.breakdown.alloysVP}</td>` +
+        `<td>${s.breakdown.researchVP}</td>` +
+        `<td>${s.breakdown.techVP || 0}</td>` +
+        `<td>${s.breakdown.traitsVP || 0}</td>` +
+        `<td>${(s.breakdown.surveyedVP || 0) + (s.breakdown.scoutMilestonesVP || 0)}</td>` +
+        `<td>${s.breakdown.militaryVP || 0}</td>` +
+        `<td>${s.breakdown.battlesWonVP || 0}</td>` +
+        `<td>${s.breakdown.diplomacyVP || 0}</td>` +
+        `<td>${s.breakdown.raidersVP || 0}</td></tr>`;
     });
-    scoresHtml += '</table>';
+    scoresHtml += '</table></div>';
     gameOverScores.innerHTML = scoresHtml;
+
+    // Per-player match stats
+    if (gameOverStats) {
+      let statsHtml = '<h3 class="go-section-title">Match Statistics</h3>';
+      statsHtml += '<div class="go-table-wrap"><table class="scoreboard-table go-stats-table"><tr><th>Player</th><th>Colonies</th><th>Districts</th><th>Ships</th><th>Battles Won</th><th>Ships Lost</th><th>Raiders Killed</th><th>Energy</th><th>Minerals</th><th>Food</th><th>Alloys</th></tr>';
+      (data.scores || []).forEach((s) => {
+        const cls = s.playerId === (gameState ? gameState.yourId : null) ? ' class="scoreboard-me"' : '';
+        const ms = s.matchStats || {};
+        const rg = ms.resourcesGathered || {};
+        statsHtml += `<tr${cls}><td><span class="scoreboard-color" style="background:${s.color}"></span>${s.name}</td>` +
+          `<td>${ms.coloniesFounded || 0}</td>` +
+          `<td>${ms.districtsBuilt || 0}</td>` +
+          `<td>${ms.shipsBuilt || 0}</td>` +
+          `<td>${s.breakdown.battlesWon || 0}</td>` +
+          `<td>${s.breakdown.shipsLost || 0}</td>` +
+          `<td>${s.breakdown.raidersDestroyed || 0}</td>` +
+          `<td>${Math.floor(rg.energy || 0)}</td>` +
+          `<td>${Math.floor(rg.minerals || 0)}</td>` +
+          `<td>${Math.floor(rg.food || 0)}</td>` +
+          `<td>${Math.floor(rg.alloys || 0)}</td></tr>`;
+      });
+      statsHtml += '</table></div>';
+      gameOverStats.innerHTML = statsHtml;
+    }
 
     gameOverOverlay.classList.remove('hidden');
   }
@@ -1753,6 +2008,93 @@
     }, 8000);
   }
 
+  // ── Catalyst Event UI ──
+
+  function _showCatalystAlert(title, text, color) {
+    if (!matchWarning) return;
+    matchWarning.innerHTML = `<strong>${title}</strong> — ${text}`;
+    matchWarning.style.borderColor = color || '#f39c12';
+    matchWarning.classList.remove('hidden');
+    if (_warningTimeout) clearTimeout(_warningTimeout);
+    _warningTimeout = setTimeout(() => {
+      matchWarning.classList.add('hidden');
+      matchWarning.style.borderColor = '';
+    }, 10000);
+  }
+
+  // Tech Auction bid UI
+  let _auctionOverlay = null;
+  function _showAuctionUI(msg) {
+    if (_auctionOverlay) _auctionOverlay.remove();
+    _auctionOverlay = document.createElement('div');
+    _auctionOverlay.className = 'catalyst-overlay';
+    _auctionOverlay.innerHTML = `
+      <div class="catalyst-dialog">
+        <h3 style="color:#9b59b6">Tech Breakthrough Auction</h3>
+        <p>Bid influence to instantly complete your current research.<br>Highest bidder wins. <strong>All bidders lose their bid.</strong></p>
+        <div style="margin:8px 0">
+          <label>Bid amount: <input type="number" id="auction-bid-input" min="1" value="10" style="width:60px;background:#1a1a2e;color:#e0e0e0;border:1px solid #555;padding:2px 4px"></label>
+          <button id="auction-bid-btn" style="margin-left:8px;padding:4px 12px;background:#9b59b6;border:none;color:#fff;cursor:pointer;border-radius:3px">Place Bid</button>
+        </div>
+        <p id="auction-status" style="color:#888;font-size:0.9em"></p>
+      </div>
+    `;
+    document.body.appendChild(_auctionOverlay);
+    const bidBtn = document.getElementById('auction-bid-btn');
+    const bidInput = document.getElementById('auction-bid-input');
+    const statusEl = document.getElementById('auction-status');
+    if (bidBtn) {
+      bidBtn.addEventListener('click', () => {
+        const amount = parseInt(bidInput.value, 10);
+        if (!Number.isFinite(amount) || amount < 1) return;
+        send({ type: 'auctionBid', amount });
+        statusEl.textContent = 'Bid placed: ' + amount + ' influence';
+        bidBtn.disabled = true;
+      });
+    }
+  }
+  function _hideAuctionUI() {
+    if (_auctionOverlay) { _auctionOverlay.remove(); _auctionOverlay = null; }
+  }
+
+  // Border Incident choice UI
+  let _incidentOverlay = null;
+  function _showIncidentUI(msg) {
+    if (_incidentOverlay) _incidentOverlay.remove();
+    _incidentOverlay = document.createElement('div');
+    _incidentOverlay.className = 'catalyst-overlay';
+    const otherName = msg.playerNames
+      ? (msg.players[0] === gameState.yourId ? msg.playerNames[1] : msg.playerNames[0])
+      : 'another player';
+    _incidentOverlay.innerHTML = `
+      <div class="catalyst-dialog">
+        <h3 style="color:#e74c3c">Border Incident</h3>
+        <p>Tensions are rising between you and <strong>${otherName}</strong>.</p>
+        <p style="font-size:0.9em;color:#aaa">Both de-escalate: +5 VP each. One escalates: +3 VP, other goes hostile. Both escalate: both hostile, no VP.</p>
+        <div style="margin:10px 0">
+          <button id="incident-deescalate" style="padding:6px 16px;background:#2ecc71;border:none;color:#fff;cursor:pointer;border-radius:3px;margin-right:10px">De-escalate</button>
+          <button id="incident-escalate" style="padding:6px 16px;background:#e74c3c;border:none;color:#fff;cursor:pointer;border-radius:3px">Escalate</button>
+        </div>
+        <p id="incident-status" style="color:#888;font-size:0.9em"></p>
+      </div>
+    `;
+    document.body.appendChild(_incidentOverlay);
+    const deescBtn = document.getElementById('incident-deescalate');
+    const escBtn = document.getElementById('incident-escalate');
+    const statusEl = document.getElementById('incident-status');
+    function submitChoice(choice) {
+      send({ type: 'respondIncident', choice });
+      statusEl.textContent = 'Choice submitted: ' + choice;
+      deescBtn.disabled = true;
+      escBtn.disabled = true;
+    }
+    if (deescBtn) deescBtn.addEventListener('click', () => submitChoice('deescalate'));
+    if (escBtn) escBtn.addEventListener('click', () => submitChoice('escalate'));
+  }
+  function _hideIncidentUI() {
+    if (_incidentOverlay) { _incidentOverlay.remove(); _incidentOverlay = null; }
+  }
+
   // Panel close buttons
   if (buildMenuClose) buildMenuClose.addEventListener('click', () => {
     _hideAllPanels();
@@ -1819,6 +2161,7 @@
           window.ColonyRenderer.buildColonyGrid(_cachedMyColony);
         }
         _lastQueueKey = '';
+        _lastBuildingSlotsKey = '';
         _updateColonyList();
       }
     }
@@ -1890,6 +2233,13 @@
     gameOverOverlay.classList.add('hidden');
     gameState = null;
     send({ type: 'leaveRoom' });
+  });
+
+  // Rematch: leave current room and create a new one with same settings
+  if (gameOverRematchBtn) gameOverRematchBtn.addEventListener('click', () => {
+    gameOverOverlay.classList.add('hidden');
+    gameState = null;
+    send({ type: 'rematch' });
   });
 
   chatInput.addEventListener('keydown', (e) => {
@@ -1990,7 +2340,26 @@
     window._acceptDiplomacy = function(targetPlayerId) {
       send({ type: 'acceptDiplomacy', targetPlayerId });
     };
+    window._giftResources = function(targetPlayerId) {
+      const resource = prompt('Resource to gift (energy, minerals, food, alloys):');
+      if (!resource) return;
+      const amountStr = prompt('Amount (minimum 25):');
+      if (!amountStr) return;
+      const amount = parseInt(amountStr, 10);
+      if (!amount || amount < 25) { alert('Minimum gift is 25'); return; }
+      send({ type: 'giftResources', targetPlayerId, resource: resource.trim().toLowerCase(), amount });
+    };
   }
+
+  // Diplomacy ping
+  window._diplomacyPing = function(targetPlayerId, pingType) {
+    send({ type: 'diplomacyPing', targetPlayerId, pingType });
+  };
+
+  // Toggle auto-survey for a science ship
+  window._toggleAutoSurvey = function(shipId) {
+    send({ type: 'toggleAutoSurvey', shipId });
+  };
 
   // Expose send and gameState for future modules (renderer, UI)
   if (typeof window !== 'undefined') {

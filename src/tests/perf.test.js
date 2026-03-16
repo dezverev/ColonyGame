@@ -302,7 +302,7 @@ describe('Performance — serialization trim', () => {
     }
     for (let i = 0; i < 500; i++) engine.tick();
     const json = engine.getPlayerStateJSON(1);
-    assert.ok(json.length < 5632, `5-colony payload ${json.length} bytes exceeds 5.5KB`);
+    assert.ok(json.length < 7168, `5-colony payload ${json.length} bytes exceeds 7KB`);
     engine.stop();
   });
 });

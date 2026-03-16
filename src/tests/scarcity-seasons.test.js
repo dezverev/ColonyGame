@@ -452,7 +452,7 @@ describe('Scarcity Seasons — State Serialization', () => {
   it('includes activeScarcity in getPlayerState() when active', () => {
     const engine = makeEngine();
     engine._activeScarcity = { resource: 'food', ticksRemaining: 200 };
-    engine._cachedPlayerJSON.clear();
+    engine._invalidateStateCache();
 
     const state = engine.getPlayerState(1);
     assert.ok(state.activeScarcity);
@@ -462,7 +462,7 @@ describe('Scarcity Seasons — State Serialization', () => {
   it('activeScarcity appears in getPlayerStateJSON broadcast', () => {
     const engine = makeEngine();
     engine._activeScarcity = { resource: 'minerals', ticksRemaining: 100 };
-    engine._cachedPlayerJSON.clear();
+    engine._invalidateStateCache();
 
     const json = engine.getPlayerStateJSON(1);
     const parsed = JSON.parse(json);
@@ -783,12 +783,12 @@ describe('Scarcity Seasons — Serialization Mid-Cycle', () => {
   it('getPlayerStateJSON reflects mid-cycle ticksRemaining', () => {
     const engine = makeEngine();
     engine._activeScarcity = { resource: 'minerals', ticksRemaining: 50 };
-    engine._cachedPlayerJSON.clear();
+    engine._invalidateStateCache();
 
     // Tick 5 times
     for (let i = 0; i < 5; i++) engine.tick();
 
-    engine._cachedPlayerJSON.clear();
+    engine._invalidateStateCache();
     const json = engine.getPlayerStateJSON(1);
     const parsed = JSON.parse(json);
     assert.strictEqual(parsed.activeScarcity.ticksRemaining, 45);

@@ -158,6 +158,34 @@ function startServer(options = {}) {
         break;
       }
 
+      case 'rematch': {
+        // Leave current room and create a new one with same settings
+        const currentRoom = rooms.getRoomForPlayer(clientId);
+        const settings = currentRoom ? {
+          maxPlayers: currentRoom.maxPlayers,
+          practiceMode: currentRoom.practiceMode,
+          matchTimer: currentRoom.matchTimer,
+          galaxySize: currentRoom.galaxySize,
+        } : {};
+        const leaveResult = rooms.leaveRoom(clientId);
+        if (leaveResult) {
+          if (leaveResult.removed) {
+            const engine = games.get(leaveResult.roomId);
+            if (engine) { engine.stop(); games.delete(leaveResult.roomId); }
+          } else if (leaveResult.room) {
+            sendRoomUpdate(leaveResult.room.id);
+          }
+          broadcastRoomList();
+        }
+        // Create new room with same settings
+        const rematchName = `${ws.displayName}'s Rematch`;
+        const newRoom = rooms.createRoom(rematchName, clientId, ws.displayName, settings);
+        send(ws, { type: 'roomJoined', room: rooms.serializeRoom(newRoom) });
+        broadcastRoomList();
+        if (log) console.log(`[room] ${ws.displayName} started rematch`);
+        break;
+      }
+
       case 'toggleReady': {
         const result = rooms.toggleReady(clientId);
         if (!result) return;
@@ -238,19 +266,25 @@ function startServer(options = {}) {
       }
 
       case 'buildDistrict':
+      case 'buildBuilding':
       case 'demolish':
       case 'setResearch':
       case 'buildColonyShip':
       case 'sendColonyShip':
       case 'buildScienceShip':
       case 'sendScienceShip':
+      case 'toggleAutoSurvey':
       case 'buildCorvette':
       case 'sendFleet':
       case 'resolveCrisis':
       case 'activateEdict':
       case 'setDiplomacy':
       case 'acceptDiplomacy':
-      case 'selectDoctrine': {
+      case 'selectDoctrine':
+      case 'auctionBid':
+      case 'respondIncident':
+      case 'giftResources':
+      case 'diplomacyPing': {
         const room = rooms.getRoomForPlayer(clientId);
         if (!room) return;
         const engine = games.get(room.id);

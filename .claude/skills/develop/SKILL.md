@@ -19,26 +19,27 @@ Before writing any code, read CLAUDE.md at the project root for the full archite
 Read these files to understand what's been done and what's next:
 
 1. **`CLAUDE.md`** — Project architecture, conventions, module map
-2. **`devguide/design.md`** — Full implementation roadmap with checkboxes
-3. **`devguide/ledger.md`** — Read only the **last 80 lines** (recent entries). Do NOT read the entire file — it is very large.
+2. **`devguide/design.md`** — **Do NOT read the entire file** (it is ~75KB). Instead:
+   - Use Grep to find `PRIORITY ORDER` entries that are unchecked `- [ ]` — these specify the build order
+   - If a priority order exists, read only the specific tasks it references
+   - If no priority order, use Grep for `- [ ]` to find the first unchecked task, then read just that section
+3. **`devguide/ledger.md`** — Read only the **last 40 lines** (recent entries). Do NOT read the entire file — it is very large.
 
 **IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed.**
 
-Scan the codebase to verify the ledger matches reality (files exist, tests pass).
+Do NOT read all of `server/game-engine.js` upfront — it is ~6000 lines. Use Grep to find the specific functions relevant to your task.
 
 ### 2. Select Next Task
 
-Find the first incomplete task in `devguide/design.md`:
+Find the next task to implement:
 
-**If a focus area was provided:** Find tasks in that area first.
+**If a PRIORITY ORDER exists (unchecked `[ ]`):** Follow its build order — implement the first incomplete item listed.
 
-**If no focus was specified:** Select the highest-priority incomplete task by:
-1. Earlier phases before later phases
-2. Within a phase, top-to-bottom order
-3. All dependencies must be complete (checked `[x]`)
-4. Skip anything already checked
+**If a focus area was provided:** Grep for unchecked tasks matching that area.
 
-If ALL tasks in the current phase are done, move to the next phase.
+**If no focus or priority order:** Pick the first unchecked `- [ ]` task (top-to-bottom in the file).
+
+Skip anything already checked `[x]`.
 
 ### 3. Plan Before Coding
 
@@ -102,13 +103,7 @@ npm test
 
 ALL tests must pass. Fix any failures before proceeding.
 
-Also verify the server starts cleanly:
-```bash
-node server/server.js &
-sleep 1
-curl -s http://localhost:4001/health
-kill %1
-```
+Do NOT start the server for a health check — it can hang if the port is occupied. Tests are sufficient for verification.
 
 ### 7. Commit
 

@@ -164,10 +164,14 @@ Isometric projection is achieved with a Three.js OrthographicCamera positioned a
 ### Scripts
 
 ```bash
-./autopilot.sh                    # Run 1 development iteration
-./autopilot.sh -n 3               # Run 3 iterations
+./autopilot.sh                    # Run 1 full iteration (status + game-designer + develop + perf + test)
+./autopilot.sh -n 3               # Run 3 full iterations
 ./autopilot.sh --dry-run           # Analyze only, don't implement
 ./autopilot.sh --focus colonies    # Focus on a specific area
+
+./autopilot-lite.sh               # Run 1 fast iteration (develop + test only, no game-designer)
+./autopilot-lite.sh -n 5          # Run 5 fast iterations
+./autopilot-lite.sh --focus combat # Focus on a specific area
 
 ./doc-gaps.sh                     # Run 1 documentation audit
 ./doc-gaps.sh -n 2                # Run 2 iterations (catch stragglers)

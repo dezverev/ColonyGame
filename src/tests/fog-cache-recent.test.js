@@ -131,11 +131,11 @@ describe('JSON caching — per-player isolation', () => {
     engine.getPlayerStateJSON(1);
     engine.getPlayerStateJSON(2);
     assert.strictEqual(engine._cachedPlayerJSON.size, 2, 'Both players should be cached');
-    // Player 1 command should clear the entire per-player cache map
+    // Player 1 command should mark cache dirty (deferred invalidation)
     engine.playerStates.get(1).resources.minerals = 9999;
     const p1ColonyIds = engine._playerColonies.get(1) || [];
     engine.handleCommand(1, { type: 'buildDistrict', colonyId: p1ColonyIds[0], districtType: 'generator' });
-    assert.strictEqual(engine._cachedPlayerJSON.size, 0, 'All player caches should be cleared');
+    assert.ok(engine._stateCacheDirty, 'Cache dirty flag should be set after state change');
     engine.stop();
   });
 });
@@ -272,7 +272,7 @@ describe('_invalidateStateCache — consistency', () => {
     // We can at least verify the internal fields are null/cleared
     assert.strictEqual(engine._cachedState, null);
     assert.strictEqual(engine._cachedStateJSON, null);
-    assert.strictEqual(engine._cachedPlayerJSON.size, 0);
+    assert.ok(engine._stateCacheDirty, 'Dirty flag should be set after invalidation');
     engine.stop();
   });
 });

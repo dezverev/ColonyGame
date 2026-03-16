@@ -61,21 +61,17 @@ describe('Industrialist — Deep', () => {
   it('mining bonus should be exactly 25% on mineral production', () => {
     const engine = createEngine();
     const colony = getFirstColony(engine, 'p1');
-    // Get baseline production (no doctrine)
-    const baseline = engine._calcProduction(colony);
-    const baseMinerals = baseline.production.minerals;
-    assert.ok(baseMinerals > 0, 'need baseline mineral production');
 
-    // Apply industrialist — adds +1 mining district, so we can't compare directly
-    // Instead, create a second engine to compare with same district count
-    const engine2 = createEngine();
-    const colony2 = getFirstColony(engine2, 'p1');
-    // Add 1 extra mining to match what industrialist will add
-    engine2._addBuiltDistrict(colony2, 'mining');
-    engine2._invalidateColonyCache(colony2);
-    const baseWithExtra = engine2._calcProduction(colony2);
+    // Add 1 extra mining to match what industrialist will add, then get baseline
+    engine._addBuiltDistrict(colony, 'mining');
+    engine._invalidateColonyCache(colony);
+    const baseWithExtra = engine._calcProduction(colony);
     const baseMinWithExtra = baseWithExtra.production.minerals;
+    assert.ok(baseMinWithExtra > 0, 'need baseline mineral production');
 
+    // Remove the extra district, apply industrialist (which adds +1 mining)
+    colony.districts.pop();
+    engine._invalidateColonyCache(colony);
     engine.handleCommand('p1', { type: 'selectDoctrine', doctrineType: 'industrialist' });
     engine._invalidateColonyCache(getFirstColony(engine, 'p1'));
     const prod = engine._calcProduction(getFirstColony(engine, 'p1'));
@@ -102,23 +98,21 @@ describe('Industrialist — Deep', () => {
   });
 
   it('research penalty is exactly -10% on all 3 research resources', () => {
-    // Use two engines with identical layouts to isolate doctrine effect
-    const engine1 = createEngine();
-    const engine2 = createEngine();
-    const colony1 = getFirstColony(engine1, 'p1');
-    const colony2 = getFirstColony(engine2, 'p1');
+    const engine = createEngine();
+    const colony = getFirstColony(engine, 'p1');
 
-    // Add research district to both
-    engine1._addBuiltDistrict(colony1, 'research');
-    engine2._addBuiltDistrict(colony2, 'research');
-    // Add extra mining to engine2 to match what industrialist will add
-    engine2._addBuiltDistrict(colony2, 'mining');
-    engine2._invalidateColonyCache(colony2);
-    const baseline = engine2._calcProduction(colony2);
+    // Add research + extra mining to match what industrialist will add
+    engine._addBuiltDistrict(colony, 'research');
+    engine._addBuiltDistrict(colony, 'mining');
+    engine._invalidateColonyCache(colony);
+    const baseline = engine._calcProduction(colony);
 
-    engine1.handleCommand('p1', { type: 'selectDoctrine', doctrineType: 'industrialist' });
-    engine1._invalidateColonyCache(colony1);
-    const prod = engine1._calcProduction(colony1);
+    // Remove the extra mining, apply industrialist (which adds +1 mining back)
+    colony.districts.pop();
+    engine._invalidateColonyCache(colony);
+    engine.handleCommand('p1', { type: 'selectDoctrine', doctrineType: 'industrialist' });
+    engine._invalidateColonyCache(colony);
+    const prod = engine._calcProduction(colony);
 
     // Compare research output: industrialist should be -10% vs same-layout no-doctrine
     if (baseline.production.physics > 0) {

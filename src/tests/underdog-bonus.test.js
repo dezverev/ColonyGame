@@ -108,19 +108,22 @@ describe('Underdog Bonus — production multiplier', () => {
     const engine = makeTwoPlayerEngine();
     addColony(engine, 'p1'); // p1=2, p2=1 → p2 gets +15%
 
-    // Get p2's colony production
+    // Normalize planet types so both players have same bonuses
     const p2ColonyIds = engine._playerColonies.get('p2');
     const p2Colony = engine.colonies.get(p2ColonyIds[0]);
+    const p1ColonyIds = engine._playerColonies.get('p1');
+    const p1Colony = engine.colonies.get(p1ColonyIds[0]);
+    p2Colony.planet.type = p1Colony.planet.type;
+
+    // Get p2's colony production (underdog, +15%)
     engine._invalidateColonyCache(p2Colony);
     const p2Prod = engine._calcProduction(p2Colony);
 
     // Get p1's first colony production (leader, no bonus)
-    const p1ColonyIds = engine._playerColonies.get('p1');
-    const p1Colony = engine.colonies.get(p1ColonyIds[0]);
     engine._invalidateColonyCache(p1Colony);
     const p1Prod = engine._calcProduction(p1Colony);
 
-    // p2 should produce more minerals than p1 (same district setup, but +15%)
+    // p2 should produce more minerals than p1 (same district setup + planet, but +15%)
     assert.ok(p2Prod.production.minerals > p1Prod.production.minerals,
       `Underdog minerals ${p2Prod.production.minerals} should exceed leader minerals ${p1Prod.production.minerals}`);
   });

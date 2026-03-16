@@ -41,6 +41,7 @@
     precursorCombat: 'crisis',
     precursorDestroyed: 'positive',
     precursorOccupied: 'crisis',
+    scoutMilestone: 'positive',
   };
 
   function formatGameEvent(msg) {
@@ -134,6 +135,8 @@
         return 'PRECURSOR DESTROYED: ' + (d.destroyerName || 'Unknown') + ' destroyed the precursor fleet! +' + (d.vpReward || 15) + ' VP';
       case 'precursorOccupied':
         return 'PRECURSOR OCCUPATION: ' + (d.colonyName || 'Colony') + ' occupied by precursor fleet! -5 VP for ' + (d.ownerName || 'owner');
+      case 'scoutMilestone':
+        return (d.playerName || 'A player') + ': First to survey ' + (d.threshold || '?') + ' systems! +' + (d.vp || '?') + ' VP';
       default:
         return null;
     }

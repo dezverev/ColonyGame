@@ -5,13 +5,26 @@ const PLAYER_COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#
 // District definitions: type -> { produces, consumes, cost, buildTime }
 // Production/consumption is per "month" (every 100 ticks = 10 seconds)
 const DISTRICT_DEFS = {
-  housing:     { produces: {}, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 200 },
+  housing:     { produces: { food: 2 }, consumes: { energy: 1 }, housing: 5, jobs: 0, cost: { minerals: 100 }, buildTime: 200 },
   generator:   { produces: { energy: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   mining:      { produces: { minerals: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   agriculture: { produces: { food: 6 }, consumes: {}, housing: 0, jobs: 1, cost: { minerals: 100 }, buildTime: 300 },
   industrial:  { produces: { alloys: 4 }, consumes: { energy: 3 }, housing: 0, jobs: 1, cost: { minerals: 200 }, buildTime: 400 },
   research:    { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 4 }, housing: 0, jobs: 1, cost: { minerals: 200, energy: 20 }, buildTime: 400 },
 };
+
+// Building definitions: buildings occupy separate slots from districts
+// Slots unlock at pop thresholds: 1 at 5 pops, 2 at 10, 3 at 15
+const BUILDING_DEFS = {
+  researchLab:     { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 200, energy: 50 }, buildTime: 500, label: 'Research Lab' },
+  foundry:         { produces: { alloys: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 250 }, buildTime: 500, label: 'Foundry' },
+  shieldGenerator: { produces: {}, consumes: { energy: 3 }, jobs: 1, cost: { minerals: 200, alloys: 100 }, buildTime: 500, label: 'Shield Generator', defensePlatformHPBonus: 25 },
+  // T2 buildings — each requires a T2 tech + the base building already built
+  quantumLab:       { produces: { physics: 3, society: 3, engineering: 2 }, consumes: { energy: 4 }, jobs: 1, cost: { minerals: 400, energy: 100 }, buildTime: 800, label: 'Quantum Lab', requires: { tech: 'advanced_reactors', building: 'researchLab' } },
+  advancedFoundry:  { produces: { alloys: 8 }, consumes: { energy: 4, minerals: 2 }, jobs: 1, cost: { minerals: 400, alloys: 100 }, buildTime: 800, label: 'Advanced Foundry', requires: { tech: 'deep_mining', building: 'foundry' } },
+  planetaryShield:  { produces: {}, consumes: { energy: 5 }, jobs: 1, cost: { minerals: 300, alloys: 200 }, buildTime: 800, label: 'Planetary Shield', defensePlatformHPBonus: 50, requires: { tech: 'gene_crops', building: 'shieldGenerator' } },
+};
+const BUILDING_SLOT_THRESHOLDS = [5, 10, 15]; // pops needed for slot 1, 2, 3
 
 // Planet types and their habitability ranges
 const PLANET_TYPES = {
@@ -57,8 +70,8 @@ const COLONY_TRAITS = {
 };
 
 // Colony ship constants
-const COLONY_SHIP_COST = { minerals: 200, food: 100, alloys: 100 };
-const COLONY_SHIP_BUILD_TIME = 600; // 60 seconds at 10Hz
+const COLONY_SHIP_COST = { minerals: 175, food: 75, alloys: 75 };
+const COLONY_SHIP_BUILD_TIME = 450; // 45 seconds at 10Hz
 const COLONY_SHIP_HOP_TICKS = 50;   // 5 seconds per hyperlane hop
 const MAX_COLONIES = 5;
 const COLONY_SHIP_STARTING_POPS = 2;
@@ -161,6 +174,10 @@ const INFLUENCE_BASE_INCOME = 2;  // +2 influence/colony/month (capital building
 const INFLUENCE_TRAIT_INCOME = 1; // +1 influence/month per colony with a personality trait
 const INFLUENCE_CAP = 200;        // Max influence stockpile
 
+// Colony upkeep scaling — energy cost per colony (indexed by colony number, 0-based)
+// Colony 1 = 0, Colony 2 = 3, Colony 3 = 8, Colony 4 = 15, Colony 5+ = 25
+const COLONY_UPKEEP = [0, 3, 8, 15, 25];
+
 // All production resource keys — hoisted to avoid per-colony Object.keys() allocation
 const PRODUCTION_RESOURCES = ['energy', 'minerals', 'food', 'alloys', 'physics', 'society', 'engineering'];
 
@@ -182,7 +199,7 @@ const MAX_CORVETTES = 10;           // max per player
 const FLEET_COMBAT_MAX_ROUNDS = 10; // max rounds per fleet battle
 const FLEET_BATTLE_WON_VP = 5;      // VP per fleet battle won
 const FLEET_SHIP_LOST_VP = -2;      // VP penalty per own ship lost in combat
-const CORVETTE_MAINTENANCE = { energy: 1, alloys: 1 };  // per base corvette per month
+const CORVETTE_MAINTENANCE = { energy: 2, alloys: 1 };  // per base corvette per month
 const CIVILIAN_SHIP_MAINTENANCE = { energy: 1 };         // per idle colony/science ship per month
 
 // Corvette variants — unlocked by T2 techs, same build cost, 500-tick build time
@@ -256,6 +273,10 @@ const FRIENDLY_HOP_RANGE = 3;          // max BFS hops for friendly production b
 const FRIENDLY_VP = 5;                 // VP per friendly relationship at game end
 const MUTUAL_FRIENDLY_VP = 10;         // VP if both players are friendly (replaces single)
 
+// Diplomacy ping constants
+const DIPLOMACY_PING_TYPES = ['peace', 'warning', 'alliance', 'rival'];
+const DIPLOMACY_PING_COOLDOWN = 100;   // 10 seconds cooldown between pings per sender
+
 // NPC raider fleet constants
 const RAIDER_MIN_INTERVAL = 1800;   // minimum ticks between raider spawns (~3 min)
 const RAIDER_MAX_INTERVAL = 3000;   // maximum ticks between raider spawns (~5 min)
@@ -267,7 +288,7 @@ const DEFENSE_PLATFORM_COST = { alloys: 100 };
 const DEFENSE_PLATFORM_BUILD_TIME = 200; // 20 seconds
 const DEFENSE_PLATFORM_MAX_HP = 50;
 const DEFENSE_PLATFORM_ATTACK = 15;  // damage per combat tick
-const DEFENSE_PLATFORM_REPAIR_RATE = 10; // HP repaired per month
+const DEFENSE_PLATFORM_REPAIR_RATE = 15; // HP repaired per month
 const RAIDER_DISABLE_TICKS = 300;    // districts disabled for 30 seconds on raid
 const RAIDER_RESOURCE_STOLEN = 50;   // 50 of each resource stolen on raid
 const RAIDER_DESTROY_VP = 5;         // +5 VP per raider destroyed
@@ -283,10 +304,36 @@ const PRECURSOR_COMBAT_TICKS = 8;        // more combat rounds than raiders
 const PRECURSOR_DESTROY_VP = 15;         // +15 VP for destroying precursor fleet
 const PRECURSOR_OCCUPY_VP = -5;          // -5 VP if precursor occupies your colony
 
+// Scouting race VP milestones — first-to-survey bonuses
+const SCOUT_MILESTONES = { 3: 10, 5: 15, 8: 20 }; // threshold -> VP bonus
+
 // Underdog catch-up mechanics
 const UNDERDOG_BONUS_PER_COLONY = 0.15;   // +15% production per colony gap vs leader
 const UNDERDOG_BONUS_CAP = 0.45;          // max +45% (3 colony gap)
 const UNDERDOG_TECH_DISCOUNT = 0.15;      // -15% tech cost per player who already completed it
+
+// Mid-game catalyst event constants
+const CATALYST_RESOURCE_RUSH_PCT = 0.30;     // fires at 30% match time elapsed
+const CATALYST_TECH_AUCTION_PCT = 0.45;      // fires at 45% match time elapsed
+const CATALYST_BORDER_INCIDENT_PCT = 0.55;   // fires at 55% match time elapsed
+const CATALYST_RUSH_INCOME = 75;             // +75 resource/month from motherlode
+const CATALYST_RUSH_DURATION = 1800;         // 1800 ticks (3 minutes)
+const CATALYST_AUCTION_WINDOW = 120;         // 120-tick bidding window (12 seconds)
+const CATALYST_INCIDENT_WINDOW = 100;        // 100-tick response window (10 seconds)
+const CATALYST_INCIDENT_BOTH_DEESCALATE_VP = 5;  // +5 VP each
+const CATALYST_INCIDENT_ESCALATE_VP = 3;         // +3 VP for sole escalator
+const CATALYST_INCIDENT_HOP_RANGE = 3;           // colonies within 3 hops
+
+// Distinct victory conditions — instant-win checked monthly
+const TOTAL_TECHS = 9;                   // 3 tiers × 3 tracks (all techs in TECH_TREE)
+const MILITARY_VICTORY_OCCUPATIONS = 3;  // occupy 3+ enemy colonies simultaneously
+const ECONOMIC_VICTORY_ALLOYS = 500;     // stockpile 500+ alloys
+const ECONOMIC_VICTORY_TRAITS = 3;       // 3+ active colony personality traits
+
+// Resource gifting
+const GIFT_MIN_AMOUNT = 25;                      // minimum 25 per gift
+const GIFT_COOLDOWN_TICKS = 200;                 // 200-tick cooldown per sender (global)
+const GIFT_ALLOWED_RESOURCES = ['energy', 'minerals', 'food', 'alloys']; // no influence or research
 
 const MONTH_TICKS = 100; // 1 "month" = 100 ticks = 10 seconds at 10Hz
 const BROADCAST_EVERY = 3; // broadcast state every N ticks (~3.3Hz at 10Hz tick rate)
@@ -357,7 +404,7 @@ const TECH_TREE = {
     track: 'physics', tier: 3,
     name: 'Fusion Reactors',
     description: '+100% Generator output, generators produce +1 alloy',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonus', district: 'generator', multiplier: 2.0, alloysBonus: 1 },
     requires: 'advanced_reactors',
   },
@@ -365,7 +412,7 @@ const TECH_TREE = {
     track: 'society', tier: 3,
     name: 'Genetic Engineering',
     description: '+100% Agriculture output, pop growth halved',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonusAndGrowth', district: 'agriculture', multiplier: 2.0, growthMultiplier: 0.5 },
     requires: 'gene_crops',
   },
@@ -373,7 +420,7 @@ const TECH_TREE = {
     track: 'engineering', tier: 3,
     name: 'Automated Mining',
     description: '+100% Mining output, mining costs 0 jobs',
-    cost: 1000,
+    cost: 800,
     effect: { type: 'districtBonus', district: 'mining', multiplier: 2.0, jobOverride: 0 },
     requires: 'deep_mining',
   },
@@ -397,7 +444,7 @@ class GameEngine {
     this._playerColonies = new Map(); // playerId -> colonyId[]
     this._colonyShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress }
     this._colonyShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
-    this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress }
+    this._scienceShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, surveying, surveyProgress, autoSurvey }
     this._scienceShipsByPlayer = new Map(); // playerId -> ship[] — O(1) per-player lookups
     this._militaryShips = []; // { id, ownerId, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._militaryShipsByPlayer = new Map(); // playerId -> ship[] — O(1) count lookups
@@ -411,6 +458,7 @@ class GameEngine {
     this._cachedState = null; // cached serialized state
     this._cachedStateJSON = null; // cached JSON string for broadcast
     this._cachedPlayerJSON = new Map(); // playerId -> cached per-player JSON string
+    this._stateCacheDirty = false; // deferred invalidation flag — avoids redundant Map.clear() between broadcasts
     this._pendingEvents = []; // events to flush with next broadcast
     this._vpCache = new Map(); // playerId -> VP, cleared on invalidation
     this._vpBreakdownCache = new Map(); // playerId -> full VP breakdown
@@ -420,6 +468,9 @@ class GameEngine {
     this._techModCache = new Map(); // playerId -> { district, growth } — cleared on tech completion
     this._traitBonusesCache = new Map(); // playerId -> bonuses — cleared on colony trait change
     this._cachedShipData = null; // cached serialized ship arrays (shared across all players)
+    this._victoryProgressCache = new Map(); // playerId -> progress, tick-scoped
+    this._victoryProgressCacheTick = -1;
+    this._cachedSurveyedArrays = new Map(); // playerId -> { size, array } — avoids Set→Array on every broadcast
     this._gameOver = false; // true after game ends
 
     // Game speed & pause
@@ -466,6 +517,13 @@ class GameEngine {
     this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
     this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
 
+    // Scouting race VP milestones — first-to-survey at 3/5/8 systems
+    this._scoutMilestones = { 3: null, 5: null, 8: null }; // threshold -> playerId (null = unclaimed)
+
+    // Match stats tracking (for post-game score screen)
+    this._matchStats = new Map(); // playerId -> { coloniesFounded, districtsBuilt, shipsBuilt, resourcesGathered }
+    this._matchStartTime = Date.now(); // wall-clock match start time
+
     // Endgame crisis tracking
     this._endgameCrisis = null;      // null | { type: 'galacticStorm' | 'precursorAwakening', triggered: true }
     this._endgameCrisisWarned = false;
@@ -476,6 +534,29 @@ class GameEngine {
     this._precursorFleet = null;     // { id, systemId, targetSystemId, path, hopProgress, hp, attack }
     this._precursorDestroyedBy = null; // playerId who destroyed precursor fleet
     this._precursorOccupiedColonies = new Set(); // colony IDs occupied by precursor
+
+    // Mid-game catalyst event tracking
+    this._catalystResourceRushFired = false;
+    this._catalystTechAuctionFired = false;
+    this._catalystBorderIncidentFired = false;
+    // Resource Rush state
+    this._resourceRushSystem = null;     // systemId of the motherlode
+    this._resourceRushResource = null;   // 'energy' | 'minerals' | 'food' | 'alloys'
+    this._resourceRushOwner = null;      // playerId who claimed it
+    this._resourceRushTicksLeft = 0;     // ticks remaining for income bonus
+    // Tech Auction state
+    this._auctionBids = null;            // Map<playerId, amount> during bidding, null otherwise
+    this._auctionDeadlineTick = 0;       // tick when auction closes
+    // Border Incident state
+    this._incidentPlayers = null;        // [playerId1, playerId2] or null
+    this._incidentChoices = null;        // Map<playerId, 'escalate'|'deescalate'> during window
+    this._incidentDeadlineTick = 0;      // tick when incident resolves
+
+    // Resource gifting cooldowns
+    this._giftCooldowns = new Map();      // playerId -> tick when cooldown expires
+
+    // Diplomacy ping cooldowns
+    this._pingCooldowns = new Map();      // playerId -> tick when cooldown expires
 
     this._initPlayerStates();
 
@@ -538,6 +619,13 @@ class GameEngine {
         activeEdict: null, // { type, monthsRemaining } or null
         diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
         pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
+      });
+      // Initialize match stats for post-game score screen
+      this._matchStats.set(playerId, {
+        coloniesFounded: 0,
+        districtsBuilt: 0,
+        shipsBuilt: 0,
+        resourcesGathered: { energy: 0, minerals: 0, food: 0, alloys: 0 },
       });
     }
   }
@@ -615,7 +703,7 @@ class GameEngine {
     for (let hop = 0; hop < FRIENDLY_HOP_RANGE; hop++) {
       const next = [];
       for (const sysId of frontier) {
-        const neighbors = this._adjacency[sysId];
+        const neighbors = this._adjacency.get(sysId);
         if (!neighbors) continue;
         for (const nId of neighbors) {
           if (visited.has(nId)) continue;
@@ -736,6 +824,8 @@ class GameEngine {
         habitability: planet.habitability,
       },
       districts: [],               // built districts: { id, type }
+      buildings: [],               // built buildings: { id, type, slot }
+      buildingQueue: [],           // { id, type, slot, ticksRemaining }
       buildQueue: [],              // { id, type, ticksRemaining }
       isStartingColony: false,     // true for initial colonies, no build discount
       playerBuiltDistricts: 0,    // count of districts player has built (not pre-built)
@@ -785,7 +875,7 @@ class GameEngine {
   _invalidateStateCache() {
     this._cachedState = null;
     this._cachedStateJSON = null;
-    this._cachedPlayerJSON.clear();
+    this._stateCacheDirty = true; // defer Map.clear() until cache is actually read
     this._cachedShipData = null;
   }
 
@@ -853,8 +943,25 @@ class GameEngine {
       const jobCount = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
       jobs += jobCount;
     }
+    // Building jobs
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (bDef) jobs += bDef.jobs;
+    }
     colony._cachedJobs = jobs;
     return jobs;
+  }
+
+  // Calculate effective defense platform max HP (base + Shield Generator bonus)
+  _calcDefensePlatformMaxHP(colony) {
+    let maxHp = DEFENSE_PLATFORM_MAX_HP;
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (bDef && bDef.defensePlatformHPBonus) {
+        maxHp += bDef.defensePlatformHPBonus;
+      }
+    }
+    return maxHp;
   }
 
   // Calculate colony personality trait based on district composition
@@ -935,9 +1042,11 @@ class GameEngine {
       // Effective job cost (T3 Automated Mining makes mining districts cost 0 jobs)
       const effectiveJobs = (techMods.jobOverride[d.type] !== undefined) ? techMods.jobOverride[d.type] : def.jobs;
 
-      // Jobless districts (e.g., housing, or districts with tech job override) still consume resources
+      // Jobless districts (e.g., housing) produce and consume without requiring a pop
       if (effectiveJobs === 0 && def.jobs === 0) {
-        // Naturally jobless (housing) — consume only, no production
+        for (const [resource, amount] of Object.entries(def.produces)) {
+          production[resource] = (production[resource] || 0) + amount;
+        }
         for (const [resource, amount] of Object.entries(def.consumes)) {
           consumption[resource] = (consumption[resource] || 0) + amount;
         }
@@ -968,6 +1077,22 @@ class GameEngine {
         }
       }
       for (const [resource, amount] of Object.entries(def.consumes)) {
+        consumption[resource] = (consumption[resource] || 0) + amount;
+      }
+    }
+
+    // Building production (buildings use pops from the same pool as districts)
+    for (const b of (colony.buildings || [])) {
+      const bDef = BUILDING_DEFS[b.type];
+      if (!bDef) continue;
+      if (bDef.jobs > 0) {
+        if (assignedPops >= workingPops) break;
+        assignedPops++;
+      }
+      for (const [resource, amount] of Object.entries(bDef.produces)) {
+        production[resource] = (production[resource] || 0) + amount;
+      }
+      for (const [resource, amount] of Object.entries(bDef.consumes)) {
         consumption[resource] = (consumption[resource] || 0) + amount;
       }
     }
@@ -1120,6 +1245,15 @@ class GameEngine {
         state.resources.research.society += production.society;
         state.resources.research.engineering += production.engineering;
 
+        // Track total resources gathered for post-game stats
+        const ms = this._matchStats.get(playerId);
+        if (ms) {
+          ms.resourcesGathered.energy += production.energy;
+          ms.resourcesGathered.minerals += production.minerals;
+          ms.resourcesGathered.food += production.food;
+          ms.resourcesGathered.alloys += production.alloys;
+        }
+
         // Apply consumption
         state.resources.energy -= consumption.energy;
         state.resources.minerals -= consumption.minerals;
@@ -1168,6 +1302,16 @@ class GameEngine {
         if (toRemove.length > 0) {
           this._emitEvent('maintenanceAttrition', playerId, { shipsLost: toRemove.length }, true);
         }
+      }
+
+      // Colony upkeep scaling — colonies beyond the first cost energy
+      const colonyCount = colonyIds.length;
+      if (colonyCount > 1) {
+        let totalUpkeep = 0;
+        for (let i = 1; i < colonyCount; i++) {
+          totalUpkeep += COLONY_UPKEEP[Math.min(i, COLONY_UPKEEP.length - 1)];
+        }
+        state.resources.energy -= totalUpkeep;
       }
 
       this._dirtyPlayers.add(playerId);
@@ -1334,6 +1478,360 @@ class GameEngine {
         }, true);
       }
     }
+  }
+
+  // ── Mid-game Catalyst Events ──
+
+  _processCatalystEvents() {
+    if (!this._matchTimerEnabled || this._gameOver) return;
+
+    // Fast exit: all events fired and no active rush/auction/incident in progress
+    if (this._catalystResourceRushFired && this._catalystTechAuctionFired && this._catalystBorderIncidentFired
+        && !this._resourceRushOwner && !this._auctionBids && !this._incidentPlayers) {
+      return;
+    }
+
+    const elapsed = this._matchTicksTotal - this._matchTicksRemaining;
+    const pct = elapsed / this._matchTicksTotal;
+
+    // 1. Resource Rush at 30%
+    if (!this._catalystResourceRushFired && pct >= CATALYST_RESOURCE_RUSH_PCT) {
+      this._catalystResourceRushFired = true;
+      this._triggerResourceRush();
+    }
+
+    // Resource Rush income processing (every month tick)
+    if (this._resourceRushOwner && this._resourceRushTicksLeft > 0) {
+      this._resourceRushTicksLeft--;
+      if (this.tickCount % MONTH_TICKS === 0) {
+        const state = this.playerStates.get(this._resourceRushOwner);
+        if (state) {
+          state.resources[this._resourceRushResource] += CATALYST_RUSH_INCOME;
+          this._dirtyPlayers.add(this._resourceRushOwner);
+          this._invalidateStateCache();
+        }
+      }
+      if (this._resourceRushTicksLeft <= 0) {
+        this._emitEvent('resourceRushExpired', null, {
+          systemId: this._resourceRushSystem,
+          resource: this._resourceRushResource,
+        }, true);
+        this._resourceRushOwner = null;
+      }
+    }
+
+    // 2. Tech Auction at 45%
+    if (!this._catalystTechAuctionFired && pct >= CATALYST_TECH_AUCTION_PCT) {
+      this._catalystTechAuctionFired = true;
+      this._triggerTechAuction();
+    }
+
+    // Resolve tech auction when window closes
+    if (this._auctionBids && this.tickCount >= this._auctionDeadlineTick) {
+      this._resolveTechAuction();
+    }
+
+    // 3. Border Incident at 55%
+    if (!this._catalystBorderIncidentFired && pct >= CATALYST_BORDER_INCIDENT_PCT) {
+      this._catalystBorderIncidentFired = true;
+      this._triggerBorderIncident();
+    }
+
+    // Resolve border incident when window closes
+    if (this._incidentPlayers && this.tickCount >= this._incidentDeadlineTick) {
+      this._resolveBorderIncident();
+    }
+  }
+
+  _triggerResourceRush() {
+    // Find an unsurveyed system (not surveyed by any player)
+    const allSurveyed = new Set();
+    for (const [, sysSet] of this._surveyedSystems) {
+      for (const sid of sysSet) allSurveyed.add(sid);
+    }
+    // Also exclude systems with colonies (collect colonized set in one pass)
+    const colonySystems = new Set();
+    for (const [, colony] of this.colonies) {
+      allSurveyed.add(colony.systemId);
+      colonySystems.add(colony.systemId);
+    }
+
+    let sys;
+    const candidates = this.galaxy.systems.filter(s => !allSurveyed.has(s.id));
+    if (candidates.length === 0) {
+      // All systems surveyed — pick a random unclaimed system instead
+      const unclaimedSystems = this.galaxy.systems.filter(s => !colonySystems.has(s.id));
+      if (unclaimedSystems.length === 0) return; // no valid system
+      sys = unclaimedSystems[Math.floor(Math.random() * unclaimedSystems.length)];
+    } else {
+      sys = candidates[Math.floor(Math.random() * candidates.length)];
+    }
+    this._resourceRushSystem = sys.id;
+
+    const resources = ['energy', 'minerals', 'food', 'alloys'];
+    this._resourceRushResource = resources[Math.floor(Math.random() * resources.length)];
+    this._resourceRushOwner = null;
+    this._resourceRushTicksLeft = 0;
+
+    const sysName = sys.name || 'Unknown System';
+
+    this._emitEvent('resourceRush', null, {
+      systemId: this._resourceRushSystem,
+      systemName: sysName,
+      resource: this._resourceRushResource,
+      income: CATALYST_RUSH_INCOME,
+      durationTicks: CATALYST_RUSH_DURATION,
+    }, true);
+  }
+
+  // Called when a player stations a military ship or colonizes the rush system
+  _claimResourceRush(playerId) {
+    if (this._resourceRushSystem === null || this._resourceRushOwner) return false;
+    this._resourceRushOwner = playerId;
+    this._resourceRushTicksLeft = CATALYST_RUSH_DURATION;
+    const state = this.playerStates.get(playerId);
+    const playerName = state ? state.name : 'Unknown';
+    this._emitEvent('resourceRushClaimed', null, {
+      playerId,
+      playerName,
+      systemId: this._resourceRushSystem,
+      resource: this._resourceRushResource,
+      income: CATALYST_RUSH_INCOME,
+    }, true);
+    this._invalidateStateCache();
+    return true;
+  }
+
+  _triggerTechAuction() {
+    // Only if there are players with active T2 research
+    this._auctionBids = new Map();
+    this._auctionDeadlineTick = this.tickCount + CATALYST_AUCTION_WINDOW;
+
+    this._emitEvent('techAuction', null, {
+      deadlineTick: this._auctionDeadlineTick,
+      windowTicks: CATALYST_AUCTION_WINDOW,
+    }, true);
+  }
+
+  _resolveTechAuction() {
+    const bids = this._auctionBids;
+    this._auctionBids = null; // close bidding
+
+    if (!bids || bids.size === 0) {
+      this._emitEvent('techAuctionResult', null, {
+        winner: null,
+        reason: 'No bids received',
+      }, true);
+      return;
+    }
+
+    // Find highest bidder
+    let winnerId = null;
+    let highestBid = 0;
+    for (const [pid, amount] of bids) {
+      if (amount > highestBid) {
+        highestBid = amount;
+        winnerId = pid;
+      }
+    }
+
+    // Deduct influence from ALL bidders
+    for (const [pid, amount] of bids) {
+      const state = this.playerStates.get(pid);
+      if (state) {
+        state.resources.influence = Math.max(0, state.resources.influence - amount);
+        this._dirtyPlayers.add(pid);
+      }
+    }
+
+    // Winner instantly completes their current research (first T2 found, or any current)
+    let completedTech = null;
+    if (winnerId) {
+      const winnerState = this.playerStates.get(winnerId);
+      if (winnerState) {
+        // Find current research to complete (prefer T2)
+        for (const track of ['physics', 'society', 'engineering']) {
+          const techId = winnerState.currentResearch[track];
+          if (!techId) continue;
+          const techDef = TECH_TREE[techId];
+          if (techDef && techDef.tier === 2) {
+            completedTech = techId;
+            break;
+          }
+        }
+        // Fallback: complete any current research
+        if (!completedTech) {
+          for (const track of ['physics', 'society', 'engineering']) {
+            const techId = winnerState.currentResearch[track];
+            if (techId) { completedTech = techId; break; }
+          }
+        }
+        // Complete the tech
+        if (completedTech) {
+          const techDef = TECH_TREE[completedTech];
+          if (techDef && !winnerState.completedTechs.includes(completedTech)) {
+            winnerState.completedTechs.push(completedTech);
+            winnerState.currentResearch[techDef.track] = null;
+            delete winnerState.researchProgress[completedTech];
+            this._invalidatePlayerProductionCaches(winnerId);
+            this._vpCacheTick = -1;
+          }
+        }
+      }
+    }
+
+    const winnerState = winnerId ? this.playerStates.get(winnerId) : null;
+    this._emitEvent('techAuctionResult', null, {
+      winner: winnerId,
+      winnerName: winnerState ? winnerState.name : null,
+      winningBid: highestBid,
+      completedTech,
+      techName: completedTech && TECH_TREE[completedTech] ? TECH_TREE[completedTech].name : null,
+      totalBidders: bids.size,
+    }, true);
+
+    this._invalidateStateCache();
+  }
+
+  _triggerBorderIncident() {
+    // Find two players with colonies within CATALYST_INCIDENT_HOP_RANGE hops
+    const playerIds = [...this.playerStates.keys()];
+    if (playerIds.length < 2) return;
+
+    const pair = this._findNearbyPlayerPair(playerIds, CATALYST_INCIDENT_HOP_RANGE);
+    if (!pair) return;
+
+    this._incidentPlayers = pair;
+    this._incidentChoices = new Map();
+    this._incidentDeadlineTick = this.tickCount + CATALYST_INCIDENT_WINDOW;
+
+    const state1 = this.playerStates.get(pair[0]);
+    const state2 = this.playerStates.get(pair[1]);
+    this._emitEvent('borderIncident', null, {
+      players: pair,
+      playerNames: [state1 ? state1.name : 'Unknown', state2 ? state2.name : 'Unknown'],
+      deadlineTick: this._incidentDeadlineTick,
+      windowTicks: CATALYST_INCIDENT_WINDOW,
+    }, true);
+  }
+
+  // Find two players who have colonies within N hops of each other
+  _findNearbyPlayerPair(playerIds, maxHops) {
+    const adj = this._adjacency;
+    if (!adj) return null;
+
+    // Build player -> [systemIds] map
+    const playerSystems = new Map();
+    for (const pid of playerIds) {
+      const colIds = this._playerColonies.get(pid) || [];
+      const systems = [];
+      for (const cid of colIds) {
+        const c = this.colonies.get(cid);
+        if (c) systems.push(c.systemId);
+      }
+      if (systems.length > 0) playerSystems.set(pid, systems);
+    }
+
+    const pids = [...playerSystems.keys()];
+    // Shuffle to randomize which pair is selected
+    for (let i = pids.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pids[i], pids[j]] = [pids[j], pids[i]];
+    }
+
+    for (let i = 0; i < pids.length; i++) {
+      for (let j = i + 1; j < pids.length; j++) {
+        const sysA = playerSystems.get(pids[i]);
+        const sysB = new Set(playerSystems.get(pids[j]));
+
+        // BFS from each of player A's colonies up to maxHops
+        for (const startSys of sysA) {
+          const visited = new Set([startSys]);
+          let frontier = [startSys];
+          for (let hop = 0; hop < maxHops; hop++) {
+            const next = [];
+            for (const sysId of frontier) {
+              const neighbors = adj.get(sysId) || [];
+              for (const nId of neighbors) {
+                if (visited.has(nId)) continue;
+                visited.add(nId);
+                next.push(nId);
+                if (sysB.has(nId)) return [pids[i], pids[j]];
+              }
+            }
+            frontier = next;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  _resolveBorderIncident() {
+    const players = this._incidentPlayers;
+    const choices = this._incidentChoices;
+    this._incidentPlayers = null;
+    this._incidentChoices = null;
+
+    if (!players || !choices) return;
+
+    // Default to de-escalate if no response
+    const choice1 = choices.get(players[0]) || 'deescalate';
+    const choice2 = choices.get(players[1]) || 'deescalate';
+
+    const state1 = this.playerStates.get(players[0]);
+    const state2 = this.playerStates.get(players[1]);
+    const name1 = state1 ? state1.name : 'Unknown';
+    const name2 = state2 ? state2.name : 'Unknown';
+
+    let result;
+    if (choice1 === 'deescalate' && choice2 === 'deescalate') {
+      // Both de-escalate: +5 VP each
+      result = 'both_deescalate';
+      // VP is tracked via breakdown — add bonus VP directly
+      if (state1) { state1._catalystVP = (state1._catalystVP || 0) + CATALYST_INCIDENT_BOTH_DEESCALATE_VP; }
+      if (state2) { state2._catalystVP = (state2._catalystVP || 0) + CATALYST_INCIDENT_BOTH_DEESCALATE_VP; }
+    } else if (choice1 === 'escalate' && choice2 === 'escalate') {
+      // Both escalate: both go hostile, no VP
+      result = 'both_escalate';
+      this._forceHostile(players[0], players[1]);
+    } else {
+      // One escalates: escalator gets +3 VP, other forced to hostile stance
+      result = 'one_escalate';
+      const escalator = choice1 === 'escalate' ? players[0] : players[1];
+      const victim = choice1 === 'escalate' ? players[1] : players[0];
+      const escalatorState = this.playerStates.get(escalator);
+      if (escalatorState) { escalatorState._catalystVP = (escalatorState._catalystVP || 0) + CATALYST_INCIDENT_ESCALATE_VP; }
+      this._forceHostile(escalator, victim);
+    }
+
+    this._vpCacheTick = -1;
+    this._invalidateStateCache();
+
+    this._emitEvent('borderIncidentResult', null, {
+      players,
+      playerNames: [name1, name2],
+      choices: { [players[0]]: choice1, [players[1]]: choice2 },
+      result,
+    }, true);
+  }
+
+  // Force mutual hostile stance between two players
+  _forceHostile(pid1, pid2) {
+    const state1 = this.playerStates.get(pid1);
+    const state2 = this.playerStates.get(pid2);
+    if (state1) {
+      if (!state1.diplomacy[pid2]) state1.diplomacy[pid2] = { stance: DIPLOMACY_STANCES.NEUTRAL, cooldownTick: 0 };
+      state1.diplomacy[pid2].stance = DIPLOMACY_STANCES.HOSTILE;
+      state1.pendingFriendly.delete(pid2);
+    }
+    if (state2) {
+      if (!state2.diplomacy[pid1]) state2.diplomacy[pid1] = { stance: DIPLOMACY_STANCES.NEUTRAL, cooldownTick: 0 };
+      state2.diplomacy[pid1].stance = DIPLOMACY_STANCES.HOSTILE;
+      state2.pendingFriendly.delete(pid1);
+    }
+    this._dirtyPlayers.add(pid1);
+    this._dirtyPlayers.add(pid2);
   }
 
   _spawnPrecursorFleet() {
@@ -1913,6 +2411,9 @@ class GameEngine {
   _processDefensePlatformRepair() {
     for (const [, colony] of this.colonies) {
       if (!colony.defensePlatform || colony.defensePlatform.building) continue;
+      // Recalculate maxHp in case Shield Generator was built/destroyed since last check
+      const effectiveMax = this._calcDefensePlatformMaxHP(colony);
+      colony.defensePlatform.maxHp = effectiveMax;
       if (colony.defensePlatform.hp < colony.defensePlatform.maxHp) {
         colony.defensePlatform.hp = Math.min(
           colony.defensePlatform.maxHp,
@@ -1960,7 +2461,11 @@ class GameEngine {
       if (item.ticksRemaining <= 0) {
         colony.buildQueue.shift();
 
+        // Track match stats for construction
+        const buildStats = this._matchStats.get(colony.ownerId);
+
         if (item.type === 'colonyShip') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn colony ship at colony's system
           const shipId = this._nextId();
           const colonyShip = {
@@ -1984,6 +2489,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else if (item.type === 'scienceShip') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn science ship at colony's system
           const shipId = this._nextId();
           const sciShip = {
@@ -1995,6 +2501,7 @@ class GameEngine {
             hopProgress: 0,
             surveying: false,
             surveyProgress: 0,
+            autoSurvey: true,
           };
           this._scienceShips.push(sciShip);
           let sArr = this._scienceShipsByPlayer.get(colony.ownerId);
@@ -2009,6 +2516,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else if (item.type === 'corvette') {
+          if (buildStats) buildStats.shipsBuilt++;
           // Spawn corvette at colony's system — use variant stats if specified
           const shipId = this._nextId();
           const vDef = item.variant ? CORVETTE_VARIANTS[item.variant] : null;
@@ -2035,6 +2543,7 @@ class GameEngine {
             playerName: ownerName,
           }, true);
         } else {
+          if (buildStats) buildStats.districtsBuilt++;
           const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
@@ -2060,6 +2569,43 @@ class GameEngine {
         }
 
         if (colony.buildQueue.length === 0) {
+          this._emitEvent('queueEmpty', colony.ownerId, {
+            colonyId: colony.id,
+            colonyName: colony.name,
+          });
+        }
+      }
+    }
+  }
+
+  // Process building construction queues
+  _processBuildingConstruction() {
+    for (const [, colony] of this.colonies) {
+      if (!colony.buildingQueue || colony.buildingQueue.length === 0) continue;
+      this._dirtyPlayers.add(colony.ownerId);
+      const item = colony.buildingQueue[0];
+      item.ticksRemaining--;
+      if (item.ticksRemaining <= 0) {
+        colony.buildingQueue.shift();
+        colony.buildings.push({ id: item.id, type: item.type, slot: item.slot });
+        this._invalidateColonyCache(colony);
+        const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
+        this._emitEvent('constructionComplete', colony.ownerId, {
+          colonyId: colony.id,
+          colonyName: colony.name,
+          districtType: item.type,
+          playerName: ownerName,
+        }, true);
+
+        // If Shield Generator was built and colony has a defense platform, update maxHp
+        const bDef = BUILDING_DEFS[item.type];
+        if (bDef && bDef.defensePlatformHPBonus && colony.defensePlatform && !colony.defensePlatform.building) {
+          colony.defensePlatform.maxHp = this._calcDefensePlatformMaxHP(colony);
+          // HP is boosted immediately (shields activate)
+          colony.defensePlatform.hp = Math.min(colony.defensePlatform.hp + bDef.defensePlatformHPBonus, colony.defensePlatform.maxHp);
+        }
+
+        if (colony.buildingQueue.length === 0 && colony.buildQueue.length === 0) {
           this._emitEvent('queueEmpty', colony.ownerId, {
             colonyId: colony.id,
             colonyName: colony.name,
@@ -2810,6 +3356,11 @@ class GameEngine {
         newSysArr.push(ship);
         this._dirtyPlayers.add(ship.ownerId);
 
+        // Check if this system is the Resource Rush motherlode
+        if (this._resourceRushSystem !== null && ship.systemId === this._resourceRushSystem && !this._resourceRushOwner) {
+          this._claimResourceRush(ship.ownerId);
+        }
+
         if (ship.path.length === 0) {
           // Arrived at final destination — clear target
           ship.targetSystemId = null;
@@ -3237,8 +3788,15 @@ class GameEngine {
     colony.pops = COLONY_SHIP_STARTING_POPS;
     colony.isStartingColony = false;
 
+    // Colony established bonus: free mining district from colony ship materials
+    this._addBuiltDistrict(colony, 'mining');
+
     // Remove ship
     this._removeColonyShip(ship);
+
+    // Track match stats
+    const stats = this._matchStats.get(ship.ownerId);
+    if (stats) stats.coloniesFounded++;
 
     // Emit colony founded event (broadcast to all players)
     const playerState = this.playerStates.get(ship.ownerId);
@@ -3249,6 +3807,11 @@ class GameEngine {
       planetType: planet.type,
       playerName: playerState ? playerState.name : 'Unknown',
     }, true);
+
+    // Check Resource Rush claim via colonization
+    if (this._resourceRushSystem !== null && ship.targetSystemId === this._resourceRushSystem && !this._resourceRushOwner) {
+      this._claimResourceRush(ship.ownerId);
+    }
 
     // Underdog bonus changes when colony count changes — invalidate all production caches
     this._invalidateAllProductionCaches();
@@ -3381,6 +3944,24 @@ class GameEngine {
     this._dirtyPlayers.add(ship.ownerId);
     this._invalidateStateCache();
     this._vpCacheTick = -1;
+
+    // Check scouting race VP milestones
+    const surveyedCount = this._surveyedSystems.get(ship.ownerId) ? this._surveyedSystems.get(ship.ownerId).size : 0;
+    for (const threshold of Object.keys(SCOUT_MILESTONES)) {
+      const t = Number(threshold);
+      if (surveyedCount >= t && this._scoutMilestones[t] === null) {
+        this._scoutMilestones[t] = ship.ownerId;
+        const vpAwarded = SCOUT_MILESTONES[t];
+        this._emitEvent('scoutMilestone', ship.ownerId, {
+          threshold: t,
+          vp: vpAwarded,
+          playerName: ownerName,
+        }, true);
+      }
+    }
+
+    // Auto-chain: find next unsurveyed system within 3 hops and dispatch
+    this._autoChainSurvey(ship);
   }
 
   // Simple seeded random for survey determinism (hash-based, not stored)
@@ -3412,6 +3993,53 @@ class GameEngine {
       ship.path = nearestPath;
       ship.hopProgress = 0;
     }
+  }
+
+  // Auto-chain: find nearest unsurveyed system within 3 hops and dispatch.
+  // Single BFS with parent tracking — no redundant _findPath call.
+  _autoChainSurvey(ship) {
+    if (!ship.autoSurvey) return false;
+    if (!this.galaxy) return false;
+
+    const surveyed = this._surveyedSystems.get(ship.ownerId) || new Set();
+    const adj = this._adjacency;
+    const maxDepth = 3;
+
+    // BFS from ship's current position, max 3 hops, tracking parents for path reconstruction
+    const parent = new Map();
+    const visited = new Set([ship.systemId]);
+    let frontier = [ship.systemId];
+    for (let depth = 1; depth <= maxDepth; depth++) {
+      const nextFrontier = [];
+      for (const sysId of frontier) {
+        const neighbors = adj.get(sysId) || [];
+        for (const neighbor of neighbors) {
+          if (visited.has(neighbor)) continue;
+          visited.add(neighbor);
+          parent.set(neighbor, sysId);
+
+          // Found an unsurveyed system — reconstruct path and dispatch
+          if (!surveyed.has(neighbor)) {
+            const path = [];
+            let node = neighbor;
+            while (node !== ship.systemId) {
+              path.push(node);
+              node = parent.get(node);
+            }
+            path.reverse();
+            ship.targetSystemId = neighbor;
+            ship.path = path;
+            ship.hopProgress = 0;
+            this._dirtyPlayers.add(ship.ownerId);
+            this._invalidateStateCache();
+            return true;
+          }
+          nextFrontier.push(neighbor);
+        }
+      }
+      frontier = nextFrontier;
+    }
+    return false; // No unsurveyed system within range
   }
 
   // Remove a science ship by reference
@@ -3483,7 +4111,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, scoutMilestonesVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
       return empty;
     }
 
@@ -3530,6 +4158,14 @@ class GameEngine {
     const surveyedSet = this._surveyedSystems.get(playerId);
     const surveyed = surveyedSet ? surveyedSet.size : 0;
     const surveyedVP = Math.floor(surveyed / 5);
+
+    // Scouting race milestone VP: first-to-survey bonuses
+    let scoutMilestonesVP = 0;
+    for (const [threshold, vpBonus] of Object.entries(SCOUT_MILESTONES)) {
+      if (this._scoutMilestones[Number(threshold)] === playerId) {
+        scoutMilestonesVP += vpBonus;
+      }
+    }
 
     // Raider VP: +5 per raider destroyed
     const raidersDestroyed = this._raidersDestroyed.get(playerId) || 0;
@@ -3597,7 +4233,10 @@ class GameEngine {
     }
     precursorVP += precursorOccupiedCount * PRECURSOR_OCCUPY_VP;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP;
+    // Catalyst event VP (border incident)
+    const catalystVP = state._catalystVP || 0;
+
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -3606,6 +4245,7 @@ class GameEngine {
       techs: (state.completedTechs || []).length, techVP,
       traits: traitCount, traitsVP,
       surveyed, surveyedVP,
+      scoutMilestonesVP,
       raidersDestroyed, raidersVP,
       corvettes, militaryVP,
       battlesWon, battlesWonVP,
@@ -3614,6 +4254,8 @@ class GameEngine {
       coloniesOccupied, occupiedDefenderVP,
       friendlyCount, mutualFriendlyCount, diplomacyVP,
       precursorVP, precursorOccupiedCount,
+      catalystVP,
+      victoryProgress: this._calcVictoryProgress(playerId),
     };
     this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
@@ -3627,6 +4269,82 @@ class GameEngine {
       return this._vpCache.get(playerId);
     }
     return this._calcVPBreakdown(playerId).vp;
+  }
+
+  // Check distinct victory conditions — called monthly
+  _checkVictoryConditions() {
+    if (this._gameOver) return;
+    for (const [playerId, state] of this.playerStates) {
+      // Scientific Victory: complete all 9 techs
+      const techCount = (state.completedTechs || []).length;
+      if (techCount >= TOTAL_TECHS) {
+        this._triggerGameOver({ type: 'scientific', playerId, playerName: state.name });
+        return;
+      }
+
+      // Military Victory: occupy 3+ enemy colonies
+      let occupying = 0;
+      for (const colony of this.colonies.values()) {
+        if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+          occupying++;
+        }
+      }
+      if (occupying >= MILITARY_VICTORY_OCCUPATIONS) {
+        this._triggerGameOver({ type: 'military', playerId, playerName: state.name });
+        return;
+      }
+
+      // Economic Victory: 500+ alloys AND 3+ colony traits
+      let traitCount = 0;
+      const colonyIds = this._playerColonies.get(playerId) || [];
+      for (const colonyId of colonyIds) {
+        const colony = this.colonies.get(colonyId);
+        if (colony && this._calcColonyTrait(colony)) traitCount++;
+      }
+      if (state.resources.alloys >= ECONOMIC_VICTORY_ALLOYS && traitCount >= ECONOMIC_VICTORY_TRAITS) {
+        this._triggerGameOver({ type: 'economic', playerId, playerName: state.name });
+        return;
+      }
+    }
+  }
+
+  // Calculate victory progress for all players (tick-scoped cache — avoids re-iterating all
+  // colonies per player during serialization, which is called once per dirty player per broadcast)
+  _calcVictoryProgress(playerId) {
+    if (this._victoryProgressCacheTick === this.tickCount) {
+      const cached = this._victoryProgressCache.get(playerId);
+      if (cached) return cached;
+    } else {
+      this._victoryProgressCacheTick = this.tickCount;
+      this._victoryProgressCache.clear();
+    }
+
+    const state = this.playerStates.get(playerId);
+    if (!state) return { scientific: { current: 0, target: TOTAL_TECHS }, military: { current: 0, target: MILITARY_VICTORY_OCCUPATIONS }, economic: { alloys: 0, alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: 0, traitsTarget: ECONOMIC_VICTORY_TRAITS } };
+
+    const techCount = (state.completedTechs || []).length;
+
+    let occupying = 0;
+    for (const colony of this.colonies.values()) {
+      if (colony.occupiedBy === playerId && colony.ownerId !== playerId) {
+        occupying++;
+      }
+    }
+
+    let traitCount = 0;
+    const colonyIds = this._playerColonies.get(playerId) || [];
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && this._calcColonyTrait(colony)) traitCount++;
+    }
+
+    const progress = {
+      scientific: { current: techCount, target: TOTAL_TECHS },
+      military: { current: occupying, target: MILITARY_VICTORY_OCCUPATIONS },
+      economic: { alloys: Math.floor(state.resources.alloys), alloysTarget: ECONOMIC_VICTORY_ALLOYS, traits: traitCount, traitsTarget: ECONOMIC_VICTORY_TRAITS },
+    };
+    this._victoryProgressCache.set(playerId, progress);
+    return progress;
   }
 
   // Process match timer countdown
@@ -3661,7 +4379,8 @@ class GameEngine {
   }
 
   // End the game and determine winner
-  _triggerGameOver() {
+  // victoryInfo: optional { type: 'scientific'|'military'|'economic', playerId, playerName }
+  _triggerGameOver(victoryInfo) {
     if (this._gameOver) return;
     this._gameOver = true;
 
@@ -3679,12 +4398,35 @@ class GameEngine {
 
     // Sort by VP descending
     scores.sort((a, b) => b.vp - a.vp);
-    const winner = scores.length > 0 ? scores[0] : null;
+
+    // Determine winner: instant-win player OR highest VP
+    let winner;
+    if (victoryInfo) {
+      const score = scores.find(s => s.playerId === victoryInfo.playerId);
+      winner = score || scores[0] || null;
+    } else {
+      winner = scores.length > 0 ? scores[0] : null;
+    }
+
+    // Compute match duration in seconds (wall clock)
+    const matchDurationMs = Date.now() - this._matchStartTime;
+    const matchDurationSec = Math.floor(matchDurationMs / 1000);
+
+    // Attach per-player match stats to scores
+    for (const s of scores) {
+      const ms = this._matchStats.get(s.playerId);
+      s.matchStats = ms ? { ...ms, resourcesGathered: { ...ms.resourcesGathered } } : {
+        coloniesFounded: 0, districtsBuilt: 0, shipsBuilt: 0,
+        resourcesGathered: { energy: 0, minerals: 0, food: 0, alloys: 0 },
+      };
+    }
 
     const gameOverData = {
       winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
+      victoryType: victoryInfo ? victoryInfo.type : 'vp',
       scores,
       finalTick: this.tickCount,
+      matchDurationSec,
     };
 
     if (this.onGameOver) {
@@ -3812,6 +4554,7 @@ class GameEngine {
 
     // Process construction every tick
     this._processConstruction();
+    this._processBuildingConstruction();
 
     // Process defense platform construction every tick
     this._processDefensePlatformConstruction();
@@ -3844,6 +4587,9 @@ class GameEngine {
     this._processEndgameCrisis();
     this._processPrecursorMovement();
 
+    // Mid-game catalyst events
+    this._processCatalystEvents();
+
     // NPC raider fleet processing every tick
     this._processRaiderSpawning();
     this._processRaiderMovement();
@@ -3858,6 +4604,7 @@ class GameEngine {
       this._processEdicts();
       this._processInfluenceIncome();
       this._processDefensePlatformRepair();
+      this._checkVictoryConditions();
     }
 
     // Flush events — send per-player event messages
@@ -3946,6 +4693,68 @@ class GameEngine {
         return { ok: true, id };
       }
 
+      case 'buildBuilding': {
+        const { colonyId, buildingType } = cmd;
+        if (!colonyId || !buildingType) return { error: 'Missing parameters' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+        const bDef = BUILDING_DEFS[buildingType];
+        if (!bDef) return { error: 'Invalid building type' };
+
+        // Check how many building slots are unlocked
+        let unlockedSlots = 0;
+        for (const threshold of BUILDING_SLOT_THRESHOLDS) {
+          if (colony.pops >= threshold) unlockedSlots++;
+        }
+        const usedSlots = colony.buildings.length + colony.buildingQueue.length;
+        if (usedSlots >= unlockedSlots) {
+          return { error: 'No building slots available' };
+        }
+
+        // Check duplicate — max 1 of each type per colony (built + queued)
+        const hasDuplicate = colony.buildings.some(b => b.type === buildingType) ||
+                             colony.buildingQueue.some(b => b.type === buildingType);
+        if (hasDuplicate) {
+          return { error: 'Already have this building type' };
+        }
+
+        // T2 building prerequisites: requires specific tech + base building
+        if (bDef.requires) {
+          const state_ = this.playerStates.get(playerId);
+          if (bDef.requires.tech && !(state_.completedTechs || []).includes(bDef.requires.tech)) {
+            return { error: `Requires ${TECH_TREE[bDef.requires.tech].name}` };
+          }
+          if (bDef.requires.building) {
+            const hasBase = colony.buildings.some(b => b.type === bDef.requires.building);
+            if (!hasBase) {
+              return { error: `Requires ${BUILDING_DEFS[bDef.requires.building].label}` };
+            }
+          }
+        }
+
+        // Check resource cost
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(bDef.cost)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+
+        // Deduct resources
+        for (const [resource, amount] of Object.entries(bDef.cost)) {
+          state.resources[resource] -= amount;
+        }
+
+        const slot = usedSlots; // 0-indexed slot
+        const id = this._nextId();
+        colony.buildingQueue.push({ id, type: buildingType, slot, ticksRemaining: bDef.buildTime });
+        this._dirtyPlayers.add(playerId);
+        this._invalidateColonyCache(colony);
+        return { ok: true, id };
+      }
+
       case 'demolish': {
         const { colonyId, districtId } = cmd;
         if (!colonyId || !districtId) return { error: 'Missing parameters' };
@@ -3981,6 +4790,31 @@ class GameEngine {
           colony.buildQueue.splice(qIdx, 1);
           this._dirtyPlayers.add(playerId);
           this._invalidateStateCache();
+          return { ok: true };
+        }
+
+        // Check built buildings
+        const bIdx = colony.buildings.findIndex(b => b.id === districtId);
+        if (bIdx !== -1) {
+          colony.buildings.splice(bIdx, 1);
+          this._invalidateColonyCache(colony);
+          return { ok: true };
+        }
+
+        // Check building queue — cancel with 50% resource refund
+        const bqIdx = colony.buildingQueue.findIndex(b => b.id === districtId);
+        if (bqIdx !== -1) {
+          const bqItem = colony.buildingQueue[bqIdx];
+          const bCostTable = (BUILDING_DEFS[bqItem.type] || {}).cost;
+          if (bCostTable) {
+            const player = this.playerStates.get(playerId);
+            for (const [resource, amount] of Object.entries(bCostTable)) {
+              player.resources[resource] += Math.floor(amount / 2);
+            }
+          }
+          colony.buildingQueue.splice(bqIdx, 1);
+          this._dirtyPlayers.add(playerId);
+          this._invalidateColonyCache(colony);
           return { ok: true };
         }
 
@@ -4150,6 +4984,21 @@ class GameEngine {
         this._dirtyPlayers.add(playerId);
         this._invalidateStateCache();
         return { ok: true };
+      }
+
+      case 'toggleAutoSurvey': {
+        const { shipId } = cmd;
+        if (!shipId) return { error: 'Missing shipId' };
+        const ship = (this._scienceShipsByPlayer.get(playerId) || []).find(s => s.id === shipId);
+        if (!ship) return { error: 'Science ship not found' };
+        ship.autoSurvey = !ship.autoSurvey;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        // If toggling ON and ship is idle, try to auto-chain immediately
+        if (ship.autoSurvey && !ship.surveying && (!ship.path || ship.path.length === 0)) {
+          this._autoChainSurvey(ship);
+        }
+        return { ok: true, autoSurvey: ship.autoSurvey };
       }
 
       case 'buildCorvette': {
@@ -4415,10 +5264,11 @@ class GameEngine {
           state.resources[resource] -= amount;
         }
 
-        // Start construction
+        // Start construction (maxHp includes Shield Generator bonus if present)
+        const effectiveMaxHp = this._calcDefensePlatformMaxHP(colony);
         colony.defensePlatform = {
-          hp: DEFENSE_PLATFORM_MAX_HP,
-          maxHp: DEFENSE_PLATFORM_MAX_HP,
+          hp: effectiveMaxHp,
+          maxHp: effectiveMaxHp,
           building: true,
           buildTicksRemaining: DEFENSE_PLATFORM_BUILD_TIME,
         };
@@ -4600,6 +5450,112 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'auctionBid': {
+        // Submit sealed bid for tech auction
+        if (!this._auctionBids) return { error: 'No auction active' };
+        if (this.tickCount >= this._auctionDeadlineTick) return { error: 'Auction window closed' };
+        const { amount } = cmd;
+        if (!Number.isFinite(amount) || amount < 1) return { error: 'Invalid bid amount' };
+        const bidState = this.playerStates.get(playerId);
+        if (!bidState) return { error: 'Player not found' };
+        if (amount > bidState.resources.influence) return { error: 'Not enough influence' };
+        // Must have active research to benefit
+        const hasResearch = bidState.currentResearch.physics || bidState.currentResearch.society || bidState.currentResearch.engineering;
+        if (!hasResearch) return { error: 'No active research to complete' };
+        this._auctionBids.set(playerId, amount);
+        return { ok: true };
+      }
+
+      case 'respondIncident': {
+        // Submit border incident choice
+        if (!this._incidentPlayers || !this._incidentChoices) return { error: 'No incident active' };
+        if (this.tickCount >= this._incidentDeadlineTick) return { error: 'Incident window closed' };
+        if (!this._incidentPlayers.includes(playerId)) return { error: 'Not involved in this incident' };
+        const { choice } = cmd;
+        if (choice !== 'escalate' && choice !== 'deescalate') return { error: 'Choice must be escalate or deescalate' };
+        this._incidentChoices.set(playerId, choice);
+        return { ok: true };
+      }
+
+      case 'giftResources': {
+        const { targetPlayerId, resource, amount } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot gift resources to yourself' };
+        if (!resource || !GIFT_ALLOWED_RESOURCES.includes(resource)) return { error: 'Invalid resource type' };
+        if (!Number.isFinite(amount) || amount < GIFT_MIN_AMOUNT) return { error: `Minimum gift is ${GIFT_MIN_AMOUNT}` };
+        if (Math.floor(amount) !== amount) return { error: 'Amount must be a whole number' };
+
+        const senderState = this.playerStates.get(playerId);
+        if (!senderState) return { error: 'Player not found' };
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Check cooldown
+        const cooldownExpiry = this._giftCooldowns.get(playerId) || 0;
+        if (this.tickCount < cooldownExpiry) return { error: 'Gift on cooldown' };
+
+        // Check sender has enough
+        if (senderState.resources[resource] < amount) return { error: 'Not enough resources' };
+
+        // Execute transfer
+        senderState.resources[resource] -= amount;
+        targetState.resources[resource] += amount;
+
+        // Set cooldown
+        this._giftCooldowns.set(playerId, this.tickCount + GIFT_COOLDOWN_TICKS);
+
+        // Emit events to both players
+        this._emitEvent('resourceGift', playerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          resource, amount, direction: 'sent',
+        });
+        this._emitEvent('resourceGift', targetPlayerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          resource, amount, direction: 'received',
+        });
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'diplomacyPing': {
+        const { targetPlayerId, pingType } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot ping yourself' };
+        if (!pingType || !DIPLOMACY_PING_TYPES.includes(pingType)) return { error: 'Invalid ping type' };
+
+        const senderState = this.playerStates.get(playerId);
+        if (!senderState) return { error: 'Player not found' };
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Check cooldown (per sender, global)
+        const pingCooldownExpiry = this._pingCooldowns.get(playerId) || 0;
+        if (this.tickCount < pingCooldownExpiry) return { error: 'Ping on cooldown' };
+
+        // Set cooldown
+        this._pingCooldowns.set(playerId, this.tickCount + DIPLOMACY_PING_COOLDOWN);
+
+        // Emit ping event to target player
+        this._emitEvent('diplomacyPing', targetPlayerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          pingType,
+        });
+        // Confirm to sender
+        this._emitEvent('diplomacyPing', playerId, {
+          senderId: playerId, senderName: senderState.name,
+          targetId: targetPlayerId, targetName: targetState.name,
+          pingType, direction: 'sent',
+        });
+
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -4646,6 +5602,16 @@ class GameEngine {
     income.energy -= maintEnergy + civilianMaintenance;
     income.alloys -= maintAlloys;
 
+    // Colony upkeep scaling
+    const colCount = colonyIds.length;
+    if (colCount > 1) {
+      let colonyUpkeep = 0;
+      for (let i = 1; i < colCount; i++) {
+        colonyUpkeep += COLONY_UPKEEP[Math.min(i, COLONY_UPKEEP.length - 1)];
+      }
+      income.energy -= colonyUpkeep;
+    }
+
     const summary = { colonyCount: colonyIds.length, totalPops, income };
     this._summaryCache.set(playerId, summary);
     return summary;
@@ -4682,6 +5648,7 @@ class GameEngine {
       hopProgress: s.hopProgress,
       surveying: s.surveying || false,
       surveyProgress: s.surveyProgress || 0,
+      autoSurvey: s.autoSurvey !== false,
     }));
     // Include military ships (corvettes)
     state.militaryShips = this._militaryShips.map(s => ({
@@ -4696,6 +5663,8 @@ class GameEngine {
     for (const [pid, sysSet] of this._surveyedSystems) {
       state.surveyedSystems[pid] = [...sysSet];
     }
+    // Scouting race milestones
+    state.scoutMilestones = Object.assign({}, this._scoutMilestones);
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
@@ -4755,6 +5724,7 @@ class GameEngine {
         hopProgress: s.hopProgress,
         surveying: s.surveying || false,
         surveyProgress: s.surveyProgress || 0,
+        autoSurvey: s.autoSurvey !== false,
       })),
       militaryShips: this._militaryShips.map(s => ({
         id: s.id, ownerId: s.ownerId, systemId: s.systemId,
@@ -4801,6 +5771,7 @@ class GameEngine {
       shipsLost: this._shipsLost.get(playerId) || 0,
       diplomacy: this._serializeDiplomacy(playerId),
       underdogBonus: this._calcUnderdogBonus(playerId),
+      victoryProgress: this._calcVictoryProgress(playerId),
       ...mySummary,
     };
 
@@ -4819,6 +5790,7 @@ class GameEngine {
         shipsLost: this._shipsLost.get(p.id) || 0,
         stanceTowardMe: this._getStance(p.id, playerId),
         doctrine: p.doctrine,
+        victoryProgress: this._calcVictoryProgress(p.id),
         ...summary,
       });
     }
@@ -4840,12 +5812,22 @@ class GameEngine {
     state.scienceShips = shipData.scienceShips;
     state.militaryShips = shipData.militaryShips;
     // Surveyed systems — only this player's surveyed set (privacy: don't leak others')
+    // Cached array avoids Set→Array spread on every broadcast
     state.surveyedSystems = {};
     const mySurveyed = this._surveyedSystems.get(playerId);
     if (mySurveyed) {
-      state.surveyedSystems[playerId] = [...mySurveyed];
+      const cached = this._cachedSurveyedArrays.get(playerId);
+      if (cached && cached.size === mySurveyed.size) {
+        state.surveyedSystems[playerId] = cached.array;
+      } else {
+        const arr = [...mySurveyed];
+        this._cachedSurveyedArrays.set(playerId, { size: mySurveyed.size, array: arr });
+        state.surveyedSystems[playerId] = arr;
+      }
     }
 
+    // Scouting race milestones
+    state.scoutMilestones = Object.assign({}, this._scoutMilestones);
     // Include match timer info
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
@@ -4879,11 +5861,40 @@ class GameEngine {
       state.doctrineDeadlineTick = this._doctrineDeadlineTick;
     }
 
+    // Mid-game catalyst event state
+    if (this._resourceRushSystem !== null) {
+      state.resourceRush = {
+        systemId: this._resourceRushSystem,
+        resource: this._resourceRushResource,
+        owner: this._resourceRushOwner,
+        ticksLeft: this._resourceRushTicksLeft,
+      };
+    }
+    if (this._auctionBids) {
+      state.techAuction = {
+        deadlineTick: this._auctionDeadlineTick,
+        hasBid: this._auctionBids.has(playerId),
+      };
+    }
+    if (this._incidentPlayers) {
+      state.borderIncident = {
+        players: this._incidentPlayers,
+        deadlineTick: this._incidentDeadlineTick,
+        hasResponded: this._incidentChoices ? this._incidentChoices.has(playerId) : false,
+        involved: this._incidentPlayers.includes(playerId),
+      };
+    }
+
     return state;
   }
 
   // Pre-stringified per-player gameState payload
   getPlayerStateJSON(playerId) {
+    // Deferred invalidation: clear map once when first read after dirty flag set
+    if (this._stateCacheDirty) {
+      this._cachedPlayerJSON.clear();
+      this._stateCacheDirty = false;
+    }
     const cached = this._cachedPlayerJSON.get(playerId);
     if (cached) return cached;
     const state = this.getPlayerState(playerId);
@@ -4939,7 +5950,9 @@ class GameEngine {
     const result = {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
       planet: { size: c.planet.size, type: c.planet.type },
-      districts: c.districts, buildQueue: queueArr,
+      districts: c.districts, buildings: c.buildings || [], buildQueue: queueArr,
+      buildingQueue: (c.buildingQueue || []).map(bq => ({ id: bq.id, type: bq.type, slot: bq.slot, ticksRemaining: bq.ticksRemaining })),
+      buildingSlotsUnlocked: BUILDING_SLOT_THRESHOLDS.filter(t => c.pops >= t).length,
       pops: c.pops, housing, jobs: this._calcJobs(c),
       growthProgress: c.growthProgress, growthTarget, growthStatus,
       trait: trait ? { type: trait.type, name: trait.name } : null,
@@ -5011,4 +6024,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

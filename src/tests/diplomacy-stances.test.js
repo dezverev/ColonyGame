@@ -418,6 +418,45 @@ describe('Friendly Production Bonus', () => {
     assert.ok(production.energy >= 0);
     assert.ok(production.food >= 0);
   });
+
+  it('friendly bonus applies when colonies are on adjacent systems (deterministic)', () => {
+    const engine = createEngine();
+    giveResources(engine, 'p1');
+    giveResources(engine, 'p2');
+
+    const colony1 = getFirstColony(engine, 'p1');
+    // Build a district so production is non-trivial
+    engine.handleCommand('p1', { type: 'buildDistrict', colonyId: colony1.id, districtType: 'generator' });
+    for (let i = 0; i < 400; i++) engine.tick();
+
+    // Find an adjacent system to colony1
+    const neighbors = engine._adjacency.get(colony1.systemId);
+    assert.ok(neighbors && neighbors.length > 0, 'colony1 system must have hyperlane neighbors');
+    const adjSystemId = neighbors[0];
+
+    // Place p2's colony on the adjacent system
+    engine._createColony('p2', 'FriendBase', { size: 12, type: 'continental', habitability: 80 }, adjSystemId);
+
+    // Get production WITHOUT friendly bonus (neutral diplomacy)
+    colony1._cachedProduction = null;
+    const { production: noBonus } = engine._calcProduction(colony1);
+
+    // Now make mutual friendly
+    engine.handleCommand('p1', { type: 'setDiplomacy', targetPlayerId: 'p2', stance: 'friendly' });
+    engine.handleCommand('p2', { type: 'acceptDiplomacy', targetPlayerId: 'p1' });
+
+    // Get production WITH friendly bonus
+    colony1._cachedProduction = null;
+    const { production: withBonus } = engine._calcProduction(colony1);
+
+    // With friendly bonus, energy should be ~10% higher (FRIENDLY_PRODUCTION_BONUS = 0.10)
+    assert.ok(withBonus.energy > noBonus.energy,
+      `Friendly bonus should increase energy: got ${withBonus.energy} vs ${noBonus.energy} without`);
+    // Verify it's approximately 10%
+    const ratio = withBonus.energy / noBonus.energy;
+    assert.ok(ratio >= 1.09 && ratio <= 1.11,
+      `Expected ~1.10x bonus, got ${ratio.toFixed(3)}x`);
+  });
 });
 
 // ── Diplomacy VP ──

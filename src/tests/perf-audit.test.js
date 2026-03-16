@@ -368,4 +368,65 @@ describe('Performance Audit', () => {
     console.log(`  _calcProduction (with friendly BFS): avg=${avgUs.toFixed(1)}µs`);
     assert.ok(avgUs < 200, `Production calc with friendly BFS took ${avgUs.toFixed(1)}µs, expected <200µs`);
   });
+
+  it('_autoChainSurvey does single BFS (no redundant _findPath call)', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Track _findPath calls
+    let findPathCalls = 0;
+    const origFindPath = engine._findPath.bind(engine);
+    engine._findPath = function (...args) {
+      findPathCalls++;
+      return origFindPath(...args);
+    };
+
+    // Create science ship at a system with unsurveyed neighbors
+    const ship = {
+      id: 'perf-sci', ownerId: 1, systemId: 0,
+      targetSystemId: null, path: [], hopProgress: 0,
+      surveying: false, surveyProgress: 0, autoSurvey: true,
+    };
+    engine._scienceShips.push(ship);
+
+    // Mark system 0 as surveyed so auto-chain needs to find a neighbor
+    if (!engine._surveyedSystems.has(1)) engine._surveyedSystems.set(1, new Set());
+    engine._surveyedSystems.get(1).add(0);
+
+    findPathCalls = 0;
+    const result = engine._autoChainSurvey(ship);
+
+    console.log(`  _autoChainSurvey: dispatched=${result}, _findPath calls=${findPathCalls}`);
+    // Should NOT call _findPath at all — path is reconstructed inline from BFS parents
+    assert.strictEqual(findPathCalls, 0, `Expected 0 _findPath calls, got ${findPathCalls}`);
+    if (result) {
+      assert.ok(ship.path.length > 0, 'Ship should have a path');
+      assert.ok(ship.path.length <= 3, 'Path should be at most 3 hops');
+    }
+  });
+
+  it('_autoChainSurvey completes within 50µs', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    const ship = {
+      id: 'perf-sci2', ownerId: 1, systemId: 0,
+      targetSystemId: null, path: [], hopProgress: 0,
+      surveying: false, surveyProgress: 0, autoSurvey: true,
+    };
+    engine._scienceShips.push(ship);
+    if (!engine._surveyedSystems.has(1)) engine._surveyedSystems.set(1, new Set());
+    engine._surveyedSystems.get(1).add(0);
+
+    const durations = [];
+    for (let i = 0; i < 500; i++) {
+      // Reset ship state so it can dispatch again
+      ship.path = [];
+      ship.targetSystemId = null;
+      const t0 = process.hrtime.bigint();
+      engine._autoChainSurvey(ship);
+      durations.push(Number(process.hrtime.bigint() - t0));
+    }
+    const avgUs = durations.reduce((a, b) => a + b, 0) / durations.length / 1000;
+    console.log(`  _autoChainSurvey: avg=${avgUs.toFixed(1)}µs`);
+    assert.ok(avgUs < 50, `_autoChainSurvey took ${avgUs.toFixed(1)}µs, expected <50µs`);
+  });
 });
