@@ -788,18 +788,41 @@ class GameEngine {
   }
 
   _initStartingColonies() {
+    const room = this.room;
+    const fairMode = room ? room.fairStartingPlanets !== false : true;
+
+    // Habitable planet types for starting worlds
+    const habitableTypes = ['continental', 'ocean', 'tropical', 'arctic', 'desert', 'arid'];
+
+    // In fairness mode, pick one type and size for all players
+    let sharedType = null;
+    let sharedSize = null;
+    if (fairMode) {
+      sharedType = habitableTypes[Math.floor(Math.random() * habitableTypes.length)];
+      sharedSize = 12 + Math.floor(Math.random() * 9); // 12-20
+    }
+
     for (const [playerId] of this.playerStates) {
-      // Use starting system's best habitable planet, or fallback defaults
       const systemId = this._startingSystems[playerId];
-      let planet = { size: 16, type: 'continental', habitability: 80 };
       let systemName = 'Home';
+
+      // Determine starting planet type and size
+      const planetType = fairMode ? sharedType : habitableTypes[Math.floor(Math.random() * habitableTypes.length)];
+      const planetSize = fairMode ? sharedSize : 12 + Math.floor(Math.random() * 9); // 12-20
+      const habitability = PLANET_TYPES[planetType].habitability;
+
+      let planet = { size: planetSize, type: planetType, habitability };
 
       if (systemId != null && this.galaxy) {
         const system = this.galaxy.systems[systemId];
         if (system) {
           systemName = system.name;
+          // Find best habitable planet in system and override its type/size
           const best = bestHabitablePlanet(system);
           if (best) {
+            best.type = planetType;
+            best.size = planetSize;
+            best.habitability = habitability;
             planet = { size: best.size, type: best.type, habitability: best.habitability };
             best.colonized = true;
             best.colonyOwner = playerId;

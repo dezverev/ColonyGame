@@ -78,7 +78,7 @@ describe('GameEngine — Initialization', () => {
     // Check internal colony object for full planet data (serialized state omits habitability)
     const colony = [...engine.colonies.values()][0];
     assert.ok(colony.planet.habitability >= 60, 'Starting planet should be habitable');
-    assert.ok(colony.planet.size >= 8, 'Starting planet should have reasonable size');
+    assert.ok(colony.planet.size >= 12, 'Starting planet should have size 12-20');
     assert.ok(colony.systemId != null, 'Colony should be placed in a galaxy system');
     // Serialized colony should still have planet size and type
     const state = engine.getState();

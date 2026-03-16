@@ -19,6 +19,9 @@ class RoomManager {
     const validGalaxySizes = ['small', 'medium', 'large'];
     const galaxySize = validGalaxySizes.includes(options.galaxySize) ? options.galaxySize : 'small';
 
+    // Fair starting planets: all players get same planet type & size (default: true)
+    const fairStartingPlanets = options.fairStartingPlanets !== false;
+
     const room = {
       id,
       name: name.slice(0, 30),
@@ -28,6 +31,7 @@ class RoomManager {
       practiceMode,
       matchTimer,
       galaxySize,
+      fairStartingPlanets,
       status: 'waiting', // waiting | playing | finished
       players: new Map(),
       createdAt: Date.now(),
