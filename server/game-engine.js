@@ -273,6 +273,10 @@ const FRIENDLY_HOP_RANGE = 3;          // max BFS hops for friendly production b
 const FRIENDLY_VP = 5;                 // VP per friendly relationship at game end
 const MUTUAL_FRIENDLY_VP = 10;         // VP if both players are friendly (replaces single)
 
+// System claim constants
+const SYSTEM_CLAIM_INFLUENCE_COST = 25;      // influence cost to claim a system
+const SYSTEM_CLAIM_VP = 1;                    // +1 VP per claimed system
+
 // Trade agreement constants
 const TRADE_AGREEMENT_INFLUENCE_COST = 25;   // influence cost per player to form
 const TRADE_AGREEMENT_ENERGY_BONUS = 0.15;   // +15% energy production
@@ -456,6 +460,7 @@ class GameEngine {
     this._militaryShipsById = new Map(); // shipId -> ship — O(1) find by ID
     this._militaryShipsBySystem = new Map(); // systemId -> ship[] — O(1) combat/presence checks
     this._surveyedSystems = new Map(); // playerId -> Set of surveyed systemIds (persistent fog penetration)
+    this._systemClaims = new Map(); // systemId -> playerId — claimed systems (prevents enemy colonization, +1 VP each)
     this.onTick = options.onTick || null;
     this.onEvent = options.onEvent || null;
     this.onGameOver = options.onGameOver || null;
@@ -3796,6 +3801,18 @@ class GameEngine {
       return;
     }
 
+    // Check system claim — enemy claims block colonization
+    const claimOwner = this._systemClaims.get(ship.targetSystemId);
+    if (claimOwner && claimOwner !== ship.ownerId) {
+      this._emitEvent('colonyShipFailed', ship.ownerId, {
+        systemName: system.name,
+        reason: 'System claimed by another player',
+      });
+      this._removeColonyShip(ship);
+      this._dirtyPlayers.add(ship.ownerId);
+      return;
+    }
+
     // Check system control — enemy corvettes block colonization (use system index)
     const sysShips = this._militaryShipsBySystem.get(ship.targetSystemId) || [];
     const enemyMilitary = sysShips.some(s =>
@@ -4160,7 +4177,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, scoutMilestonesVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, scoutMilestonesVP: 0, claimedSystems: 0, claimsVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
       return empty;
     }
 
@@ -4268,6 +4285,13 @@ class GameEngine {
       }
     }
 
+    // System claims VP: +1 per claimed system
+    let claimedSystems = 0;
+    for (const [, owner] of this._systemClaims) {
+      if (owner === playerId) claimedSystems++;
+    }
+    const claimsVP = claimedSystems * SYSTEM_CLAIM_VP;
+
     // Endgame crisis VP: +15 for destroying precursor, -5 per colony occupied by precursor
     let precursorVP = 0;
     if (this._precursorDestroyedBy === playerId) {
@@ -4285,7 +4309,7 @@ class GameEngine {
     // Catalyst event VP (border incident)
     const catalystVP = state._catalystVP || 0;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP;
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP + claimsVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -4295,6 +4319,7 @@ class GameEngine {
       traits: traitCount, traitsVP,
       surveyed, surveyedVP,
       scoutMilestonesVP,
+      claimedSystems, claimsVP,
       raidersDestroyed, raidersVP,
       corvettes, militaryVP,
       battlesWon, battlesWonVP,
@@ -4935,6 +4960,10 @@ class GameEngine {
         if (!targetPlanet) return { error: 'No habitable planet in target system' };
         if (targetPlanet.habitability < 20) return { error: 'Planet habitability too low' };
         if (targetPlanet.colonized) return { error: 'Planet already colonized' };
+
+        // Check system claim — cannot colonize systems claimed by others
+        const claimOwner = this._systemClaims.get(targetSysId);
+        if (claimOwner && claimOwner !== playerId) return { error: 'System claimed by another player' };
 
         // Check colony cap (including in-flight ships)
         const colCount = (this._playerColonies.get(playerId) || []).length;
@@ -5744,6 +5773,71 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'claimSystem': {
+        const { systemId } = cmd;
+        if (systemId == null || !Number.isFinite(Number(systemId))) return { error: 'Missing systemId' };
+
+        const sysId = Number(systemId);
+        if (!this.galaxy || !this.galaxy.systems[sysId]) return { error: 'Invalid system' };
+
+        // Cannot claim a system that is already claimed
+        const existingClaim = this._systemClaims.get(sysId);
+        if (existingClaim) {
+          return { error: existingClaim === playerId ? 'You already claimed this system' : 'System already claimed' };
+        }
+
+        // Cannot claim a system that already has a colony
+        const systemHasColony = [...this.colonies.values()].some(c => c.systemId === sysId);
+        if (systemHasColony) return { error: 'System already has a colony' };
+
+        // Player must have a ship or colony in the system or an adjacent system
+        const playerColonySystemIds = new Set();
+        for (const colonyId of (this._playerColonies.get(playerId) || [])) {
+          const colony = this.colonies.get(colonyId);
+          if (colony) playerColonySystemIds.add(colony.systemId);
+        }
+        const playerShipSystemIds = new Set();
+        for (const ship of (this._scienceShipsByPlayer.get(playerId) || [])) {
+          if (!ship.path || ship.path.length === 0) playerShipSystemIds.add(ship.systemId);
+        }
+        for (const ship of (this._militaryShipsByPlayer.get(playerId) || [])) {
+          if (!ship.path || ship.path.length === 0) playerShipSystemIds.add(ship.systemId);
+        }
+        for (const ship of (this._colonyShipsByPlayer.get(playerId) || [])) {
+          if (!ship.path || ship.path.length === 0) playerShipSystemIds.add(ship.systemId);
+        }
+
+        // Check if player has presence in the target system or an adjacent one
+        const allPresence = new Set([...playerColonySystemIds, ...playerShipSystemIds]);
+        let hasProximity = allPresence.has(sysId);
+        if (!hasProximity) {
+          const neighbors = this._adjacency.get(sysId) || [];
+          for (const neighborId of neighbors) {
+            if (allPresence.has(neighborId)) { hasProximity = true; break; }
+          }
+        }
+        if (!hasProximity) return { error: 'Must have a ship or colony in or adjacent to the system' };
+
+        // Check influence cost
+        const state = this.playerStates.get(playerId);
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < SYSTEM_CLAIM_INFLUENCE_COST) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence and record claim
+        state.resources.influence -= SYSTEM_CLAIM_INFLUENCE_COST;
+        this._systemClaims.set(sysId, playerId);
+
+        this._emitEvent('systemClaimed', playerId, {
+          systemId: sysId,
+          systemName: this.galaxy.systems[sysId].name,
+        });
+
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       default:
         return { error: 'Unknown command' };
     }
@@ -5851,6 +5945,13 @@ class GameEngine {
     for (const [pid, sysSet] of this._surveyedSystems) {
       state.surveyedSystems[pid] = [...sysSet];
     }
+    // System claims — all claims are public information
+    const claimsObjAll = {};
+    for (const [sysId, owner] of this._systemClaims) {
+      claimsObjAll[sysId] = owner;
+    }
+    state.systemClaims = claimsObjAll;
+
     // Scouting race milestones
     state.scoutMilestones = Object.assign({}, this._scoutMilestones);
     if (this._matchTimerEnabled) {
@@ -6013,6 +6114,13 @@ class GameEngine {
         state.surveyedSystems[playerId] = arr;
       }
     }
+
+    // System claims — all claims are public information
+    const claimsObj = {};
+    for (const [sysId, owner] of this._systemClaims) {
+      claimsObj[sysId] = owner;
+    }
+    state.systemClaims = claimsObj;
 
     // Scouting race milestones
     state.scoutMilestones = Object.assign({}, this._scoutMilestones);
@@ -6214,4 +6322,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, TRADE_AGREEMENT_INFLUENCE_COST, TRADE_AGREEMENT_ENERGY_BONUS, TRADE_AGREEMENT_MINERAL_BONUS, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, TRADE_AGREEMENT_INFLUENCE_COST, TRADE_AGREEMENT_ENERGY_BONUS, TRADE_AGREEMENT_MINERAL_BONUS, SYSTEM_CLAIM_INFLUENCE_COST, SYSTEM_CLAIM_VP, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

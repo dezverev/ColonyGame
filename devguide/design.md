@@ -174,7 +174,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Resource gifting**
 - [x] **Diplomatic stances**
 - [x] **In-game chat + diplomacy pings**
-- [ ] **System claims with influence:** 25 influence, prevents enemy colonization, +1 VP.
+- [x] **System claims with influence:** 25 influence, prevents enemy colonization, +1 VP.
 - [ ] **Inter-player trade routes:** +3 energy/month per hop. Max 3 per empire.
 - [ ] **Cease-fire negotiations:** After 600+ ticks of war. Both go neutral + 3 VP.
 - [ ] **Non-Aggression Pact:** 25 influence each, 5 min, prevents attacks.
