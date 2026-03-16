@@ -2343,3 +2343,37 @@ Each entry records an iteration of automated development.
 - Prerequisite check happens after duplicate check but before resource check — fail fast on missing prerequisites
 
 **Next:** Trade agreements (Phase 4, R65-3) — mutual resource exchange deals between players
+
+---
+
+## Entry 67 — 2026-03-16 — Trade Agreements
+
+**Phase:** 6 (Diplomacy & Interaction)
+**Status:** Complete
+
+**What was built:**
+- **Trade agreement system** with propose/accept/cancel flow, following the same pattern as diplomatic stances (pending → mutual acceptance)
+- **25 influence cost per player** to form an agreement (proposer pays on proposal, acceptor pays on acceptance)
+- **+15% energy and mineral production** bonus per active trade partner, applied multiplicatively in `_calcProduction` after friendly diplomatic bonus
+- **Mutual proposal auto-accept:** If both players propose to each other, the agreement forms automatically without needing explicit acceptance
+- **Breaks on aggression:** Setting hostile stance (via `setDiplomacy` or `_forceHostile`) automatically breaks any trade agreement and clears pending proposals between those players
+- **Manual cancellation:** Either player can cancel an active agreement or withdraw a pending proposal via `cancelTradeAgreement`
+- **Event notifications:** `tradeAgreementProposed`, `tradeAgreementFormed`, and `tradeAgreementBroken` events emitted to relevant players
+- **Serialization:** Trade agreements and pending proposals included in `_serializeDiplomacy` for client state sync
+
+**Files changed:**
+- `server/game-engine.js` — Constants (TRADE_AGREEMENT_*), player state fields (tradeAgreements, pendingTradeAgreements), helper methods (_hasTradeAgreement, _breakTradeAgreement), production bonus in _calcProduction, 3 command handlers (proposeTradeAgreement, acceptTradeAgreement, cancelTradeAgreement), serialization, aggression-breaks logic in setDiplomacy hostile + _forceHostile
+- `src/tests/trade-agreements.test.js` — 31 tests across 10 suites: constants, proposal validation, acceptance, mutual auto-accept, cancellation, production bonus (energy, minerals, stacking, removal), aggression breaks, serialization, events
+- `devguide/design.md` — Marked Trade Agreement complete
+- `devguide/ledger.md` — This entry
+
+**Tests:** 2084 total (31 new). All passing.
+
+**Key decisions:**
+- Bonus applies to energy and minerals only (not food/alloys/research) per the spec — this makes trade agreements an economic tool, not a research accelerator
+- Bonus stacks per partner (2 trade partners = +30%) to incentivize multiple agreements in multiplayer games
+- Proposer pays influence upfront even if the target hasn't accepted yet — this prevents spam proposals and makes them meaningful commitments
+- Used Set-based tracking (like pendingFriendly) rather than object-based tracking — simpler and sufficient since agreements have no per-agreement metadata
+- Break logic added to both `setDiplomacy` hostile handler AND `_forceHostile` helper to cover all hostility paths (manual stance change, border incidents, combat escalation)
+
+**Next:** System claims with influence (Phase 6, R65-4) — 25 influence to claim a system, prevents enemy colonization, +1 VP
