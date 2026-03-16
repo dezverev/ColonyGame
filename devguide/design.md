@@ -121,7 +121,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [ ] **Colony planet context rendering:** Ground plane + background color per planet type.
 - [ ] **Planet visual polish in system panel:** Colored dots, bold size 15+, gold border on best.
 - [x] **Fog of war on galaxy map**
-- [ ] **PRIORITY: Science ship expeditions:** After 5+ surveys, timed missions: Deep Space Probe (60s, +3 VP), Precursor Signal (90s, risk/reward, +5 VP), Wormhole Mapping (60s, +2 VP).
+- [x] **PRIORITY: Science ship expeditions:** After 5+ surveys, timed missions: Deep Space Probe (60s, +3 VP), Precursor Signal (90s, risk/reward, +5 VP), Wormhole Mapping (60s, +2 VP).
 - [x] **Scouting race VP milestones**
 - [x] **Science ship auto-chain survey**
 - [ ] Fleet fundamentals: science/colony/construction ships. Hyperlane movement, 5s/hop.

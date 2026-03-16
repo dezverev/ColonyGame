@@ -2410,3 +2410,36 @@ Each entry records an iteration of automated development.
 - No unclaim/revoke mechanic — claims are permanent once placed. This keeps the system simple and makes influence spending meaningful.
 
 **Next:** Expeditions (Phase 5, R65-5) — send science ships on multi-system expeditions for bonus rewards
+
+---
+
+## Entry 69 — 2026-03-16 — Science Ship Expeditions
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- **Expedition system:** Science ships can be sent on timed expeditions after completing 5+ surveys
+- **Three expedition types:** Deep Space Probe (60s, +3 VP), Precursor Signal (90s, risk/reward with 30% fail chance, +5 VP on success), Wormhole Mapping (60s, +2 VP)
+- **`startExpedition` command:** Validates survey threshold, ship state (not in transit/surveying/already on expedition), and expedition type
+- **Tick processing:** Expeditions progress each tick like surveys; on completion, VP is awarded and events emitted
+- **VP integration:** `expeditionVP` and `expeditionsCompleted` fields added to VP breakdown, included in total VP calculation
+- **Event notifications:** `expeditionStarted` and `expeditionComplete` events with expedition name, type, success/fail status, and VP awarded
+- **Serialization:** Expedition state (type, progress, total ticks) included in both `getState` and `getPlayerState` science ship serialization
+
+**Files changed:**
+- `server/game-engine.js` — Constants (EXPEDITION_MIN_SURVEYS, EXPEDITION_TYPES), constructor state (_expeditionVP, _completedExpeditions), `_processScienceShipMovement` expedition tick handling, `_completeExpedition` method, `startExpedition` command handler, VP breakdown additions, serialization updates, exports
+- `src/tests/expeditions.test.js` — 22 tests across 7 suites: constants (2), startExpedition command (9 tests: success, survey threshold, unknown type, not found, in transit, surveying, already on expedition, missing params, autoSurvey disable), tick processing (4 tests: progress, completion + VP, VP breakdown, no movement), deep space probe (1), multiple expeditions (1), serialization (2), events (2)
+- `devguide/design.md` — Marked Science ship expeditions complete
+- `devguide/ledger.md` — This entry
+
+**Tests:** 2157 total (22 new). All passing.
+
+**Key decisions:**
+- Expeditions use the same tick-based countdown pattern as surveys — ship has `expedition`, `expeditionProgress`, `expeditionTicks` fields
+- Auto-survey is disabled when an expedition starts to prevent conflicts
+- Precursor Signal has a 30% fail chance using `Math.random()` — failed expeditions still count as completed but award 0 VP
+- VP is tracked in `_expeditionVP` Map (cumulative) rather than per-expedition — simpler and sufficient since we only need total VP
+- Ship stays at same system during expedition (no movement) — consistent with survey behavior
+
+**Next:** Surface anomalies (R65-6) — random anomaly discoveries on colony surfaces
