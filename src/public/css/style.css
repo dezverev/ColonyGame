@@ -195,16 +195,24 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 #colony-queue-header {
   font-weight: bold; font-size: 0.8rem; color: #aaa;
   border-top: 1px solid #2a2a4e; padding-top: 0.4rem; margin-top: 0.2rem;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.queue-header-eta {
+  font-weight: normal; font-size: 0.7rem; color: #888;
+  font-family: monospace;
 }
 #colony-queue-list { font-size: 0.8rem; }
 .queue-item {
-  display: flex; align-items: center; gap: 0.4rem;
+  display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
   padding: 0.3rem 0; border-bottom: 1px solid rgba(42,42,78,0.5);
 }
 .queue-item-swatch {
   width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
 }
 .queue-item-name { flex: 1; }
+.queue-item-cost {
+  color: #8888cc; font-family: monospace; font-size: 0.7rem;
+}
 .queue-item-time { color: #aaa; font-family: monospace; font-size: 0.75rem; }
 .queue-item-cancel {
   background: none; border: none; color: #e74c3c; cursor: pointer;
@@ -217,6 +225,14 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 }
 .queue-progress-fill {
   height: 100%; border-radius: 2px; background: #f1c40f;
+}
+.queue-deficit-warning {
+  color: #e74c3c; font-size: 0.72rem; padding: 0.2rem 0;
+  font-weight: bold;
+}
+.queue-total-cost {
+  color: #888; font-size: 0.7rem; font-family: monospace;
+  padding: 0.3rem 0 0.1rem; text-align: right;
 }
 
 /* ── Building Slots ── */

@@ -338,6 +338,13 @@
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
+  // Ship cost/build-time lookup (client-side mirror)
+  const SHIP_UI = {
+    colonyShip:  { label: 'Colony Ship',  color: '#00ffaa', cost: { minerals: 175, food: 75, alloys: 75 }, buildTime: 600 },
+    scienceShip: { label: 'Science Ship', color: '#00e5ff', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
+    corvette:    { label: 'Corvette',     color: '#ff4444', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
+  };
+
   // ── Building definitions (client-side mirror for UI) ──
   const BUILDING_UI = {
     researchLab:     { label: 'Research Lab',      color: '#9b59b6', cost: { minerals: 200, energy: 50 }, produces: '+4 Phys/Soc/Eng', consumes: '-2 Energy' },
@@ -1308,13 +1315,16 @@
               const ui = BUILDING_UI[bq.type] || {};
               const pct = 500 > 0 ? Math.min(100, ((500 - bq.ticksRemaining) / 500) * 100) : 0;
               const secLeft = (bq.ticksRemaining / 10).toFixed(0);
+              const costStr = _formatCostShort(ui.cost);
+              const refundStr = ui.cost ? _formatCostShort(Object.fromEntries(Object.entries(ui.cost).map(([r, a]) => [r, Math.floor(a * 0.5)]))) : '';
               const div = document.createElement('div');
               div.className = 'building-slot building-slot-queued';
               div.innerHTML =
                 `<div class="build-option-swatch" style="background:${ui.color || '#666'}; opacity:0.5"></div>` +
                 `<span class="building-slot-name">${ui.label || bq.type}</span>` +
+                `<span class="queue-item-cost">${costStr}</span>` +
                 `<span class="queue-item-time">${secLeft}s</span>` +
-                `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+                `<button class="queue-item-cancel" title="Cancel — refund ${refundStr}">&times;</button>` +
                 `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
               div.querySelector('.queue-item-cancel').addEventListener('click', () => {
                 send({ type: 'demolish', colonyId: colony.id, districtId: bq.id });
@@ -1365,20 +1375,63 @@
         if (colony.buildQueue.length > 0) {
           colonyQueueHeader.classList.remove('hidden');
           colonyQueueList.innerHTML = '';
+
+          // Compute total queue cost and cumulative ETA
+          const totalCost = {};
+          let cumulativeTicks = 0;
           for (const q of colony.buildQueue) {
-            const isShip = q.type === 'colonyShip' || q.type === 'scienceShip';
-            const ui = q.type === 'colonyShip' ? { label: 'Colony Ship', color: '#00ffaa' } : q.type === 'scienceShip' ? { label: 'Science Ship', color: '#00e5ff' } : (DISTRICT_UI[q.type] || {});
-            const totalTicks = q.type === 'colonyShip' ? 600 : q.type === 'scienceShip' ? 300 : _getBuildTime(q.type);
+            const ui = _getQueueItemUI(q.type);
+            if (ui.cost) {
+              for (const [r, a] of Object.entries(ui.cost)) {
+                totalCost[r] = (totalCost[r] || 0) + a;
+              }
+            }
+            cumulativeTicks += q.ticksRemaining;
+          }
+
+          // Queue header with count and total ETA
+          const totalEtaSec = (cumulativeTicks / 10).toFixed(0);
+          colonyQueueHeader.innerHTML = `Build Queue (${colony.buildQueue.length}/3) <span class="queue-header-eta">${totalEtaSec}s total</span>`;
+
+          // Deficit warning — check if net production is negative for any resource
+          const myPlayer = _getMyPlayer();
+          if (myPlayer && colony.netProduction) {
+            const deficits = [];
+            for (const res of ['energy', 'minerals', 'food', 'alloys']) {
+              if (colony.netProduction[res] !== undefined && myPlayer.resources[res] !== undefined) {
+                // Sum net production across all colonies
+                let totalNet = 0;
+                for (const c of gameState.colonies.filter(c2 => c2.ownerId === gameState.yourId)) {
+                  if (c.netProduction && c.netProduction[res] !== undefined) totalNet += c.netProduction[res];
+                }
+                if (totalNet < 0) deficits.push(res);
+              }
+            }
+            if (deficits.length > 0) {
+              const warnDiv = document.createElement('div');
+              warnDiv.className = 'queue-deficit-warning';
+              const abbr = { energy: 'Energy', minerals: 'Minerals', food: 'Food', alloys: 'Alloys' };
+              warnDiv.textContent = '\u26a0 ' + deficits.map(r => abbr[r]).join(', ') + ' deficit';
+              colonyQueueList.appendChild(warnDiv);
+            }
+          }
+
+          for (const q of colony.buildQueue) {
+            const ui = _getQueueItemUI(q.type);
+            const totalTicks = SHIP_UI[q.type] ? SHIP_UI[q.type].buildTime : _getBuildTime(q.type);
             const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
             const secLeft = (q.ticksRemaining / 10).toFixed(0);
+            const costStr = _formatCostShort(ui.cost);
+            const refundStr = ui.cost ? _formatCostShort(Object.fromEntries(Object.entries(ui.cost).map(([r, a]) => [r, Math.floor(a * 0.5)]))) : '';
 
             const div = document.createElement('div');
             div.className = 'queue-item';
             div.innerHTML =
               `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
               `<span class="queue-item-name">${ui.label || q.type}</span>` +
+              `<span class="queue-item-cost">${costStr}</span>` +
               `<span class="queue-item-time">${secLeft}s</span>` +
-              `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+              `<button class="queue-item-cancel" title="Cancel — refund ${refundStr}">&times;</button>` +
               `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
 
             const cancelBtn = div.querySelector('.queue-item-cancel');
@@ -1388,8 +1441,17 @@
 
             colonyQueueList.appendChild(div);
           }
+
+          // Total cost summary row
+          if (colony.buildQueue.length > 1) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'queue-total-cost';
+            summaryDiv.textContent = 'Total invested: ' + _formatCostShort(totalCost);
+            colonyQueueList.appendChild(summaryDiv);
+          }
         } else {
           colonyQueueHeader.classList.add('hidden');
+          colonyQueueHeader.innerHTML = 'Build Queue';
           colonyQueueList.innerHTML = '';
         }
       }
@@ -1847,6 +1909,21 @@
   function _getBuildTime(type) {
     const times = { housing: 200, generator: 300, mining: 300, agriculture: 300, industrial: 400, research: 400 };
     return times[type] || 300;
+  }
+
+  // Get UI info (label, color, cost) for any queue item type
+  function _getQueueItemUI(type) {
+    if (SHIP_UI[type]) return SHIP_UI[type];
+    if (DISTRICT_UI[type]) return DISTRICT_UI[type];
+    if (BUILDING_UI[type]) return BUILDING_UI[type];
+    return { label: type, color: '#666', cost: {} };
+  }
+
+  // Format cost object as compact string: "100m 50a"
+  function _formatCostShort(cost) {
+    if (!cost) return '';
+    const abbr = { minerals: 'm', energy: 'e', food: 'f', alloys: 'a' };
+    return Object.entries(cost).map(([r, a]) => `${a}${abbr[r] || r}`).join(' ');
   }
 
   // ── Edict panel ──
