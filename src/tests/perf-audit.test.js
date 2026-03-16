@@ -404,6 +404,67 @@ describe('Performance Audit', () => {
     }
   });
 
+  it('construction tick-down invalidates cache (no stale ticksRemaining in broadcast)', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Clear all queues, then add one item to player 1's colony
+    for (const [, col] of engine.colonies) {
+      col.buildQueue = [];
+      if (col.buildingQueue) col.buildingQueue = [];
+    }
+    const p1Colonies = engine._playerColonies.get(1) || [];
+    const colony = engine.colonies.get(p1Colonies[0]);
+    colony.buildQueue.push({ id: 'test-cache', type: 'mining', ticksRemaining: 50 });
+
+    // Prime the cache
+    engine._invalidateStateCache();
+    const json1 = engine.getPlayerStateJSON(1);
+    const state1 = JSON.parse(json1);
+    const tr1 = state1.colonies.find(c => c.id === colony.id).buildQueue[0].ticksRemaining;
+    assert.strictEqual(tr1, 50, 'Initial ticksRemaining should be 50');
+
+    // Run construction (modifies ticksRemaining)
+    engine._processConstruction();
+
+    // Cache should be invalidated — next read must reflect decremented value
+    const json2 = engine.getPlayerStateJSON(1);
+    const state2 = JSON.parse(json2);
+    const tr2 = state2.colonies.find(c => c.id === colony.id).buildQueue[0].ticksRemaining;
+    assert.strictEqual(tr2, 49, 'ticksRemaining should be 49 after one construction tick');
+    assert.notStrictEqual(json1, json2, 'Cache should have been invalidated');
+  });
+
+  it('movement functions do not spuriously invalidate cache for idle games', () => {
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Clear all ships — no one is moving
+    engine._colonyShips.length = 0;
+    engine._militaryShips.length = 0;
+    engine._scienceShips.length = 0;
+
+    // Clear queues so construction doesn't dirty anyone
+    for (const [, col] of engine.colonies) {
+      col.buildQueue = [];
+      if (col.buildingQueue) col.buildingQueue = [];
+    }
+
+    // Prime cache
+    engine._invalidateStateCache();
+    engine.getPlayerStateJSON(1);
+
+    // Manually clear dirty state to isolate movement functions
+    engine._stateCacheDirty = false;
+    engine._dirtyPlayers.clear();
+
+    // Run movement processors — should NOT invalidate since no ships are active
+    engine._processColonyShipMovement();
+    engine._processMilitaryShipMovement();
+    engine._processScienceShipMovement();
+
+    assert.strictEqual(engine._stateCacheDirty, false,
+      'Movement functions should not invalidate cache when no ships are active');
+  });
+
   it('_autoChainSurvey completes within 50µs', () => {
     const engine = new GameEngine(createRoom(2), { tickRate: 10 });
 

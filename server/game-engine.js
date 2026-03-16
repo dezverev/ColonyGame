@@ -91,6 +91,27 @@ const ANOMALY_TYPES = [
   { type: 'derelictShip', label: 'Derelict Ship', reward: { alloys: 50 } },
 ];
 
+// Surface anomaly types — discovered when building a district on the anomaly's slot
+// 'output' anomalies give +50% production to the district on that slot (persistent)
+// 'choice' anomalies offer a one-time resource reward the player must choose
+const SURFACE_ANOMALY_TYPES = {
+  richDeposit:    { category: 'output', bonus: 0.5, label: 'Rich Deposit', description: '+50% district output' },
+  exoticGas:      { category: 'output', bonus: 0.5, label: 'Exotic Gas Vent', description: '+50% district output' },
+  ancientRuins:   { category: 'choice', label: 'Ancient Ruins', description: 'Choose a reward',
+                    choices: [
+                      { id: 'salvage', label: 'Salvage Materials', reward: { minerals: 200 } },
+                      { id: 'study', label: 'Study Artifacts', reward: { physics: 100, society: 100, engineering: 100 } },
+                    ]},
+  precursorCache: { category: 'choice', label: 'Precursor Cache', description: 'Choose a reward',
+                    choices: [
+                      { id: 'weapons', label: 'Weapons Cache', reward: { alloys: 150 } },
+                      { id: 'data', label: 'Data Archive', reward: { physics: 150, society: 150, engineering: 150 } },
+                    ]},
+};
+const SURFACE_ANOMALY_KEYS = Object.keys(SURFACE_ANOMALY_TYPES);
+const SURFACE_ANOMALY_MIN = 1;
+const SURFACE_ANOMALY_MAX = 3;
+
 // Colony crisis event constants
 const CRISIS_MIN_TICKS = 500;  // Minimum ticks between crises per colony
 const CRISIS_MAX_TICKS = 800;  // Maximum ticks between crises per colony
@@ -767,18 +788,41 @@ class GameEngine {
   }
 
   _initStartingColonies() {
+    const room = this.room;
+    const fairMode = room ? room.fairStartingPlanets !== false : true;
+
+    // Habitable planet types for starting worlds
+    const habitableTypes = ['continental', 'ocean', 'tropical', 'arctic', 'desert', 'arid'];
+
+    // In fairness mode, pick one type and size for all players
+    let sharedType = null;
+    let sharedSize = null;
+    if (fairMode) {
+      sharedType = habitableTypes[Math.floor(Math.random() * habitableTypes.length)];
+      sharedSize = 12 + Math.floor(Math.random() * 9); // 12-20
+    }
+
     for (const [playerId] of this.playerStates) {
-      // Use starting system's best habitable planet, or fallback defaults
       const systemId = this._startingSystems[playerId];
-      let planet = { size: 16, type: 'continental', habitability: 80 };
       let systemName = 'Home';
+
+      // Determine starting planet type and size
+      const planetType = fairMode ? sharedType : habitableTypes[Math.floor(Math.random() * habitableTypes.length)];
+      const planetSize = fairMode ? sharedSize : 12 + Math.floor(Math.random() * 9); // 12-20
+      const habitability = PLANET_TYPES[planetType].habitability;
+
+      let planet = { size: planetSize, type: planetType, habitability };
 
       if (systemId != null && this.galaxy) {
         const system = this.galaxy.systems[systemId];
         if (system) {
           systemName = system.name;
+          // Find best habitable planet in system and override its type/size
           const best = bestHabitablePlanet(system);
           if (best) {
+            best.type = planetType;
+            best.size = planetSize;
+            best.habitability = habitability;
             planet = { size: best.size, type: best.type, habitability: best.habitability };
             best.colonized = true;
             best.colonyOwner = playerId;
@@ -885,10 +929,13 @@ class GameEngine {
       defensePlatform: null,       // { hp, maxHp, building } — null until built, building=true while under construction
       occupiedBy: null,            // playerId of occupying player, null if unoccupied
       occupationProgress: 0,       // ticks progressed toward occupation (0 to OCCUPATION_TICKS)
+      surfaceAnomalies: [],        // { id, slot, type, discovered, choicePending }
       _cachedHousing: null,        // cached derived values
       _cachedJobs: null,
       _cachedProduction: null,
     };
+    // Generate 1-3 surface anomalies at random district slot positions
+    this._generateSurfaceAnomalies(colony);
     // Schedule first crisis: current tick + random delay
     // First crisis has a grace period of 1500+ ticks (~2.5 min) so early game isn't punishing
     colony.nextCrisisTick = this.tickCount + 1500 + Math.floor(Math.random() * (CRISIS_MAX_TICKS - CRISIS_MIN_TICKS));
@@ -901,6 +948,111 @@ class GameEngine {
     this._dirtyPlayers.add(ownerId);
     this._invalidateStateCache();
     return colony;
+  }
+
+  _generateSurfaceAnomalies(colony) {
+    const planetSize = colony.planet.size;
+    if (planetSize < 1) return;
+    const count = SURFACE_ANOMALY_MIN + Math.floor(Math.random() * (SURFACE_ANOMALY_MAX - SURFACE_ANOMALY_MIN + 1));
+    const actualCount = Math.min(count, planetSize);
+    // Pick random unique slot positions
+    const slots = [];
+    for (let i = 0; i < planetSize; i++) slots.push(i);
+    for (let i = slots.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [slots[i], slots[j]] = [slots[j], slots[i]];
+    }
+    for (let i = 0; i < actualCount; i++) {
+      const type = SURFACE_ANOMALY_KEYS[Math.floor(Math.random() * SURFACE_ANOMALY_KEYS.length)];
+      colony.surfaceAnomalies.push({
+        id: this._nextId(),
+        slot: slots[i],
+        type,
+        discovered: false,
+        choicePending: false,
+      });
+    }
+  }
+
+  _discoverSurfaceAnomaly(colony, slot) {
+    const anomaly = colony.surfaceAnomalies.find(a => a.slot === slot && !a.discovered);
+    if (!anomaly) return;
+    anomaly.discovered = true;
+    const def = SURFACE_ANOMALY_TYPES[anomaly.type];
+    if (!def) return;
+
+    if (def.category === 'output') {
+      // Mark the district at this slot with anomaly bonus
+      const district = colony.districts[slot];
+      if (district) {
+        district.anomalyBonus = def.bonus;
+        this._invalidateColonyCache(colony);
+      }
+      this._emitEvent('surfaceAnomalyDiscovered', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        anomalyType: anomaly.type,
+        anomalyLabel: def.label,
+        category: 'output',
+        bonus: def.bonus,
+      });
+    } else if (def.category === 'choice') {
+      anomaly.choicePending = true;
+      this._emitEvent('surfaceAnomalyDiscovered', colony.ownerId, {
+        colonyId: colony.id,
+        colonyName: colony.name,
+        anomalyType: anomaly.type,
+        anomalyLabel: def.label,
+        category: 'choice',
+        choices: def.choices,
+        anomalyId: anomaly.id,
+      });
+    }
+  }
+
+  _resolveAnomaly(playerId, colonyId, anomalyId, choiceId) {
+    const colony = this.colonies.get(colonyId);
+    if (!colony) return { error: 'Colony not found' };
+    if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+
+    const anomaly = colony.surfaceAnomalies.find(a => a.id === anomalyId);
+    if (!anomaly) return { error: 'Anomaly not found' };
+    if (!anomaly.discovered) return { error: 'Anomaly not yet discovered' };
+    if (!anomaly.choicePending) return { error: 'No choice pending for this anomaly' };
+
+    const def = SURFACE_ANOMALY_TYPES[anomaly.type];
+    if (!def || def.category !== 'choice') return { error: 'Anomaly is not a choice type' };
+
+    const choice = def.choices.find(c => c.id === choiceId);
+    if (!choice) return { error: 'Invalid choice' };
+
+    // Apply reward
+    const state = this.playerStates.get(playerId);
+    if (state) {
+      for (const [resource, amount] of Object.entries(choice.reward)) {
+        if (resource === 'physics' || resource === 'society' || resource === 'engineering') {
+          state.resources.research = state.resources.research || { physics: 0, society: 0, engineering: 0 };
+          state.resources.research[resource] = (state.resources.research[resource] || 0) + amount;
+        } else {
+          state.resources[resource] = (state.resources[resource] || 0) + amount;
+        }
+      }
+    }
+
+    anomaly.choicePending = false;
+    this._dirtyPlayers.add(playerId);
+    this._invalidateStateCache();
+
+    this._emitEvent('surfaceAnomalyResolved', playerId, {
+      colonyId: colony.id,
+      colonyName: colony.name,
+      anomalyType: anomaly.type,
+      anomalyLabel: def.label,
+      choiceLabel: choice.label,
+      reward: choice.reward,
+    });
+
+    return { ok: true };
   }
 
   _addBuiltDistrict(colony, type) {
@@ -1110,8 +1262,9 @@ class GameEngine {
       // effectiveJobs === 0 but def.jobs > 0 means tech override — produces without consuming a pop
 
       const districtMod = techMods.district[d.type] || 1;
+      const anomalyMod = d.anomalyBonus ? (1 + d.anomalyBonus) : 1;
       for (const [resource, amount] of Object.entries(def.produces)) {
-        production[resource] = (production[resource] || 0) + (amount * districtMod);
+        production[resource] = (production[resource] || 0) + (amount * districtMod * anomalyMod);
       }
       // T3 Fusion Reactors: generators produce bonus alloys per district
       const alloysExtra = techMods.alloysBonus[d.type];
@@ -2504,7 +2657,6 @@ class GameEngine {
         colony.defensePlatform.building = false;
         delete colony.defensePlatform.buildTicksRemaining;
         this._defensePlatformBuilding.delete(colonyId);
-        this._invalidateStateCache();
         this._emitEvent('constructionComplete', colony.ownerId, {
           colonyId: colony.id,
           colonyName: colony.name,
@@ -2512,6 +2664,8 @@ class GameEngine {
         });
       }
     }
+    // buildTicksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process construction queues
@@ -2610,6 +2764,9 @@ class GameEngine {
           if (buildStats) buildStats.districtsBuilt++;
           const traitBefore = this._calcColonyTrait(colony);
           this._addBuiltDistrict(colony, item.type);
+          // Check for surface anomaly at this district slot
+          const districtSlot = colony.districts.length - 1;
+          this._discoverSurfaceAnomaly(colony, districtSlot);
           const ownerName = (this.playerStates.get(colony.ownerId) || {}).name || 'Unknown';
           this._emitEvent('constructionComplete', colony.ownerId, {
             colonyId: colony.id,
@@ -2640,6 +2797,8 @@ class GameEngine {
         }
       }
     }
+    // ticksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process building construction queues
@@ -2677,6 +2836,8 @@ class GameEngine {
         }
       }
     }
+    // ticksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process population: starvation deaths (monthly) and growth (every tick)
@@ -3360,11 +3521,13 @@ class GameEngine {
 
   // Process colony ship movement each tick
   _processColonyShipMovement() {
+    let mutated = false;
     const arrivals = [];
     for (const ship of this._colonyShips) {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       // Throttle dirty marking to every 5 ticks for ship movement animation
       if (this.tickCount % 5 === 0) {
         this._dirtyPlayers.add(ship.ownerId);
@@ -3388,16 +3551,18 @@ class GameEngine {
       this._foundColonyFromShip(ship);
     }
 
-    // Ship state was mutated — clear cached JSON for fresh broadcasts
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Process military ship (corvette) movement each tick
   _processMilitaryShipMovement() {
+    let mutated = false;
     for (const ship of this._militaryShips) {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       // Throttle dirty marking to every 5 ticks for ship movement animation
       if (this.tickCount % 5 === 0) {
         this._dirtyPlayers.add(ship.ownerId);
@@ -3432,8 +3597,8 @@ class GameEngine {
       }
     }
 
-    // Ship state was mutated — clear cached JSON for fresh broadcasts
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Check all systems for fleet combat after movement processing
@@ -3897,12 +4062,14 @@ class GameEngine {
 
   // Process science ship movement and surveying each tick
   _processScienceShipMovement() {
+    let mutated = false;
     const completed = [];
     const expeditionsDone = [];
     for (const ship of this._scienceShips) {
       // Ship is on an expedition
       if (ship.expedition) {
         ship.expeditionProgress++;
+        mutated = true;
         if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
         if (ship.expeditionProgress >= ship.expeditionTicks) {
           expeditionsDone.push(ship);
@@ -3913,6 +4080,7 @@ class GameEngine {
       // Ship is surveying a system
       if (ship.surveying) {
         ship.surveyProgress++;
+        mutated = true;
         if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
         if (ship.surveyProgress >= SURVEY_TICKS) {
           completed.push(ship);
@@ -3924,6 +4092,7 @@ class GameEngine {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
 
       if (ship.hopProgress >= SCIENCE_SHIP_HOP_TICKS) {
@@ -3956,9 +4125,8 @@ class GameEngine {
       this._completeExpedition(ship);
     }
 
-    // Ship state was mutated (hopProgress, systemId, path) — clear cached JSON
-    // so the next broadcast serializes fresh data instead of stale values.
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Complete a survey and discover anomalies
@@ -5383,6 +5551,12 @@ class GameEngine {
         return this.resolveCrisis(playerId, colonyId, choiceId);
       }
 
+      case 'resolveAnomaly': {
+        const { colonyId, anomalyId, choiceId } = cmd;
+        if (!colonyId || !anomalyId || !choiceId) return { error: 'Missing parameters' };
+        return this._resolveAnomaly(playerId, colonyId, anomalyId, choiceId);
+      }
+
       case 'activateEdict': {
         const { edictType } = cmd;
         if (!edictType || typeof edictType !== 'string') return { error: 'Missing edictType' };
@@ -6363,7 +6537,7 @@ class GameEngine {
     }
     const result = {
       id: c.id, ownerId: c.ownerId, name: c.name, systemId: c.systemId,
-      planet: { size: c.planet.size, type: c.planet.type },
+      planet: { size: c.planet.size, type: c.planet.type, habitability: c.planet.habitability },
       districts: c.districts, buildings: c.buildings || [], buildQueue: queueArr,
       buildingQueue: (c.buildingQueue || []).map(bq => ({ id: bq.id, type: bq.type, slot: bq.slot, ticksRemaining: bq.ticksRemaining })),
       buildingSlotsUnlocked: BUILDING_SLOT_THRESHOLDS.filter(t => c.pops >= t).length,
@@ -6385,6 +6559,22 @@ class GameEngine {
       result.occupationProgress = c.occupationProgress;
     } else if (c.occupationProgress > 0) {
       result.occupationProgress = c.occupationProgress;
+    }
+    // Include surface anomalies (only send slot + type + state, not internal fields)
+    if (c.surfaceAnomalies && c.surfaceAnomalies.length > 0) {
+      result.surfaceAnomalies = c.surfaceAnomalies.map(a => {
+        const aDef = SURFACE_ANOMALY_TYPES[a.type];
+        return {
+          id: a.id,
+          slot: a.slot,
+          type: a.type,
+          label: aDef ? aDef.label : a.type,
+          category: aDef ? aDef.category : 'unknown',
+          discovered: a.discovered,
+          choicePending: a.choicePending || false,
+          choices: (a.choicePending && aDef && aDef.choices) ? aDef.choices : undefined,
+        };
+      });
     }
     // Only include defensePlatform when present (saves ~700 bytes at 40 colonies)
     if (c.defensePlatform) {
@@ -6440,4 +6630,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, TRADE_AGREEMENT_INFLUENCE_COST, TRADE_AGREEMENT_ENERGY_BONUS, TRADE_AGREEMENT_MINERAL_BONUS, SYSTEM_CLAIM_INFLUENCE_COST, SYSTEM_CLAIM_VP, EXPEDITION_MIN_SURVEYS, EXPEDITION_TYPES, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, TRADE_AGREEMENT_INFLUENCE_COST, TRADE_AGREEMENT_ENERGY_BONUS, TRADE_AGREEMENT_MINERAL_BONUS, SYSTEM_CLAIM_INFLUENCE_COST, SYSTEM_CLAIM_VP, EXPEDITION_MIN_SURVEYS, EXPEDITION_TYPES, SURFACE_ANOMALY_TYPES, SURFACE_ANOMALY_KEYS, SURFACE_ANOMALY_MIN, SURFACE_ANOMALY_MAX, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

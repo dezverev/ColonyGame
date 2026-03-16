@@ -43,14 +43,14 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE TWEAK — Housing district food production**
 - [x] **BALANCE TWEAK — Foundry cost reduction**
 - [x] **BALANCE TWEAK — Defense platform repair rate increase**
-- [ ] **Starting planet variety:** Random planet type and size (12-20). Fairness mode = same for all.
+- [x] **Starting planet variety:** Random planet type and size (12-20). Fairness mode = same for all.
 - [x] **Score timer victory condition**
 - [ ] **Scarcity pre-warning system:** Warning 100 ticks before scarcity starts.
 - [ ] **Colony saturation indicator:** "Nearing Capacity" at 80%+, "Fully Developed" at 100%.
 - [ ] **BALANCE TWEAK — Starting minerals & dead resources:** Minerals 300→250, alloys 50→0.
 - [x] **BALANCE TWEAK — Research & Industrial output bump**
 - [x] **Scoreboard overlay — server VP calculation**
-- [ ] **PRIORITY: Surface anomalies — server logic:** 1-3 tile anomalies per colony (+50% output or one-time choice). Spatial puzzle.
+- [x] **PRIORITY: Surface anomalies — server logic:** 1-3 tile anomalies per colony (+50% output or one-time choice). Spatial puzzle.
 - [ ] **Surface anomaly 3D rendering:** Glowing markers per type. Requires server logic first.
 - [x] **BALANCE: Mini tech tree research costs adjustment**
 - [ ] **Disabled district 3D rendering:** Desaturated + red tint on disabled districts.
@@ -61,7 +61,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE FIX — Alloy VP weight + Industrial output bump**
 - [x] **Event toast notification HUD**
 - [ ] **BALANCE TWEAK — T2 tech cost increase:** 500→750 research.
-- [ ] **PRIORITY ORDER (R65):** (1) Defense platform repair, (2) T2 buildings, (3) Trade agreements, (4) System claims, (5) Expeditions, (6) Surface anomalies, (7) VP timeline, (8) Saturation indicator.
+- [ ] **PRIORITY ORDER (R71):** (1) Construction queue HUD, (2) Starting planet variety, (3) Destroyer ship class, (4) VP timeline snapshots, (5) Scarcity pre-warning, (6) Colony saturation indicator, (7) Disabled district rendering, (8) Surface anomaly 3D rendering.
 - [ ] **Exploration progress indicator:** "X% Explored" badge on galaxy HUD. Client-side only.
 - [ ] **BALANCE TWEAK — Base capital housing:** 10→8.
 - [ ] **Cascading colony events (stretch):** Crises spread to colonies within 2 hops.
@@ -71,6 +71,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **VP bonus for colony personality traits**
 - [x] **Ship maintenance costs**
 - [ ] **BALANCE TWEAK — VP formula rebalance:** Battle 5→3, survey per 5→3, colony +5 each, alloy per 25→20.
+- [ ] **BALANCE FIX — Genetic Engineering T3:** Remove pop growth halved penalty (trap tech). Replace with -1 food consumption per pop or food→VP conversion.
 - [ ] **District adjacency bonus (stretch):** Same-type adjacent districts get +10% output.
 
 ### Phase 2: Colony Management
@@ -79,7 +80,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [ ] Building system: slots unlock at pop thresholds (max 12). 7 building types.
 - [ ] Colony overview UI panel
 - [ ] Construction queue (max 3 per colony)
-- [ ] **Construction queue QoL:** Total cost display, deficit warnings, 50% cancel refund, ETA.
+- [x] **Construction queue QoL:** Total cost display, deficit warnings, 50% cancel refund, ETA.
 - [x] Colony personality system
 - [x] **Edict system (influence spending)**
 - [x] **Buildings layer — 3 building types**
@@ -117,7 +118,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] Planet generation per system
 - [x] **Galaxy map view (Three.js)**
 - [x] **System selection panel on galaxy map**
-- [ ] **PRIORITY: System orbital view:** Star + planets on orbital rings. Click planet for details. Galaxy -> System -> Colony nav.
+- [x] **PRIORITY: System orbital view:** Star + planets on orbital rings. Click planet for details. Galaxy -> System -> Colony nav.
 - [ ] **Colony planet context rendering:** Ground plane + background color per planet type.
 - [ ] **Planet visual polish in system panel:** Colored dots, bold size 15+, gold border on best.
 - [x] **Fog of war on galaxy map**
@@ -155,7 +156,8 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Fleet combat resolution**
 - [x] **Colony occupation after fleet combat**
 - [ ] **Fleet energy maintenance:** Corvette 1/month, Destroyer 3, Cruiser 6.
-- [ ] Ship classes: Corvette (50a/30HP), Destroyer (100/80HP), Cruiser (200/200HP), Battleship (400/500HP).
+- [ ] **Destroyer ship class:** 100a, 80HP, 8atk, 6s/hop. Unlock via T2 engineering (deep_mining). First fleet composition choice.
+- [ ] Ship classes (full): Cruiser (200a/200HP), Battleship (400/500HP). Later phases.
 - [ ] Fleet management + shipyard system: grouping, fleet cap 20, shipyard module 100 alloys, queue 5.
 - [ ] Combat + starbase defense: per-tick firing, starbase 100HP/40fp.
 - [ ] Military UI: fleet list, composition, build queue, combat alerts.

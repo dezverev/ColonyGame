@@ -198,12 +198,18 @@
       </div>
 
       <!-- View indicator (bottom-left) -->
-      <div id="view-indicator"><span id="view-indicator-label">Colony</span> <span class="view-hint">[G] toggle</span></div>
+      <div id="view-indicator"><span id="view-indicator-label">Colony</span> <span class="view-hint">[G] toggle · [Esc] back</span></div>
 
       <!-- System info panel (galaxy view, right side) -->
       <div id="system-panel" class="game-panel hidden">
         <div class="panel-header"><span id="system-panel-title">System</span><button id="system-panel-close" class="panel-close">&times;</button></div>
         <div id="system-panel-body"></div>
+      </div>
+
+      <!-- Planet detail panel (system orbital view) -->
+      <div id="planet-panel" class="game-panel hidden">
+        <div class="panel-header"><span id="planet-panel-title">Planet</span><button id="planet-panel-close" class="panel-close">&times;</button></div>
+        <div id="planet-panel-body"></div>
       </div>
 
       <!-- Build menu — appears when empty tile clicked -->
@@ -226,6 +232,7 @@
   <script src="js/renderer.js"></script>
   <script src="js/fog-of-war.js"></script>
   <script src="js/galaxy-view.js"></script>
+  <script src="js/system-view.js"></script>
   <script src="js/toast-format.js"></script>
   <script src="js/app.js"></script>
 </body>

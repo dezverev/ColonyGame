@@ -338,6 +338,13 @@
     research:    { label: 'Research',    color: '#9b59b6', cost: { minerals: 200, energy: 20 }, produces: '+4 Phys/Soc/Eng', consumes: '-4 Energy' },
   };
 
+  // Ship cost/build-time lookup (client-side mirror)
+  const SHIP_UI = {
+    colonyShip:  { label: 'Colony Ship',  color: '#00ffaa', cost: { minerals: 175, food: 75, alloys: 75 }, buildTime: 600 },
+    scienceShip: { label: 'Science Ship', color: '#00e5ff', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
+    corvette:    { label: 'Corvette',     color: '#ff4444', cost: { minerals: 100, alloys: 50 }, buildTime: 300 },
+  };
+
   // ── Building definitions (client-side mirror for UI) ──
   const BUILDING_UI = {
     researchLab:     { label: 'Research Lab',      color: '#9b59b6', cost: { minerals: 200, energy: 50 }, produces: '+4 Phys/Soc/Eng', consumes: '-2 Energy' },
@@ -472,10 +479,12 @@
   const roomMatchTimer = document.getElementById('room-match-timer');
 
   // ── View management ──
-  let currentView = 'colony'; // 'colony' | 'galaxy'
+  let currentView = 'colony'; // 'colony' | 'galaxy' | 'system'
   let galaxyViewInitialized = false;
   let galaxyAnimFrame = null;
+  let systemAnimFrame = null;
   let _viewingColonyIndex = 0; // which colony the player is currently viewing
+  let _systemViewSystem = null; // system currently shown in system orbital view
 
   // ── Galaxy view refs ──
   const viewIndicator = document.getElementById('view-indicator-label');
@@ -483,6 +492,12 @@
   const systemPanelTitle = document.getElementById('system-panel-title');
   const systemPanelBody = document.getElementById('system-panel-body');
   const systemPanelClose = document.getElementById('system-panel-close');
+
+  // ── Planet panel refs (system orbital view) ──
+  const planetPanel = document.getElementById('planet-panel');
+  const planetPanelTitle = document.getElementById('planet-panel-title');
+  const planetPanelBody = document.getElementById('planet-panel-body');
+  const planetPanelClose = document.getElementById('planet-panel-close');
 
   // ── Event Ticker ──
   const eventTicker = document.getElementById('event-ticker');
@@ -1300,13 +1315,16 @@
               const ui = BUILDING_UI[bq.type] || {};
               const pct = 500 > 0 ? Math.min(100, ((500 - bq.ticksRemaining) / 500) * 100) : 0;
               const secLeft = (bq.ticksRemaining / 10).toFixed(0);
+              const costStr = _formatCostShort(ui.cost);
+              const refundStr = ui.cost ? _formatCostShort(Object.fromEntries(Object.entries(ui.cost).map(([r, a]) => [r, Math.floor(a * 0.5)]))) : '';
               const div = document.createElement('div');
               div.className = 'building-slot building-slot-queued';
               div.innerHTML =
                 `<div class="build-option-swatch" style="background:${ui.color || '#666'}; opacity:0.5"></div>` +
                 `<span class="building-slot-name">${ui.label || bq.type}</span>` +
+                `<span class="queue-item-cost">${costStr}</span>` +
                 `<span class="queue-item-time">${secLeft}s</span>` +
-                `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+                `<button class="queue-item-cancel" title="Cancel — refund ${refundStr}">&times;</button>` +
                 `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
               div.querySelector('.queue-item-cancel').addEventListener('click', () => {
                 send({ type: 'demolish', colonyId: colony.id, districtId: bq.id });
@@ -1357,20 +1375,63 @@
         if (colony.buildQueue.length > 0) {
           colonyQueueHeader.classList.remove('hidden');
           colonyQueueList.innerHTML = '';
+
+          // Compute total queue cost and cumulative ETA
+          const totalCost = {};
+          let cumulativeTicks = 0;
           for (const q of colony.buildQueue) {
-            const isShip = q.type === 'colonyShip' || q.type === 'scienceShip';
-            const ui = q.type === 'colonyShip' ? { label: 'Colony Ship', color: '#00ffaa' } : q.type === 'scienceShip' ? { label: 'Science Ship', color: '#00e5ff' } : (DISTRICT_UI[q.type] || {});
-            const totalTicks = q.type === 'colonyShip' ? 600 : q.type === 'scienceShip' ? 300 : _getBuildTime(q.type);
+            const ui = _getQueueItemUI(q.type);
+            if (ui.cost) {
+              for (const [r, a] of Object.entries(ui.cost)) {
+                totalCost[r] = (totalCost[r] || 0) + a;
+              }
+            }
+            cumulativeTicks += q.ticksRemaining;
+          }
+
+          // Queue header with count and total ETA
+          const totalEtaSec = (cumulativeTicks / 10).toFixed(0);
+          colonyQueueHeader.innerHTML = `Build Queue (${colony.buildQueue.length}/3) <span class="queue-header-eta">${totalEtaSec}s total</span>`;
+
+          // Deficit warning — check if net production is negative for any resource
+          const myPlayer = _getMyPlayer();
+          if (myPlayer && colony.netProduction) {
+            const deficits = [];
+            for (const res of ['energy', 'minerals', 'food', 'alloys']) {
+              if (colony.netProduction[res] !== undefined && myPlayer.resources[res] !== undefined) {
+                // Sum net production across all colonies
+                let totalNet = 0;
+                for (const c of gameState.colonies.filter(c2 => c2.ownerId === gameState.yourId)) {
+                  if (c.netProduction && c.netProduction[res] !== undefined) totalNet += c.netProduction[res];
+                }
+                if (totalNet < 0) deficits.push(res);
+              }
+            }
+            if (deficits.length > 0) {
+              const warnDiv = document.createElement('div');
+              warnDiv.className = 'queue-deficit-warning';
+              const abbr = { energy: 'Energy', minerals: 'Minerals', food: 'Food', alloys: 'Alloys' };
+              warnDiv.textContent = '\u26a0 ' + deficits.map(r => abbr[r]).join(', ') + ' deficit';
+              colonyQueueList.appendChild(warnDiv);
+            }
+          }
+
+          for (const q of colony.buildQueue) {
+            const ui = _getQueueItemUI(q.type);
+            const totalTicks = SHIP_UI[q.type] ? SHIP_UI[q.type].buildTime : _getBuildTime(q.type);
             const pct = totalTicks > 0 ? Math.min(100, ((totalTicks - q.ticksRemaining) / totalTicks) * 100) : 0;
             const secLeft = (q.ticksRemaining / 10).toFixed(0);
+            const costStr = _formatCostShort(ui.cost);
+            const refundStr = ui.cost ? _formatCostShort(Object.fromEntries(Object.entries(ui.cost).map(([r, a]) => [r, Math.floor(a * 0.5)]))) : '';
 
             const div = document.createElement('div');
             div.className = 'queue-item';
             div.innerHTML =
               `<div class="queue-item-swatch" style="background:${ui.color || '#666'}"></div>` +
               `<span class="queue-item-name">${ui.label || q.type}</span>` +
+              `<span class="queue-item-cost">${costStr}</span>` +
               `<span class="queue-item-time">${secLeft}s</span>` +
-              `<button class="queue-item-cancel" title="Cancel (50% refund)">&times;</button>` +
+              `<button class="queue-item-cancel" title="Cancel — refund ${refundStr}">&times;</button>` +
               `<div class="queue-progress" style="width:100%"><div class="queue-progress-fill" style="width:${pct}%"></div></div>`;
 
             const cancelBtn = div.querySelector('.queue-item-cancel');
@@ -1380,8 +1441,17 @@
 
             colonyQueueList.appendChild(div);
           }
+
+          // Total cost summary row
+          if (colony.buildQueue.length > 1) {
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'queue-total-cost';
+            summaryDiv.textContent = 'Total invested: ' + _formatCostShort(totalCost);
+            colonyQueueList.appendChild(summaryDiv);
+          }
         } else {
           colonyQueueHeader.classList.add('hidden');
+          colonyQueueHeader.innerHTML = 'Build Queue';
           colonyQueueList.innerHTML = '';
         }
       }
@@ -1471,6 +1541,8 @@
     if (!gameState) return;
     if (currentView === 'colony') {
       _switchToGalaxy();
+    } else if (currentView === 'system') {
+      _switchToGalaxy();
     } else {
       _switchToColony();
     }
@@ -1479,6 +1551,7 @@
   function _switchToGalaxy() {
     currentView = 'galaxy';
     _hideAllPanels();
+    if (planetPanel) planetPanel.classList.add('hidden');
 
     // Hide colony UI elements
     const colonyPanel = document.getElementById('colony-panel');
@@ -1486,6 +1559,15 @@
 
     // Stop colony renderer (stops rAF loop, releases WebGL resources)
     if (window.ColonyRenderer) window.ColonyRenderer.destroy();
+
+    // Stop system view if active
+    if (systemAnimFrame) {
+      cancelAnimationFrame(systemAnimFrame);
+      systemAnimFrame = null;
+    }
+    if (window.SystemView) window.SystemView.destroy();
+    _systemViewSystem = null;
+
     const renderContainer = document.getElementById('render-container');
     if (renderContainer) renderContainer.innerHTML = '';
 
@@ -1508,8 +1590,9 @@
   function _switchToColony() {
     currentView = 'colony';
 
-    // Hide galaxy panels
+    // Hide galaxy and system panels
     if (systemPanel) systemPanel.classList.add('hidden');
+    if (planetPanel) planetPanel.classList.add('hidden');
 
     // Stop galaxy render loop and destroy galaxy view
     if (galaxyAnimFrame) {
@@ -1518,6 +1601,14 @@
     }
     if (window.GalaxyView) window.GalaxyView.destroy();
     galaxyViewInitialized = false;
+
+    // Stop system render loop and destroy system view
+    if (systemAnimFrame) {
+      cancelAnimationFrame(systemAnimFrame);
+      systemAnimFrame = null;
+    }
+    if (window.SystemView) window.SystemView.destroy();
+    _systemViewSystem = null;
 
     // Re-init colony renderer
     const renderContainer = document.getElementById('render-container');
@@ -1541,9 +1632,105 @@
     if (window.GalaxyView) window.GalaxyView.render();
   }
 
+  function _switchToSystem(system) {
+    if (!system) return;
+    currentView = 'system';
+    _systemViewSystem = system;
+
+    // Hide galaxy panels
+    if (systemPanel) systemPanel.classList.add('hidden');
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.add('hidden');
+
+    // Stop galaxy render loop and destroy galaxy view
+    if (galaxyAnimFrame) {
+      cancelAnimationFrame(galaxyAnimFrame);
+      galaxyAnimFrame = null;
+    }
+    if (window.GalaxyView) window.GalaxyView.destroy();
+    galaxyViewInitialized = false;
+
+    // Stop colony renderer
+    if (window.ColonyRenderer) window.ColonyRenderer.destroy();
+
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+
+    // Init system view
+    if (window.SystemView) {
+      window.SystemView.init(renderContainer);
+      window.SystemView.buildSystem(system);
+      window.SystemView.setOnPlanetSelect(_onPlanetSelect);
+
+      if (systemAnimFrame) cancelAnimationFrame(systemAnimFrame);
+      _systemAnimate();
+    }
+
+    _updateViewUI();
+  }
+
+  function _systemAnimate() {
+    systemAnimFrame = requestAnimationFrame(_systemAnimate);
+    if (window.SystemView) window.SystemView.render();
+  }
+
+  function _onPlanetSelect(planet, system) {
+    if (!planetPanel) return;
+    if (!planet) {
+      planetPanel.classList.add('hidden');
+      return;
+    }
+
+    const typeLabel = planet.type.charAt(0).toUpperCase() + planet.type.slice(1);
+    planetPanelTitle.textContent = `${typeLabel} — Orbit ${planet.orbit}`;
+
+    let html = '';
+    html += `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${typeLabel}</span></div>`;
+    if (planet.type !== 'gasGiant') {
+      html += `<div class="info-row"><span class="info-label">Size</span><span class="info-value">${planet.size} districts</span></div>`;
+    }
+    const habClass = planet.habitability >= 60 ? 'hab-high' : planet.habitability > 0 ? 'hab-med' : 'hab-none';
+    html += `<div class="info-row"><span class="info-label">Habitability</span><span class="info-value ${habClass}">${planet.habitability}%</span></div>`;
+
+    const bonusLabel = _planetBonusLabel(planet.type);
+    if (bonusLabel) {
+      html += `<div class="info-row"><span class="info-label">Bonus</span><span class="info-value planet-bonus-tag">${bonusLabel}</span></div>`;
+    }
+
+    if (planet.colonized) {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#2ecc71">Colonized</span></div>`;
+      // Colony link button
+      const colony = gameState.colonies.find(c => c.systemId === system.id && c.ownerId === gameState.yourId);
+      if (colony) {
+        html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
+      }
+    } else if (planet.habitability >= 20) {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#f39c12">Habitable</span></div>`;
+    } else {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#7f8c8d">Uninhabitable</span></div>`;
+    }
+
+    planetPanelBody.innerHTML = html;
+
+    // Wire colony button
+    const colBtn = planetPanelBody.querySelector('.system-colony-btn');
+    if (colBtn) {
+      colBtn.addEventListener('click', () => {
+        const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        const idx = myColonies.findIndex(c => c.id === colBtn.dataset.colonyId);
+        if (idx >= 0) _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        _switchToColony();
+      });
+    }
+
+    planetPanel.classList.remove('hidden');
+  }
+
   function _updateViewUI() {
     if (viewIndicator) {
-      viewIndicator.textContent = currentView === 'colony' ? 'Colony' : 'Galaxy';
+      const labels = { colony: 'Colony', galaxy: 'Galaxy', system: 'System' };
+      viewIndicator.textContent = labels[currentView] || currentView;
     }
   }
 
@@ -1656,6 +1843,9 @@
       html += '<div class="system-surveyed-badge">Surveyed</div>';
     }
 
+    // "View System" button — opens 3D orbital view
+    html += `<button class="system-view-btn">View System</button>`;
+
     systemPanelBody.innerHTML = html;
 
     // Wire colony button
@@ -1691,6 +1881,14 @@
       });
     }
 
+    // Wire "View System" button — opens 3D orbital view
+    const viewSysBtn = systemPanelBody.querySelector('.system-view-btn');
+    if (viewSysBtn) {
+      viewSysBtn.addEventListener('click', () => {
+        _switchToSystem(system);
+      });
+    }
+
     systemPanel.classList.remove('hidden');
   }
 
@@ -1711,6 +1909,21 @@
   function _getBuildTime(type) {
     const times = { housing: 200, generator: 300, mining: 300, agriculture: 300, industrial: 400, research: 400 };
     return times[type] || 300;
+  }
+
+  // Get UI info (label, color, cost) for any queue item type
+  function _getQueueItemUI(type) {
+    if (SHIP_UI[type]) return SHIP_UI[type];
+    if (DISTRICT_UI[type]) return DISTRICT_UI[type];
+    if (BUILDING_UI[type]) return BUILDING_UI[type];
+    return { label: type, color: '#666', cost: {} };
+  }
+
+  // Format cost object as compact string: "100m 50a"
+  function _formatCostShort(cost) {
+    if (!cost) return '';
+    const abbr = { minerals: 'm', energy: 'e', food: 'f', alloys: 'a' };
+    return Object.entries(cost).map(([r, a]) => `${a}${abbr[r] || r}`).join(' ');
   }
 
   // ── Edict panel ──
@@ -2117,6 +2330,9 @@
     systemPanel.classList.add('hidden');
     if (window.GalaxyView) window.GalaxyView.setOnSystemSelect(_onSystemSelect); // keep callback, just hide
   });
+  if (planetPanelClose) planetPanelClose.addEventListener('click', () => {
+    planetPanel.classList.add('hidden');
+  });
 
   // Keyboard shortcuts (only during game)
   document.addEventListener('keydown', (e) => {
@@ -2148,6 +2364,13 @@
       }
       if (systemPanel && !systemPanel.classList.contains('hidden')) {
         systemPanel.classList.add('hidden');
+      }
+      if (planetPanel && !planetPanel.classList.contains('hidden')) {
+        planetPanel.classList.add('hidden');
+      }
+      // Escape from system view returns to galaxy
+      if (currentView === 'system') {
+        _switchToGalaxy();
       }
     }
     // Colony switching: number keys 1-5

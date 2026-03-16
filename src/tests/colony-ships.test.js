@@ -312,6 +312,13 @@ describe('sendColonyShip command', () => {
     const colony = getFirstColony(engine, 1);
     const startSysId = colony.systemId;
 
+    // Mark ALL habitable planets in the system as colonized to avoid
+    // bestHabitablePlanet returning a different uncolonized planet
+    const system = engine.galaxy.systems[startSysId];
+    for (const p of system.planets) {
+      if (p.habitability >= 20) p.colonized = true;
+    }
+
     const result = engine.handleCommand(1, { type: 'sendColonyShip', shipId: ship.id, targetSystemId: startSysId });
     assert.ok(result.error);
   });
