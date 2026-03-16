@@ -2494,3 +2494,6 @@ Heavy warship: 200m/100a, 80 HP, 8 ATK, 6s/hop, 3⚡ 2🔩/mo maintenance. Requi
 
 ## Entry 74 — 2026-03-16 — VP timeline snapshots (R71-4)
 Server records VP snapshots every 10 months, includes full timeline in gameOverData. Client renders canvas line chart on post-game screen with per-player color-coded lines. Files: game-engine.js, app.js, index.html, style.css, vp-timeline.test.js. Tests: 12 new, 2367 passing.
+
+## Entry 75 — 2026-03-16 — Scarcity pre-warning HUD (R71-5)
+Server broadcasts scarcityWarning state (resource + ticksUntil) during 100-tick warning phase. Client shows persistent yellow countdown in HUD before scarcity activates. Files: game-engine.js, app.js, scarcity-seasons.test.js. Tests: 7 new, 2382 passing.
