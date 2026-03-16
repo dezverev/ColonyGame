@@ -4,60 +4,45 @@
 
 ---
 
-## Review #65 — 2026-03-15 — Scouting Race Live, Depth Plateau Approaching
+## Review #66 — 2026-03-15 — Depth Plateau Persists, Exploration & Diplomacy Need Next Layer
 
-**Build State:** 119/241 tasks (49%). Scout milestones + colony upkeep + diplomacy pings shipped. 2018/2019 tests passing.
+**Build State:** 86/180 tasks (48%). 2,019 tests passing. Colony upkeep + scout milestones + defense repairs shipped since last review. No new systems added — incremental polish only.
 
 ### Pillar Scores
 
 | Pillar | Score | Key Issue |
 |--------|-------|-----------|
-| Strategic Depth | 8/10 | Upkeep + doctrine + variants strong; tech tree homogeneous (9 techs = % bonuses), only 3 buildings |
-| Pacing & Tension | 8/10 | Scout milestones fix opening; catalysts + crisis + scarcity cover mid/late; exploration dead by min 8 |
-| Economy | 8/10 | Upkeep scaling + ship maintenance + scarcity = real pressure; building layer too thin for late-game |
-| Exploration | 6.5/10 | Scout milestones add purpose; auto-chain works; science ships idle after survey, no expeditions |
-| Multiplayer Fairness | 8/10 | Underdog + tech catch-up + gifting + fair starts — strongest pillar |
-| Diplomacy | 6.5/10 | Stances + gifting + pings + chat functional; no binding agreements, no system claims |
+| Strategic Depth | 8/10 | Doctrine + upkeep + variants give real choices; tech tree still 9 identical % bonuses, only 3 buildings |
+| Pacing & Tension | 7.5/10 | Opening strong (scout race, doctrine pick); mid-game flattens ~min 10 when colonies saturate and exploration ends |
+| Economy | 8/10 | Upkeep scaling + ship maint + scarcity seasons create genuine pressure; late-game needs more sinks |
+| Exploration | 6/10 | Auto-chain survey + milestones give purpose; science ships idle after ~8 min, no expeditions, no follow-up |
+| Multiplayer Fairness | 8/10 | Underdog bonus + tech catch-up + gifting + fair galaxy — strongest pillar |
+| Diplomacy | 5.5/10 | Stances + gifting + pings work; no binding agreements, no territory, no trade — weakest pillar |
 
-**Overall: 7.5/10** — Opening-to-midgame arc is now solid. #1 gap is the "depth plateau" — colonies, tech, and exploration all flatten out by minute 10. Buildings (3 types), tech (all % bonuses), and diplomacy (no trade pacts) need the next layer.
+**Overall: 7.2/10** — Core loop is functional and the opening arc is strong. The game hits a "depth plateau" around minute 10 where colonies, tech, and exploration all flatten simultaneously. Diplomacy lacks any binding mechanics for multiplayer tension.
 
-### Top 5 Playtester Complaints
+### Top 3 Problems
 
-1. Science ships idle after ~8 min — exploration just stops, no expeditions or follow-up content
-2. Tech tree is 9 identical-feeling % bonuses — no game-changing unlocks (no new abilities, no new units)
-3. Only 3 buildings — colony management plateaus fast, all colonies feel the same by min 12
-4. No trade pacts or system claims — diplomacy is signals without binding economic/territorial mechanics
-5. No spatial puzzle on colony grid — district placement is pure type selection, no adjacency or anomalies
+1. **Exploration dead end** — Science ships become idle paperweights after ~8 minutes. No expeditions, no late-game discovery content. The explore pillar has no mid/late game.
+2. **Tech tree lacks capability unlocks** — All 9 techs are production % bonuses. No new abilities, no strategic branching, no "this changes how I play" moments. Tech feels like autopilot.
+3. **Diplomacy has no teeth** — Stances and pings are signals only. No system claims (territory), no trade agreements (economy), no NAPs (security). Players can't meaningfully cooperate or threaten.
 
-### Recommendations (by impact/effort)
+### Recommendations
 
-**R65-1: Advanced Buildings T2** — High/Medium. Quantum Lab (+8 research, req Research Lab + T2), Advanced Foundry (+8 alloys, req Foundry + T2), Planetary Shield (+50 platform HP, req Shield Gen + T2). Doubles colony depth ceiling.
+**R66-1: Science Ship Expeditions** — High/Med. After 5+ surveys, unlock timed missions at surveyed systems: Deep Probe (600t, +200 mixed resources), Precursor Signal (900t, +500 research, 30% ship loss risk), Wormhole Mapping (600t, +2 VP). Fills the min 8-20 exploration void. Already in design.md.
 
-**R65-2: Trade Agreements** — High/Medium. 25 influence each. Mutual +15% energy/minerals. Breaks on aggression (betrayer -50 influence). Max 2 active. First binding diplomatic mechanic.
+**R66-2: Trade Agreements** — High/Med. 25 influence each player. Mutual +15% energy/minerals for 5 min. Breaks on aggression (betrayer loses 50 influence). Max 2 active. First binding diplomatic mechanic that creates real alliance incentives and betrayal stakes.
 
-**R65-3: Science Ship Expeditions** — High/Medium. At surveyed systems: Deep Probe (600t, +200 resource), Precursor Signal (900t, +500 research, 30% ship loss), Wormhole Scan (600t, shortcut). Fills min 8-20 void.
+**R66-3: System Claims** — Med/Low. 25 influence to claim a surveyed system. Blocks enemy colonization. +1 VP. Auto-claims on colonize. Gives influence a territorial sink and creates border friction for diplomacy.
 
-**R65-4: System Claims** — Medium/Low. 25 influence to claim surveyed system. Prevents enemy colonization. +1 VP per claim. Auto-claim on colonize. First territorial mechanic — influence finally has a meaningful sink.
-
-**R65-5: Tech Unlock Variety** — Medium/Medium. Replace 1 tech per track with capability unlock: Physics T1 "Subspace Sensors" (reveal adjacent unsurveyed systems on galaxy map), Society T1 "Colonial Charter" (+1 building slot all colonies), Engineering T1 "Modular Hulls" (+2 max corvettes). Makes tech path a real strategic choice.
-
-**R65-6: Surface Anomalies** — Medium/Medium. 1-3 per colony. Mineral Vein/Thermal Vent/Fertile Soil: +50% matching district. Ancient Ruins: one-time choice. Adds spatial puzzle.
-
-**R65-7: VP Timeline Graph** — Low/Low. Record VP every 10 months. Render line chart on post-game screen. Emotional payoff for close matches.
+**R66-4: Advanced Buildings T2** — Med/Med. Quantum Lab (+8 research, req Lab + T2), Advanced Foundry (+8 alloys, req Foundry + T2), Planetary Shield (+50 defense HP, req Shield Gen + T2). Extends colony management past the min-10 ceiling.
 
 ### Balance Notes
 
-- Colony upkeep (0/3/8/15/25): 5-colony empire = 51e/mo — well-tuned wide penalty
-- Scout milestones (10/15/20 VP): 45 total VP is significant but not decisive — good
-- T2 at 500 cost, 12 research/mo: ~42 months (4.2 min) — consider 600 for 20-min matches
-- Foundry at 250m, +4 alloys: ROI 63s — competitive with Industrial district
-- Ship maintenance 2e+1a/corvette: fleet of 10 = 20e+10a — forces economic tradeoff
-- **Fix needed:** T2 tech cost should be 600 (not 500) to push T2 completion to ~min 8 instead of ~min 6
-
-### Content Wishlist
-
-1. Galactic Wonder Race — Dyson Sphere/Library/Ring World, galaxy-wide first-to-build, massive VP
-2. Mercenary fleet hire — 200 alloys for temp 3-corvette escort, alloy pressure valve
-3. Colony governors — random NPC modifier on founding (+10% mining, -5% growth, etc.)
-4. Nebula terrain — systems inside nebulae: +50% research, -25% sensor range
-5. Pirate haven system — NPC station that sells mercenaries, buys surplus, creates a "neutral market"
+- **Starting resources** (100E/300M/100F/50A/100I): adequate for 2-3 opening districts + first expansion decision
+- **Colony upkeep** (0/3/8/15/25): 5-colony = 51e/mo — well-tuned wide penalty, discourages mindless spam
+- **Tech pacing**: T1 at 150 cost, ~12 research/mo = ~12.5 months (~75s). T2 at 500 = ~42 months (~4.2 min). T3 at 800 = ~67 months. Full tree ~15 min — fits 20-min match
+- **Ship economy**: 10 corvettes = 20e + 10a/mo maintenance — meaningful but not crippling
+- **Scout milestones** (10/15/20 VP): 45 total is significant but beatable — good carrot without being decisive
+- **District balance**: Industrial (4 alloys, 3e upkeep, 200m) vs Generator (6e, 0 upkeep, 100m) — generators are clearly more efficient early; industrial needs late-game alloy sinks to justify cost
+- **No urgent balance fix needed** — numbers are reasonable; the depth plateau is a content problem, not a tuning problem
