@@ -31,6 +31,8 @@
   // Shared geometries and materials
   const _geoCache = {};
   const _matCache = {};
+  // Per-build disposables — geometries/materials created per buildSystem() call that must be disposed
+  let _disposables = [];
 
   // Planet visual config by type
   const PLANET_COLORS = {
@@ -116,9 +118,12 @@
     const starRadius = STAR_RADIUS_MAP[system.starType] || 4.0;
     const starColor = STAR_COLORS[system.starType] || 0xf9d71c;
 
-    // Star
-    const starMat = new THREE.MeshBasicMaterial({ color: starColor });
-    starMesh = new THREE.Mesh(_geoCache.star, starMat);
+    // Star — cache material by star type
+    const starMatKey = 'star_' + system.starType;
+    if (!_matCache[starMatKey]) {
+      _matCache[starMatKey] = new THREE.MeshBasicMaterial({ color: starColor });
+    }
+    starMesh = new THREE.Mesh(_geoCache.star, _matCache[starMatKey]);
     starMesh.scale.setScalar(starRadius);
     scene.add(starMesh);
 
@@ -143,12 +148,15 @@
           planetRadius = 0.8 + (planet.size / 20) * 1.2; // 0.8 - 2.0 based on size
         }
 
-        // Orbital ring
-        const ringGeo = new THREE.RingGeometry(orbitDist - 0.08, orbitDist + 0.08, 64);
-        const ringMat = new THREE.MeshBasicMaterial({
-          color: 0x445566, side: THREE.DoubleSide, transparent: true, opacity: 0.3,
-        });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
+        // Orbital ring — geometry is unique per orbit radius, must dispose on clear
+        const ringGeo = new THREE.RingGeometry(orbitDist - 0.08, orbitDist + 0.08, 32);
+        _disposables.push(ringGeo);
+        if (!_matCache.orbitRing) {
+          _matCache.orbitRing = new THREE.MeshBasicMaterial({
+            color: 0x445566, side: THREE.DoubleSide, transparent: true, opacity: 0.3,
+          });
+        }
+        const ring = new THREE.Mesh(ringGeo, _matCache.orbitRing);
         ring.rotation.x = -Math.PI / 2;
         scene.add(ring);
 
@@ -157,12 +165,16 @@
         const px = Math.cos(angle) * orbitDist;
         const pz = Math.sin(angle) * orbitDist;
 
-        const planetMat = new THREE.MeshStandardMaterial({
-          color: planetColor,
-          roughness: 0.7,
-          metalness: 0.1,
-        });
-        const mesh = new THREE.Mesh(_geoCache.planet, planetMat);
+        // Cache planet material by type
+        const planetMatKey = 'planet_' + planet.type;
+        if (!_matCache[planetMatKey]) {
+          _matCache[planetMatKey] = new THREE.MeshStandardMaterial({
+            color: planetColor,
+            roughness: 0.7,
+            metalness: 0.1,
+          });
+        }
+        const mesh = new THREE.Mesh(_geoCache.planet, _matCache[planetMatKey]);
         mesh.scale.setScalar(planetRadius);
         mesh.position.set(px, 0, pz);
         mesh.userData.planetIndex = i;
@@ -173,10 +185,13 @@
         // Colonized indicator — small ring
         if (planet.colonized) {
           const colRingGeo = new THREE.RingGeometry(planetRadius * 1.3, planetRadius * 1.6, 16);
-          const colRingMat = new THREE.MeshBasicMaterial({
-            color: 0x00ffaa, side: THREE.DoubleSide, transparent: true, opacity: 0.6,
-          });
-          const colRing = new THREE.Mesh(colRingGeo, colRingMat);
+          _disposables.push(colRingGeo);
+          if (!_matCache.colonized) {
+            _matCache.colonized = new THREE.MeshBasicMaterial({
+              color: 0x00ffaa, side: THREE.DoubleSide, transparent: true, opacity: 0.6,
+            });
+          }
+          const colRing = new THREE.Mesh(colRingGeo, _matCache.colonized);
           colRing.rotation.x = -Math.PI / 2;
           colRing.position.copy(mesh.position);
           colRing.position.y = -0.1;
@@ -210,6 +225,9 @@
       if (entry.mesh.userData.colRing) scene.remove(entry.mesh.userData.colRing);
     }
     planetMeshes = [];
+    // Dispose per-build geometries (orbit rings, colonized rings)
+    for (const geo of _disposables) geo.dispose();
+    _disposables = [];
     if (highlightMesh) {
       scene.remove(highlightMesh);
       highlightMesh = null;
