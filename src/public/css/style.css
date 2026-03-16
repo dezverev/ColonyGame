@@ -446,6 +446,8 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .go-vp-table td, .go-stats-table td { font-size: 0.78rem; }
 .go-vp-table th, .go-stats-table th { font-size: 0.75rem; color: #8888aa; }
 #game-over-stats { margin-bottom: 1.5rem; text-align: left; }
+#game-over-timeline { margin: 1rem 0; text-align: center; }
+#vp-timeline-canvas { border: 1px solid #1e2a3a; border-radius: 6px; max-width: 100%; }
 #game-over-buttons { display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem; }
 #game-over-rematch-btn, #game-over-lobby-btn {
   padding: 0.7rem 2rem; font-size: 1rem;

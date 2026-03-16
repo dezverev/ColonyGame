@@ -523,6 +523,7 @@ class GameEngine {
     this._victoryProgressCacheTick = -1;
     this._cachedSurveyedArrays = new Map(); // playerId -> { size, array } — avoids Set→Array on every broadcast
     this._gameOver = false; // true after game ends
+    this._vpTimeline = []; // Array of { tick, month, snapshots: { playerId: vp } }
 
     // Game speed & pause
     this._gameSpeed = DEFAULT_SPEED;
@@ -4651,6 +4652,17 @@ class GameEngine {
     return this._calcVPBreakdown(playerId).vp;
   }
 
+  // Record VP snapshot every 10 months for post-game timeline graph
+  _recordVPSnapshot() {
+    const month = this.tickCount / MONTH_TICKS;
+    if (month % 10 !== 0) return;
+    const snapshots = {};
+    for (const [playerId] of this.playerStates) {
+      snapshots[playerId] = this._calcVictoryPoints(playerId);
+    }
+    this._vpTimeline.push({ tick: this.tickCount, month, snapshots });
+  }
+
   // Check distinct victory conditions — called monthly
   _checkVictoryConditions() {
     if (this._gameOver) return;
@@ -4801,12 +4813,18 @@ class GameEngine {
       };
     }
 
+    // Record final VP snapshot for timeline
+    const finalSnapshots = {};
+    for (const s of scores) { finalSnapshots[s.playerId] = s.vp; }
+    const vpTimeline = [...this._vpTimeline, { tick: this.tickCount, month: Math.floor(this.tickCount / MONTH_TICKS), snapshots: finalSnapshots }];
+
     const gameOverData = {
       winner: winner ? { playerId: winner.playerId, name: winner.name, vp: winner.vp } : null,
       victoryType: victoryInfo ? victoryInfo.type : 'vp',
       scores,
       finalTick: this.tickCount,
       matchDurationSec,
+      vpTimeline,
     };
 
     if (this.onGameOver) {
@@ -4984,6 +5002,7 @@ class GameEngine {
       this._processEdicts();
       this._processInfluenceIncome();
       this._processDefensePlatformRepair();
+      this._recordVPSnapshot();
       this._checkVictoryConditions();
     }
 

@@ -2491,3 +2491,6 @@ Starting planets now get random habitable type and size (12-20) instead of alway
 
 ## Entry 73 — 2026-03-16 — Destroyer ship class (R71-3)
 Heavy warship: 200m/100a, 80 HP, 8 ATK, 6s/hop, 3⚡ 2🔩/mo maintenance. Requires deep_mining T2. Cap 5, independent of corvette cap. +3 military VP each. Files: game-engine.js, server.js, app.js, galaxy-view.js, destroyer.test.js. Tests: 27 new, 2345 passing.
+
+## Entry 74 — 2026-03-16 — VP timeline snapshots (R71-4)
+Server records VP snapshots every 10 months, includes full timeline in gameOverData. Client renders canvas line chart on post-game screen with per-player color-coded lines. Files: game-engine.js, app.js, index.html, style.css, vp-timeline.test.js. Tests: 12 new, 2367 passing.

@@ -210,7 +210,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Distinct victory conditions**
 - [ ] Win conditions (selectable): Domination/Research/Economic/Diplomatic.
 - [x] **Post-game score screen**
-- [ ] **Post-game VP timeline graph:** VP snapshots every 10 months, line chart on post-game screen.
+- [x] **Post-game VP timeline graph:** VP snapshots every 10 months, line chart on post-game screen.
 - [ ] Player disconnect handling: 60s grace period, AI takeover, reconnect or fallen empire.
 - [ ] **Dynamic galactic news ticker:** Procedural flavor text ticker, 4s intervals, max 8 queued.
 - [x] **Colony procedural naming**
