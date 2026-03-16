@@ -2497,3 +2497,6 @@ Server records VP snapshots every 10 months, includes full timeline in gameOverD
 
 ## Entry 75 — 2026-03-16 — Scarcity pre-warning HUD (R71-5)
 Server broadcasts scarcityWarning state (resource + ticksUntil) during 100-tick warning phase. Client shows persistent yellow countdown in HUD before scarcity activates. Files: game-engine.js, app.js, scarcity-seasons.test.js. Tests: 7 new, 2382 passing.
+
+## Entry 76 — 2026-03-16 — Colony saturation indicator (R71-6)
+Server adds saturation ratio to colony serialization. Client shows "Nearing Capacity" (80%+) and "Fully Developed" (100%) badges in colony panel. Files: game-engine.js, app.js, index.html, style.css, colony-saturation.test.js. Tests: 8 new, 2408 passing.
