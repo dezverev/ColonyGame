@@ -2634,7 +2634,6 @@ class GameEngine {
         colony.defensePlatform.building = false;
         delete colony.defensePlatform.buildTicksRemaining;
         this._defensePlatformBuilding.delete(colonyId);
-        this._invalidateStateCache();
         this._emitEvent('constructionComplete', colony.ownerId, {
           colonyId: colony.id,
           colonyName: colony.name,
@@ -2642,6 +2641,8 @@ class GameEngine {
         });
       }
     }
+    // buildTicksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process construction queues
@@ -2773,6 +2774,8 @@ class GameEngine {
         }
       }
     }
+    // ticksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process building construction queues
@@ -2810,6 +2813,8 @@ class GameEngine {
         }
       }
     }
+    // ticksRemaining changed — invalidate cached JSON so broadcasts reflect progress
+    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
   }
 
   // Process population: starvation deaths (monthly) and growth (every tick)
@@ -3493,11 +3498,13 @@ class GameEngine {
 
   // Process colony ship movement each tick
   _processColonyShipMovement() {
+    let mutated = false;
     const arrivals = [];
     for (const ship of this._colonyShips) {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       // Throttle dirty marking to every 5 ticks for ship movement animation
       if (this.tickCount % 5 === 0) {
         this._dirtyPlayers.add(ship.ownerId);
@@ -3521,16 +3528,18 @@ class GameEngine {
       this._foundColonyFromShip(ship);
     }
 
-    // Ship state was mutated — clear cached JSON for fresh broadcasts
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Process military ship (corvette) movement each tick
   _processMilitaryShipMovement() {
+    let mutated = false;
     for (const ship of this._militaryShips) {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       // Throttle dirty marking to every 5 ticks for ship movement animation
       if (this.tickCount % 5 === 0) {
         this._dirtyPlayers.add(ship.ownerId);
@@ -3565,8 +3574,8 @@ class GameEngine {
       }
     }
 
-    // Ship state was mutated — clear cached JSON for fresh broadcasts
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Check all systems for fleet combat after movement processing
@@ -4030,12 +4039,14 @@ class GameEngine {
 
   // Process science ship movement and surveying each tick
   _processScienceShipMovement() {
+    let mutated = false;
     const completed = [];
     const expeditionsDone = [];
     for (const ship of this._scienceShips) {
       // Ship is on an expedition
       if (ship.expedition) {
         ship.expeditionProgress++;
+        mutated = true;
         if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
         if (ship.expeditionProgress >= ship.expeditionTicks) {
           expeditionsDone.push(ship);
@@ -4046,6 +4057,7 @@ class GameEngine {
       // Ship is surveying a system
       if (ship.surveying) {
         ship.surveyProgress++;
+        mutated = true;
         if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
         if (ship.surveyProgress >= SURVEY_TICKS) {
           completed.push(ship);
@@ -4057,6 +4069,7 @@ class GameEngine {
       if (!ship.path || ship.path.length === 0) continue;
 
       ship.hopProgress++;
+      mutated = true;
       if (this.tickCount % 5 === 0) this._dirtyPlayers.add(ship.ownerId);
 
       if (ship.hopProgress >= SCIENCE_SHIP_HOP_TICKS) {
@@ -4089,9 +4102,8 @@ class GameEngine {
       this._completeExpedition(ship);
     }
 
-    // Ship state was mutated (hopProgress, systemId, path) — clear cached JSON
-    // so the next broadcast serializes fresh data instead of stale values.
-    if (this._dirtyPlayers.size > 0) this._invalidateStateCache();
+    // Only invalidate if this function actually mutated ship state
+    if (mutated) this._invalidateStateCache();
   }
 
   // Complete a survey and discover anomalies
