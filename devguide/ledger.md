@@ -2211,3 +2211,35 @@ Each entry records an iteration of automated development.
 - Foundry 250m gives ~20% better mineral-efficiency than Industrial (250m/4alloys vs 200m/4alloys → 62.5 vs 50 minerals per alloy/month) — justified because building slots are scarcer than district slots
 
 **Next:** Scouting race VP milestones (Phase 3, R62-2) — first-to-survey VP bonuses at 3/5/8 systems. Then colony upkeep scaling (Phase 2, R62-3).
+
+---
+
+## Entry 63 — 2026-03-15 — Colony Upkeep Scaling
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- **Colony upkeep scaling:** Colonies beyond the first cost escalating energy maintenance: colony 1 = 0, colony 2 = 3, colony 3 = 8, colony 4 = 15, colony 5+ = 25 energy/month. Creates tall-vs-wide tension — wide empires need generator focus while tall players save energy for research/buildings.
+  - `COLONY_UPKEEP = [0, 3, 8, 15, 25]` constant with capped lookup for 6+ colonies (caps at 25/each)
+  - Deducted in `_processMonthlyResources` after ship maintenance, before dirty player marking
+  - Reflected in `_getPlayerSummary` income so empire-wide energy net is accurate
+  - Can push energy negative — existing energy deficit system handles consequences (no double penalty)
+- **Client HUD tooltip:** Energy resource bar item shows tooltip with empire-wide net energy income and colony upkeep breakdown when player has 2+ colonies
+
+**Files changed:**
+- `server/game-engine.js` — COLONY_UPKEEP constant, upkeep deduction in _processMonthlyResources, upkeep in _getPlayerSummary income, COLONY_UPKEEP added to module.exports
+- `src/public/js/app.js` — energy resource tooltip in _updateHUD showing empire net + colony upkeep
+- `src/tests/colony-upkeep.test.js` — **new** 9 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1975 total (9 new). All passing.
+
+**Key decisions:**
+- Colony upkeep uses `COLONY_UPKEEP[Math.min(i, length-1)]` so colonies beyond 5 cap at 25 energy each — prevents infinite scaling while maintaining pressure
+- Upkeep deducted after ship maintenance but before dirty player marking — ordering ensures energy deficit from upkeep is reflected in the same tick
+- Per-colony netProduction in colony panel unchanged (it's per-colony production) — upkeep is empire-wide and shown in the energy tooltip instead
+- 5-colony empire pays 51 energy/month total (3+8+15+25), requiring ~8.5 Generator districts to offset — meaningful economic pressure
+
+**Next:** Scouting race VP milestones (Phase 3, R63-2) — first-to-survey VP bonuses at 3/5/8 systems for opening urgency.

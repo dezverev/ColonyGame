@@ -1053,6 +1053,20 @@
       _setNet(resBar.researchNet, totalResNet);
     }
 
+    // Empire-wide energy income (includes colony upkeep) — show as tooltip
+    if (player && player.income && player.income.energy != null) {
+      const colCount = player.colonyCount || 0;
+      const UPKEEP = [0, 3, 8, 15, 25];
+      let upkeep = 0;
+      for (let i = 1; i < colCount; i++) upkeep += UPKEEP[Math.min(i, UPKEEP.length - 1)];
+      const energyItem = resBar.energy.closest('.res-item');
+      if (energyItem) {
+        let tip = 'Empire net: ' + (player.income.energy >= 0 ? '+' : '') + player.income.energy + '/month';
+        if (upkeep > 0) tip += '\nColony upkeep: -' + upkeep + ' energy (' + colCount + ' colonies)';
+        energyItem.title = tip;
+      }
+    }
+
     // Influence income (empire-wide, from player summary)
     if (player && player.income && player.income.influence != null) {
       _setNet(resBar.influenceNet, player.income.influence);
