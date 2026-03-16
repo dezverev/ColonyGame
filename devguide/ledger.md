@@ -2482,3 +2482,6 @@ Each entry records an iteration of automated development.
 
 ## Entry 70 — 2026-03-16 — System orbital view (R70-1)
 Three.js system orbital view with star, orbital rings, and clickable planets. Galaxy→System→Colony navigation chain via "View System" button on galaxy panel. Planet detail panel shows type, size, habitability, and colony link. Files: system-view.js (new), app.js, index.html, style.css. Tests: 13 new, 2221 total passing.
+
+## Entry 71 — 2026-03-16 — Construction queue HUD (R71-1)
+Enhanced build queue display with per-item costs, cumulative ETA header, deficit warnings, refund tooltips, and total invested summary. Added SHIP_UI client-side cost mirror. Files: app.js, style.css. Tests: 13 new, 2234 passing.

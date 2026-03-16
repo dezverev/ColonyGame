@@ -61,7 +61,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE FIX — Alloy VP weight + Industrial output bump**
 - [x] **Event toast notification HUD**
 - [ ] **BALANCE TWEAK — T2 tech cost increase:** 500→750 research.
-- [ ] **PRIORITY ORDER (R70):** (1) System orbital view, (2) Construction queue HUD, (3) Starting planet variety, (4) VP timeline snapshots, (5) Destroyer ship class, (6) Scarcity pre-warning, (7) Colony saturation indicator, (8) Disabled district rendering.
+- [ ] **PRIORITY ORDER (R71):** (1) Construction queue HUD, (2) Starting planet variety, (3) Destroyer ship class, (4) VP timeline snapshots, (5) Scarcity pre-warning, (6) Colony saturation indicator, (7) Disabled district rendering, (8) Surface anomaly 3D rendering.
 - [ ] **Exploration progress indicator:** "X% Explored" badge on galaxy HUD. Client-side only.
 - [ ] **BALANCE TWEAK — Base capital housing:** 10→8.
 - [ ] **Cascading colony events (stretch):** Crises spread to colonies within 2 hops.
@@ -71,6 +71,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **VP bonus for colony personality traits**
 - [x] **Ship maintenance costs**
 - [ ] **BALANCE TWEAK — VP formula rebalance:** Battle 5→3, survey per 5→3, colony +5 each, alloy per 25→20.
+- [ ] **BALANCE FIX — Genetic Engineering T3:** Remove pop growth halved penalty (trap tech). Replace with -1 food consumption per pop or food→VP conversion.
 - [ ] **District adjacency bonus (stretch):** Same-type adjacent districts get +10% output.
 
 ### Phase 2: Colony Management
@@ -79,7 +80,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [ ] Building system: slots unlock at pop thresholds (max 12). 7 building types.
 - [ ] Colony overview UI panel
 - [ ] Construction queue (max 3 per colony)
-- [ ] **Construction queue QoL:** Total cost display, deficit warnings, 50% cancel refund, ETA.
+- [x] **Construction queue QoL:** Total cost display, deficit warnings, 50% cancel refund, ETA.
 - [x] Colony personality system
 - [x] **Edict system (influence spending)**
 - [x] **Buildings layer — 3 building types**
