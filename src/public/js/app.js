@@ -518,6 +518,8 @@
         return `${player} researched ${msg.techName || 'a technology'}`;
       case 'surveyComplete':
         return `${player} surveyed ${msg.systemName || 'a system'}` + (msg.discoveries && msg.discoveries.length > 0 ? ` — ${msg.discoveries.length} anomal${msg.discoveries.length === 1 ? 'y' : 'ies'} found!` : '');
+      case 'scoutMilestone':
+        return `<span style="color:#f1c40f">\u2605 ${player}: First to survey ${msg.threshold} systems! +${msg.vp} VP</span>`;
       case 'crisisStarted':
         return `<span style="color:#e74c3c">⚠ ${msg.crisisLabel || 'Crisis'}</span> on ${player}'s ${msg.colonyName || 'colony'}!`;
       case 'crisisResolved':
@@ -1901,7 +1903,7 @@
         `<td>${s.breakdown.researchVP}</td>` +
         `<td>${s.breakdown.techVP || 0}</td>` +
         `<td>${s.breakdown.traitsVP || 0}</td>` +
-        `<td>${s.breakdown.surveyedVP || 0}</td>` +
+        `<td>${(s.breakdown.surveyedVP || 0) + (s.breakdown.scoutMilestonesVP || 0)}</td>` +
         `<td>${s.breakdown.militaryVP || 0}</td>` +
         `<td>${s.breakdown.battlesWonVP || 0}</td>` +
         `<td>${s.breakdown.diplomacyVP || 0}</td>` +

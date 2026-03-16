@@ -300,6 +300,9 @@ const PRECURSOR_COMBAT_TICKS = 8;        // more combat rounds than raiders
 const PRECURSOR_DESTROY_VP = 15;         // +15 VP for destroying precursor fleet
 const PRECURSOR_OCCUPY_VP = -5;          // -5 VP if precursor occupies your colony
 
+// Scouting race VP milestones — first-to-survey bonuses
+const SCOUT_MILESTONES = { 3: 10, 5: 15, 8: 20 }; // threshold -> VP bonus
+
 // Underdog catch-up mechanics
 const UNDERDOG_BONUS_PER_COLONY = 0.15;   // +15% production per colony gap vs leader
 const UNDERDOG_BONUS_CAP = 0.45;          // max +45% (3 colony gap)
@@ -509,6 +512,9 @@ class GameEngine {
     // Fleet combat tracking
     this._battlesWon = new Map();   // playerId -> count of fleet battles won (lifetime)
     this._shipsLost = new Map();    // playerId -> count of own ships lost in combat (lifetime)
+
+    // Scouting race VP milestones — first-to-survey at 3/5/8 systems
+    this._scoutMilestones = { 3: null, 5: null, 8: null }; // threshold -> playerId (null = unclaimed)
 
     // Match stats tracking (for post-game score screen)
     this._matchStats = new Map(); // playerId -> { coloniesFounded, districtsBuilt, shipsBuilt, resourcesGathered }
@@ -3935,6 +3941,21 @@ class GameEngine {
     this._invalidateStateCache();
     this._vpCacheTick = -1;
 
+    // Check scouting race VP milestones
+    const surveyedCount = this._surveyedSystems.get(ship.ownerId) ? this._surveyedSystems.get(ship.ownerId).size : 0;
+    for (const threshold of Object.keys(SCOUT_MILESTONES)) {
+      const t = Number(threshold);
+      if (surveyedCount >= t && this._scoutMilestones[t] === null) {
+        this._scoutMilestones[t] = ship.ownerId;
+        const vpAwarded = SCOUT_MILESTONES[t];
+        this._emitEvent('scoutMilestone', ship.ownerId, {
+          threshold: t,
+          vp: vpAwarded,
+          playerName: ownerName,
+        }, true);
+      }
+    }
+
     // Auto-chain: find next unsurveyed system within 3 hops and dispatch
     this._autoChainSurvey(ship);
   }
@@ -4086,7 +4107,7 @@ class GameEngine {
 
     const state = this.playerStates.get(playerId);
     if (!state) {
-      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
+      const empty = { vp: 0, pops: 0, popsVP: 0, districts: 0, districtsVP: 0, alloys: 0, alloysVP: 0, totalResearch: 0, researchVP: 0, techs: 0, techVP: 0, traits: 0, traitsVP: 0, surveyed: 0, surveyedVP: 0, scoutMilestonesVP: 0, raidersDestroyed: 0, raidersVP: 0, corvettes: 0, militaryVP: 0, battlesWon: 0, battlesWonVP: 0, shipsLost: 0, shipsLostVP: 0, coloniesOccupying: 0, occupiedAttackerVP: 0, coloniesOccupied: 0, occupiedDefenderVP: 0, friendlyCount: 0, mutualFriendlyCount: 0, diplomacyVP: 0 };
       return empty;
     }
 
@@ -4133,6 +4154,14 @@ class GameEngine {
     const surveyedSet = this._surveyedSystems.get(playerId);
     const surveyed = surveyedSet ? surveyedSet.size : 0;
     const surveyedVP = Math.floor(surveyed / 5);
+
+    // Scouting race milestone VP: first-to-survey bonuses
+    let scoutMilestonesVP = 0;
+    for (const [threshold, vpBonus] of Object.entries(SCOUT_MILESTONES)) {
+      if (this._scoutMilestones[Number(threshold)] === playerId) {
+        scoutMilestonesVP += vpBonus;
+      }
+    }
 
     // Raider VP: +5 per raider destroyed
     const raidersDestroyed = this._raidersDestroyed.get(playerId) || 0;
@@ -4203,7 +4232,7 @@ class GameEngine {
     // Catalyst event VP (border incident)
     const catalystVP = state._catalystVP || 0;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP;
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -4212,6 +4241,7 @@ class GameEngine {
       techs: (state.completedTechs || []).length, techVP,
       traits: traitCount, traitsVP,
       surveyed, surveyedVP,
+      scoutMilestonesVP,
       raidersDestroyed, raidersVP,
       corvettes, militaryVP,
       battlesWon, battlesWonVP,
@@ -5615,6 +5645,8 @@ class GameEngine {
     for (const [pid, sysSet] of this._surveyedSystems) {
       state.surveyedSystems[pid] = [...sysSet];
     }
+    // Scouting race milestones
+    state.scoutMilestones = Object.assign({}, this._scoutMilestones);
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
       state.matchTimerEnabled = true;
@@ -5776,6 +5808,8 @@ class GameEngine {
       }
     }
 
+    // Scouting race milestones
+    state.scoutMilestones = Object.assign({}, this._scoutMilestones);
     // Include match timer info
     if (this._matchTimerEnabled) {
       state.matchTicksRemaining = this._matchTicksRemaining;
@@ -5972,4 +6006,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, COLONY_UPKEEP, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };

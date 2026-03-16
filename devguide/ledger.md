@@ -2242,4 +2242,42 @@ Each entry records an iteration of automated development.
 - Per-colony netProduction in colony panel unchanged (it's per-colony production) — upkeep is empire-wide and shown in the energy tooltip instead
 - 5-colony empire pays 51 energy/month total (3+8+15+25), requiring ~8.5 Generator districts to offset — meaningful economic pressure
 
+---
+
+## Entry 64 — 2026-03-15 — Scouting Race VP Milestones
+
+**Phase:** 3 (Galaxy & Exploration)
+**Status:** Complete
+
+**What was built:**
+- **Scouting race VP milestones:** First-to-survey bonuses at 3/5/8 systems award +10/+15/+20 VP respectively. Creates opening urgency and makes science ship build order a real decision from minute 1.
+  - `SCOUT_MILESTONES = { 3: 10, 5: 15, 8: 20 }` constant defining thresholds and VP rewards
+  - `_scoutMilestones = { 3: null, 5: null, 8: null }` tracks which player claimed each milestone (null = unclaimed)
+  - Checked in `_completeSurvey` after incrementing surveyed count — iterates milestones and awards unclaimed ones
+  - First-come-first-served: once a milestone is claimed, no other player can claim it
+  - `scoutMilestonesVP` added to `_calcVPBreakdown` VP formula and breakdown object
+  - Broadcast `scoutMilestone` event with threshold, VP, and player name
+  - Toast formatting added to `toast-format.js` — "Player: First to survey N systems! +VP VP"
+  - Client event ticker shows milestone with gold star styling
+  - Post-game scoreboard "Explored" column now includes scout milestone VP
+  - State serialization includes `scoutMilestones` in both full and per-player state
+
+**Files changed:**
+- `server/game-engine.js` — SCOUT_MILESTONES constant, _scoutMilestones init, milestone check in _completeSurvey, scoutMilestonesVP in VP breakdown/formula, serialization, module.exports
+- `src/public/js/app.js` — scoutMilestone event in ticker formatting, explored VP column includes milestones
+- `src/public/js/toast-format.js` — scoutMilestone toast type and format
+- `src/tests/scout-milestones.test.js` — **new** 16 tests
+- `devguide/design.md` — marked task complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 2006 total (16 new). All passing (1 pre-existing failure in colony-upkeep-deep.test.js — known issue).
+
+**Key decisions:**
+- Milestones are galaxy-wide (not per-player) — first player to reach threshold claims it permanently, creating a true race
+- VP values (10/15/20 = 45 total) are significant but not game-breaking — comparable to 2 colony traits or 9 T1 techs
+- Milestone check uses Object.keys iteration over SCOUT_MILESTONES so thresholds can be tuned via the constant
+- Scout milestone VP combined with existing survey VP (1 per 5 systems) in the scoreboard "Explored" column for clarity
+
+**Next:** Defense platform repair rate increase (Phase 5, R61-4) — bump from 10→15 HP/month
+
 **Next:** Scouting race VP milestones (Phase 3, R63-2) — first-to-survey VP bonuses at 3/5/8 systems for opening urgency.
