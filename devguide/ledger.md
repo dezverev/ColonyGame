@@ -2479,3 +2479,6 @@ Each entry records an iteration of automated development.
 - Research rewards use the existing `state.resources.research` object structure for physics/society/engineering
 
 **Next:** VP timeline (R65-7) — track VP changes over time for a graph/timeline view
+
+## Entry 70 — 2026-03-16 — System orbital view (R70-1)
+Three.js system orbital view with star, orbital rings, and clickable planets. Galaxy→System→Colony navigation chain via "View System" button on galaxy panel. Planet detail panel shows type, size, habitability, and colony link. Files: system-view.js (new), app.js, index.html, style.css. Tests: 13 new, 2221 total passing.

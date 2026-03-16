@@ -472,10 +472,12 @@
   const roomMatchTimer = document.getElementById('room-match-timer');
 
   // ── View management ──
-  let currentView = 'colony'; // 'colony' | 'galaxy'
+  let currentView = 'colony'; // 'colony' | 'galaxy' | 'system'
   let galaxyViewInitialized = false;
   let galaxyAnimFrame = null;
+  let systemAnimFrame = null;
   let _viewingColonyIndex = 0; // which colony the player is currently viewing
+  let _systemViewSystem = null; // system currently shown in system orbital view
 
   // ── Galaxy view refs ──
   const viewIndicator = document.getElementById('view-indicator-label');
@@ -483,6 +485,12 @@
   const systemPanelTitle = document.getElementById('system-panel-title');
   const systemPanelBody = document.getElementById('system-panel-body');
   const systemPanelClose = document.getElementById('system-panel-close');
+
+  // ── Planet panel refs (system orbital view) ──
+  const planetPanel = document.getElementById('planet-panel');
+  const planetPanelTitle = document.getElementById('planet-panel-title');
+  const planetPanelBody = document.getElementById('planet-panel-body');
+  const planetPanelClose = document.getElementById('planet-panel-close');
 
   // ── Event Ticker ──
   const eventTicker = document.getElementById('event-ticker');
@@ -1471,6 +1479,8 @@
     if (!gameState) return;
     if (currentView === 'colony') {
       _switchToGalaxy();
+    } else if (currentView === 'system') {
+      _switchToGalaxy();
     } else {
       _switchToColony();
     }
@@ -1479,6 +1489,7 @@
   function _switchToGalaxy() {
     currentView = 'galaxy';
     _hideAllPanels();
+    if (planetPanel) planetPanel.classList.add('hidden');
 
     // Hide colony UI elements
     const colonyPanel = document.getElementById('colony-panel');
@@ -1486,6 +1497,15 @@
 
     // Stop colony renderer (stops rAF loop, releases WebGL resources)
     if (window.ColonyRenderer) window.ColonyRenderer.destroy();
+
+    // Stop system view if active
+    if (systemAnimFrame) {
+      cancelAnimationFrame(systemAnimFrame);
+      systemAnimFrame = null;
+    }
+    if (window.SystemView) window.SystemView.destroy();
+    _systemViewSystem = null;
+
     const renderContainer = document.getElementById('render-container');
     if (renderContainer) renderContainer.innerHTML = '';
 
@@ -1508,8 +1528,9 @@
   function _switchToColony() {
     currentView = 'colony';
 
-    // Hide galaxy panels
+    // Hide galaxy and system panels
     if (systemPanel) systemPanel.classList.add('hidden');
+    if (planetPanel) planetPanel.classList.add('hidden');
 
     // Stop galaxy render loop and destroy galaxy view
     if (galaxyAnimFrame) {
@@ -1518,6 +1539,14 @@
     }
     if (window.GalaxyView) window.GalaxyView.destroy();
     galaxyViewInitialized = false;
+
+    // Stop system render loop and destroy system view
+    if (systemAnimFrame) {
+      cancelAnimationFrame(systemAnimFrame);
+      systemAnimFrame = null;
+    }
+    if (window.SystemView) window.SystemView.destroy();
+    _systemViewSystem = null;
 
     // Re-init colony renderer
     const renderContainer = document.getElementById('render-container');
@@ -1541,9 +1570,105 @@
     if (window.GalaxyView) window.GalaxyView.render();
   }
 
+  function _switchToSystem(system) {
+    if (!system) return;
+    currentView = 'system';
+    _systemViewSystem = system;
+
+    // Hide galaxy panels
+    if (systemPanel) systemPanel.classList.add('hidden');
+    const colonyPanel = document.getElementById('colony-panel');
+    if (colonyPanel) colonyPanel.classList.add('hidden');
+
+    // Stop galaxy render loop and destroy galaxy view
+    if (galaxyAnimFrame) {
+      cancelAnimationFrame(galaxyAnimFrame);
+      galaxyAnimFrame = null;
+    }
+    if (window.GalaxyView) window.GalaxyView.destroy();
+    galaxyViewInitialized = false;
+
+    // Stop colony renderer
+    if (window.ColonyRenderer) window.ColonyRenderer.destroy();
+
+    const renderContainer = document.getElementById('render-container');
+    if (renderContainer) renderContainer.innerHTML = '';
+
+    // Init system view
+    if (window.SystemView) {
+      window.SystemView.init(renderContainer);
+      window.SystemView.buildSystem(system);
+      window.SystemView.setOnPlanetSelect(_onPlanetSelect);
+
+      if (systemAnimFrame) cancelAnimationFrame(systemAnimFrame);
+      _systemAnimate();
+    }
+
+    _updateViewUI();
+  }
+
+  function _systemAnimate() {
+    systemAnimFrame = requestAnimationFrame(_systemAnimate);
+    if (window.SystemView) window.SystemView.render();
+  }
+
+  function _onPlanetSelect(planet, system) {
+    if (!planetPanel) return;
+    if (!planet) {
+      planetPanel.classList.add('hidden');
+      return;
+    }
+
+    const typeLabel = planet.type.charAt(0).toUpperCase() + planet.type.slice(1);
+    planetPanelTitle.textContent = `${typeLabel} — Orbit ${planet.orbit}`;
+
+    let html = '';
+    html += `<div class="info-row"><span class="info-label">Type</span><span class="info-value">${typeLabel}</span></div>`;
+    if (planet.type !== 'gasGiant') {
+      html += `<div class="info-row"><span class="info-label">Size</span><span class="info-value">${planet.size} districts</span></div>`;
+    }
+    const habClass = planet.habitability >= 60 ? 'hab-high' : planet.habitability > 0 ? 'hab-med' : 'hab-none';
+    html += `<div class="info-row"><span class="info-label">Habitability</span><span class="info-value ${habClass}">${planet.habitability}%</span></div>`;
+
+    const bonusLabel = _planetBonusLabel(planet.type);
+    if (bonusLabel) {
+      html += `<div class="info-row"><span class="info-label">Bonus</span><span class="info-value planet-bonus-tag">${bonusLabel}</span></div>`;
+    }
+
+    if (planet.colonized) {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#2ecc71">Colonized</span></div>`;
+      // Colony link button
+      const colony = gameState.colonies.find(c => c.systemId === system.id && c.ownerId === gameState.yourId);
+      if (colony) {
+        html += `<button class="system-colony-btn" data-colony-id="${colony.id}">View Colony: ${colony.name}</button>`;
+      }
+    } else if (planet.habitability >= 20) {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#f39c12">Habitable</span></div>`;
+    } else {
+      html += `<div class="info-row"><span class="info-label">Status</span><span class="info-value" style="color:#7f8c8d">Uninhabitable</span></div>`;
+    }
+
+    planetPanelBody.innerHTML = html;
+
+    // Wire colony button
+    const colBtn = planetPanelBody.querySelector('.system-colony-btn');
+    if (colBtn) {
+      colBtn.addEventListener('click', () => {
+        const myColonies = gameState.colonies.filter(c => c.ownerId === gameState.yourId);
+        const idx = myColonies.findIndex(c => c.id === colBtn.dataset.colonyId);
+        if (idx >= 0) _viewingColonyIndex = idx;
+        _refreshPlayerCache();
+        _switchToColony();
+      });
+    }
+
+    planetPanel.classList.remove('hidden');
+  }
+
   function _updateViewUI() {
     if (viewIndicator) {
-      viewIndicator.textContent = currentView === 'colony' ? 'Colony' : 'Galaxy';
+      const labels = { colony: 'Colony', galaxy: 'Galaxy', system: 'System' };
+      viewIndicator.textContent = labels[currentView] || currentView;
     }
   }
 
@@ -1656,6 +1781,9 @@
       html += '<div class="system-surveyed-badge">Surveyed</div>';
     }
 
+    // "View System" button — opens 3D orbital view
+    html += `<button class="system-view-btn">View System</button>`;
+
     systemPanelBody.innerHTML = html;
 
     // Wire colony button
@@ -1688,6 +1816,14 @@
         const ship = idleSciShips[0];
         send({ type: 'sendScienceShip', shipId: ship.id, targetSystemId: system.id });
         systemPanel.classList.add('hidden');
+      });
+    }
+
+    // Wire "View System" button — opens 3D orbital view
+    const viewSysBtn = systemPanelBody.querySelector('.system-view-btn');
+    if (viewSysBtn) {
+      viewSysBtn.addEventListener('click', () => {
+        _switchToSystem(system);
       });
     }
 
@@ -2117,6 +2253,9 @@
     systemPanel.classList.add('hidden');
     if (window.GalaxyView) window.GalaxyView.setOnSystemSelect(_onSystemSelect); // keep callback, just hide
   });
+  if (planetPanelClose) planetPanelClose.addEventListener('click', () => {
+    planetPanel.classList.add('hidden');
+  });
 
   // Keyboard shortcuts (only during game)
   document.addEventListener('keydown', (e) => {
@@ -2148,6 +2287,13 @@
       }
       if (systemPanel && !systemPanel.classList.contains('hidden')) {
         systemPanel.classList.add('hidden');
+      }
+      if (planetPanel && !planetPanel.classList.contains('hidden')) {
+        planetPanel.classList.add('hidden');
+      }
+      // Escape from system view returns to galaxy
+      if (currentView === 'system') {
+        _switchToGalaxy();
       }
     }
     // Colony switching: number keys 1-5

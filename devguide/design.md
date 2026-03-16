@@ -61,7 +61,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE FIX — Alloy VP weight + Industrial output bump**
 - [x] **Event toast notification HUD**
 - [ ] **BALANCE TWEAK — T2 tech cost increase:** 500→750 research.
-- [ ] **PRIORITY ORDER (R65):** (1) Defense platform repair, (2) T2 buildings, (3) Trade agreements, (4) System claims, (5) Expeditions, (6) Surface anomalies, (7) VP timeline, (8) Saturation indicator.
+- [ ] **PRIORITY ORDER (R70):** (1) System orbital view, (2) Construction queue HUD, (3) Starting planet variety, (4) VP timeline snapshots, (5) Destroyer ship class, (6) Scarcity pre-warning, (7) Colony saturation indicator, (8) Disabled district rendering.
 - [ ] **Exploration progress indicator:** "X% Explored" badge on galaxy HUD. Client-side only.
 - [ ] **BALANCE TWEAK — Base capital housing:** 10→8.
 - [ ] **Cascading colony events (stretch):** Crises spread to colonies within 2 hops.
@@ -117,7 +117,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] Planet generation per system
 - [x] **Galaxy map view (Three.js)**
 - [x] **System selection panel on galaxy map**
-- [ ] **PRIORITY: System orbital view:** Star + planets on orbital rings. Click planet for details. Galaxy -> System -> Colony nav.
+- [x] **PRIORITY: System orbital view:** Star + planets on orbital rings. Click planet for details. Galaxy -> System -> Colony nav.
 - [ ] **Colony planet context rendering:** Ground plane + background color per planet type.
 - [ ] **Planet visual polish in system panel:** Colored dots, bold size 15+, gold border on best.
 - [x] **Fog of war on galaxy map**
@@ -155,7 +155,8 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Fleet combat resolution**
 - [x] **Colony occupation after fleet combat**
 - [ ] **Fleet energy maintenance:** Corvette 1/month, Destroyer 3, Cruiser 6.
-- [ ] Ship classes: Corvette (50a/30HP), Destroyer (100/80HP), Cruiser (200/200HP), Battleship (400/500HP).
+- [ ] **Destroyer ship class:** 100a, 80HP, 8atk, 6s/hop. Unlock via T2 engineering (deep_mining). First fleet composition choice.
+- [ ] Ship classes (full): Cruiser (200a/200HP), Battleship (400/500HP). Later phases.
 - [ ] Fleet management + shipyard system: grouping, fleet cap 20, shipyard module 100 alloys, queue 5.
 - [ ] Combat + starbase defense: per-tick firing, starbase 100HP/40fp.
 - [ ] Military UI: fleet list, composition, build queue, combat alerts.
