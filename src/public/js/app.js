@@ -1326,6 +1326,20 @@
 
       const totalDistricts = colony.districts.length + colony.buildQueue.length;
       cpDistricts.textContent = totalDistricts + '/' + colony.planet.size;
+      // Colony saturation indicator
+      const cpSaturation = document.getElementById('cp-saturation');
+      if (cpSaturation) {
+        const satRatio = colony.saturation !== undefined ? colony.saturation : (colony.planet.size > 0 ? totalDistricts / colony.planet.size : 0);
+        if (satRatio >= 1) {
+          cpSaturation.textContent = 'Fully Developed';
+          cpSaturation.className = 'saturation-badge saturation-full';
+        } else if (satRatio >= 0.8) {
+          cpSaturation.textContent = 'Nearing Capacity';
+          cpSaturation.className = 'saturation-badge saturation-near';
+        } else {
+          cpSaturation.className = 'saturation-badge hidden';
+        }
+      }
       const working = Math.min(colony.pops, colony.jobs);
       const idle = Math.max(0, colony.pops - colony.jobs);
       cpWorking.textContent = working;

@@ -646,6 +646,10 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .colony-list-pops { font-family: monospace; color: #888; font-size: 0.7rem; }
 /* Colony trait badge in colony panel */
 .colony-trait-badge { color: #f1c40f; font-weight: bold; }
+/* Colony saturation indicator */
+.saturation-badge { font-size: 0.7rem; font-weight: bold; padding: 1px 5px; border-radius: 3px; margin-left: 4px; }
+.saturation-near { color: #f39c12; background: rgba(243,156,18,0.15); }
+.saturation-full { color: #2ecc71; background: rgba(46,204,113,0.15); }
 .colony-list-ships {
   font-size: 0.7rem; color: #00ffaa; padding: 0.3rem 0.4rem;
   border-top: 1px solid #2a2a4e;
