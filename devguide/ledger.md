@@ -2281,3 +2281,32 @@ Each entry records an iteration of automated development.
 **Next:** Defense platform repair rate increase (Phase 5, R61-4) — bump from 10→15 HP/month
 
 **Next:** Scouting race VP milestones (Phase 3, R63-2) — first-to-survey VP bonuses at 3/5/8 systems for opening urgency.
+
+---
+
+## Entry 65 — 2026-03-15 — Defense Platform Repair Rate + Colony Upkeep Bugfix
+
+**Phase:** 5 (Balance) + 1 (Bugfix)
+**Status:** Complete
+
+**What was built:**
+- **Defense platform repair rate increase:** Bumped DEFENSE_PLATFORM_REPAIR_RATE from 10 to 15 HP/month. Platforms now fully repair from 10 HP to 50 HP in ~2.7 months instead of 4 months, making sequential raider attacks slightly less devastating
+- **Colony upkeep deficit bugfix:** Fixed 2 failing tests in colony-upkeep-deep.test.js:
+  - Test at line 117 used a mining district (0 energy consumption) but expected energy deficit handler to disable it — changed to industrial district (3 energy consumption)
+  - Test at line 291 was flaky due to random planet type variance — pinned colony to continental type for deterministic results
+
+**Files changed:**
+- `server/game-engine.js` — DEFENSE_PLATFORM_REPAIR_RATE constant: 10 → 15
+- `src/tests/raider-fleets.test.js` — updated repair rate constant assertion and repair test expectations (10 → 15)
+- `src/tests/colony-upkeep-deep.test.js` — fixed 2 failing tests (mining→industrial district type, pinned planet type)
+- `devguide/design.md` — marked both tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 2607 total (0 new, 2 fixed). All passing.
+
+**Key decisions:**
+- Mining districts consume 0 energy, so the deficit handler correctly skips them — the test was wrong, not the implementation
+- The flaky summary test was caused by random planet types affecting production calculations across test runs
+- Both fixes align tests with correct engine behavior rather than changing the engine
+
+**Next:** Advanced buildings T2 tier (Phase 2, R65-2) — Quantum Lab, Advanced Foundry, Planetary Shield unlocked by T2 techs

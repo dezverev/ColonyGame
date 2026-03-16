@@ -47,7 +47,7 @@ describe('NPC Raider Fleets — constants', () => {
     assert.strictEqual(DEFENSE_PLATFORM_BUILD_TIME, 200);
     assert.strictEqual(DEFENSE_PLATFORM_MAX_HP, 50);
     assert.strictEqual(DEFENSE_PLATFORM_ATTACK, 15);
-    assert.strictEqual(DEFENSE_PLATFORM_REPAIR_RATE, 10);
+    assert.strictEqual(DEFENSE_PLATFORM_REPAIR_RATE, 15);
   });
 
   it('raider raid constants are valid', () => {
@@ -459,13 +459,13 @@ describe('NPC Raider Fleets — VP integration', () => {
 });
 
 describe('NPC Raider Fleets — defense platform repair', () => {
-  it('damaged platform repairs 10 HP per month', () => {
+  it('damaged platform repairs 15 HP per month', () => {
     const engine = createEngine();
     const colony = getFirstColony(engine);
     colony.defensePlatform = { hp: 20, maxHp: 50, building: false };
 
     engine._processDefensePlatformRepair();
-    assert.strictEqual(colony.defensePlatform.hp, 30);
+    assert.strictEqual(colony.defensePlatform.hp, 35);
   });
 
   it('platform repair caps at maxHp', () => {
