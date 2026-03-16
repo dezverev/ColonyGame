@@ -275,6 +275,7 @@ function startServer(options = {}) {
       case 'sendScienceShip':
       case 'toggleAutoSurvey':
       case 'buildCorvette':
+      case 'buildDestroyer':
       case 'sendFleet':
       case 'resolveCrisis':
       case 'activateEdict':

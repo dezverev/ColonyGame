@@ -156,7 +156,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Fleet combat resolution**
 - [x] **Colony occupation after fleet combat**
 - [ ] **Fleet energy maintenance:** Corvette 1/month, Destroyer 3, Cruiser 6.
-- [ ] **Destroyer ship class:** 100a, 80HP, 8atk, 6s/hop. Unlock via T2 engineering (deep_mining). First fleet composition choice.
+- [x] **Destroyer ship class:** 100a, 80HP, 8atk, 6s/hop. Unlock via T2 engineering (deep_mining). First fleet composition choice.
 - [ ] Ship classes (full): Cruiser (200a/200HP), Battleship (400/500HP). Later phases.
 - [ ] Fleet management + shipyard system: grouping, fleet cap 20, shipyard module 100 alloys, queue 5.
 - [ ] Combat + starbase defense: per-tick firing, starbase 100HP/40fp.

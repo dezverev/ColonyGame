@@ -260,7 +260,7 @@ describe('Corvette ship class — sendFleet command', () => {
 
     const result = engine.handleCommand('p2', { type: 'sendFleet', shipId: ship.id, targetSystemId: adj[0] });
     assert.ok(result.error);
-    assert.match(result.error, /Corvette not found/);
+    assert.match(result.error, /not found/);
   });
 
   it('sendFleet fails when ship already in transit', () => {

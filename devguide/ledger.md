@@ -2488,3 +2488,6 @@ Enhanced build queue display with per-item costs, cumulative ETA header, deficit
 
 ## Entry 72 — 2026-03-16 — Starting planet variety (R71-2)
 Starting planets now get random habitable type and size (12-20) instead of always inheriting the system's best planet. Fairness mode (default on) gives all players identical type/size. Files: game-engine.js, room-manager.js, starting-planet-variety.test.js. Tests: 13 new, 2294 passing.
+
+## Entry 73 — 2026-03-16 — Destroyer ship class (R71-3)
+Heavy warship: 200m/100a, 80 HP, 8 ATK, 6s/hop, 3⚡ 2🔩/mo maintenance. Requires deep_mining T2. Cap 5, independent of corvette cap. +3 military VP each. Files: game-engine.js, server.js, app.js, galaxy-view.js, destroyer.test.js. Tests: 27 new, 2345 passing.
