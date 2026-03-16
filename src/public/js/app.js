@@ -467,6 +467,7 @@
   const gameOverDuration = document.getElementById('game-over-duration');
   const gameOverScores = document.getElementById('game-over-scores');
   const gameOverStats = document.getElementById('game-over-stats');
+  const gameOverTimeline = document.getElementById('game-over-timeline');
   const gameOverLobbyBtn = document.getElementById('game-over-lobby-btn');
   const gameOverRematchBtn = document.getElementById('game-over-rematch-btn');
 
@@ -2192,7 +2193,128 @@
       gameOverStats.innerHTML = statsHtml;
     }
 
+    // VP Timeline chart
+    if (gameOverTimeline && data.vpTimeline && data.vpTimeline.length >= 2) {
+      _renderVPTimeline(data.vpTimeline, data.scores || []);
+    } else if (gameOverTimeline) {
+      gameOverTimeline.innerHTML = '';
+    }
+
     gameOverOverlay.classList.remove('hidden');
+  }
+
+  function _renderVPTimeline(timeline, scores) {
+    gameOverTimeline.innerHTML = '<h3 class="go-section-title">VP Timeline</h3>';
+    const canvas = document.createElement('canvas');
+    canvas.id = 'vp-timeline-canvas';
+    canvas.width = 600;
+    canvas.height = 280;
+    gameOverTimeline.appendChild(canvas);
+
+    // Build player info map
+    const playerMap = {};
+    const playerIds = [];
+    for (const s of scores) {
+      playerMap[s.playerId] = { name: s.name, color: s.color || '#e94560' };
+      playerIds.push(s.playerId);
+    }
+
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const pad = { top: 20, right: 20, bottom: 40, left: 50 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+
+    // Find max VP and max month
+    let maxVP = 10;
+    const maxMonth = timeline[timeline.length - 1].month || 1;
+    for (const snap of timeline) {
+      for (const pid of playerIds) {
+        const v = snap.snapshots[pid] || 0;
+        if (v > maxVP) maxVP = v;
+      }
+    }
+    maxVP = Math.ceil(maxVP / 10) * 10 || 10; // round up to nearest 10
+
+    // Background
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid lines
+    ctx.strokeStyle = '#1e2a3a';
+    ctx.lineWidth = 1;
+    const gridLines = 5;
+    for (let i = 0; i <= gridLines; i++) {
+      const y = pad.top + (plotH / gridLines) * i;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(W - pad.right, y);
+      ctx.stroke();
+      // Y-axis labels
+      ctx.fillStyle = '#6e7681';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(Math.round(maxVP - (maxVP / gridLines) * i), pad.left - 6, y + 4);
+    }
+
+    // X-axis labels (month markers)
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#6e7681';
+    const monthStep = Math.max(1, Math.ceil(maxMonth / 8));
+    for (let m = 0; m <= maxMonth; m += monthStep) {
+      const x = pad.left + (m / maxMonth) * plotW;
+      ctx.fillText('M' + m, x, H - pad.bottom + 16);
+    }
+
+    // Axis labels
+    ctx.fillStyle = '#8b949e';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('Month', W / 2, H - 4);
+    ctx.save();
+    ctx.translate(12, pad.top + plotH / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText('VP', 0, 0);
+    ctx.restore();
+
+    // Draw lines for each player
+    for (const pid of playerIds) {
+      ctx.strokeStyle = playerMap[pid].color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      let started = false;
+      for (const snap of timeline) {
+        const x = pad.left + (snap.month / maxMonth) * plotW;
+        const v = snap.snapshots[pid] || 0;
+        const y = pad.top + plotH - (v / maxVP) * plotH;
+        if (!started) { ctx.moveTo(x, y); started = true; }
+        else { ctx.lineTo(x, y); }
+      }
+      ctx.stroke();
+
+      // Draw endpoint dot
+      const last = timeline[timeline.length - 1];
+      const lx = pad.left + (last.month / maxMonth) * plotW;
+      const lv = last.snapshots[pid] || 0;
+      const ly = pad.top + plotH - (lv / maxVP) * plotH;
+      ctx.fillStyle = playerMap[pid].color;
+      ctx.beginPath();
+      ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Legend
+    const legendY = H - pad.bottom + 28;
+    let legendX = pad.left;
+    ctx.font = '11px monospace';
+    for (const pid of playerIds) {
+      ctx.fillStyle = playerMap[pid].color;
+      ctx.fillRect(legendX, legendY - 8, 12, 12);
+      ctx.fillStyle = '#c9d1d9';
+      ctx.textAlign = 'left';
+      ctx.fillText(playerMap[pid].name, legendX + 16, legendY + 2);
+      legendX += ctx.measureText(playerMap[pid].name).width + 30;
+    }
   }
 
   // ── In-Game Chat ──
