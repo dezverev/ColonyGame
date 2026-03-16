@@ -2175,3 +2175,39 @@ Each entry records an iteration of automated development.
 - Only first building in queue constructs per tick (sequential, same pattern as districts).
 
 **Next:** In-game chat + diplomacy pings (Phase 6, R61-2) — enable existing chat during gameplay with 4 ping types. Then scouting race VP milestones (Phase 3, R61-3).
+
+---
+
+## Entry 62 — 2026-03-15 — Diplomacy Pings + Foundry Cost Reduction
+
+**Phase:** 6 (Diplomacy & Interaction) + Phase 1 (Balance)
+**Status:** Complete
+
+**What was built:**
+- **Diplomacy ping system:** 4 ping types (peace/warning/alliance/rival) that players can send to opponents via the scoreboard. Pure communication — no mechanical effect. Creates a minimal social signaling layer alongside existing chat.
+  - `diplomacyPing` command with validation (target exists, not self, valid type)
+  - 100-tick cooldown per sender (global, not per-target) prevents spam
+  - Events emitted to both sender ("sent" confirmation) and target (ping notification)
+  - Toast notifications with colored icons: 🕊 Peace (blue), ⚠ Warning (yellow), 🤝 Alliance (green), 🔥 Rival (red)
+  - 4 ping buttons per opponent row in scoreboard, styled with matching border colors
+- **BALANCE: Foundry cost reduction** — Foundry mineral cost reduced from 300 to 250. ROI drops from 75 seconds to 63 seconds, making it competitive with Industrial districts (200m for same +4 alloys) while justifying its scarce building slot
+
+**Files changed:**
+- `server/game-engine.js` — DIPLOMACY_PING_TYPES/DIPLOMACY_PING_COOLDOWN constants, `_pingCooldowns` Map init, `diplomacyPing` case in handleCommand with validation/cooldown/events, Foundry cost 300→250, module exports updated
+- `server/server.js` — added `diplomacyPing` to command routing
+- `src/public/js/app.js` — BUILDING_UI Foundry cost 300→250, `diplomacyPing` event toast handler with colored labels, 4 ping buttons in scoreboard stance cell, `window._diplomacyPing` command helper
+- `src/public/css/style.css` — ping button styles (ping-peace/warning/alliance/rival) with matching colors
+- `src/tests/diplomacy-pings.test.js` — **new** 13 tests (constants, valid ping all 4 types, missing target, self-ping, invalid type, missing type, nonexistent target, cooldown enforcement, cooldown expiry, per-sender cooldown with 3 players, event emission to both parties)
+- `src/tests/buildings.test.js` — updated 3 assertions for Foundry cost 250 (definition, resource deduction, cancel refund)
+- `devguide/design.md` — marked both tasks complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 1938 total (13 new, 3 existing updated). All passing.
+
+**Key decisions:**
+- Ping cooldown is per-sender (global), not per-target — prevents rapid-fire pinging even across different players
+- Pings have no mechanical effect — pure social signaling. Combining with existing chat creates the minimum viable social layer
+- In-game chat was already implemented (Entry 36) — this task only adds the diplomacy ping system on top
+- Foundry 250m gives ~20% better mineral-efficiency than Industrial (250m/4alloys vs 200m/4alloys → 62.5 vs 50 minerals per alloy/month) — justified because building slots are scarcer than district slots
+
+**Next:** Scouting race VP milestones (Phase 3, R62-2) — first-to-survey VP bonuses at 3/5/8 systems. Then colony upkeep scaling (Phase 2, R62-3).

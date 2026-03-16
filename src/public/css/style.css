@@ -395,6 +395,14 @@ body { background: #1a1a2e; color: #e0e0e0; font-family: 'Segoe UI', sans-serif;
 .stance-btn.stance-gift { color: #2ecc71; border-color: #2ecc7144; }
 .stance-btn.stance-gift:hover { background: rgba(46,204,113,0.15); border-color: #2ecc71; }
 .stance-pending { color: #f39c12; font-size: 0.7rem; margin-left: 3px; }
+.stance-btn.ping-peace { color: #3498db; border-color: #3498db44; }
+.stance-btn.ping-peace:hover { background: rgba(52,152,219,0.15); border-color: #3498db; }
+.stance-btn.ping-warning { color: #f39c12; border-color: #f39c1244; }
+.stance-btn.ping-warning:hover { background: rgba(243,156,18,0.15); border-color: #f39c12; }
+.stance-btn.ping-alliance { color: #2ecc71; border-color: #2ecc7144; }
+.stance-btn.ping-alliance:hover { background: rgba(46,204,113,0.15); border-color: #2ecc71; }
+.stance-btn.ping-rival { color: #e74c3c; border-color: #e74c3c44; }
+.stance-btn.ping-rival:hover { background: rgba(231,76,60,0.15); border-color: #e74c3c; }
 
 /* ── VP in status bar ── */
 #status-vp { font-family: monospace; color: #f1c40f; font-weight: bold; }

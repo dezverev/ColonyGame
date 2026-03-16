@@ -261,6 +261,15 @@
           } else {
             _showToast('You sent ' + msg.amount + ' ' + msg.resource + ' to ' + msg.targetName, 'info');
           }
+        } else if (msg.eventType === 'diplomacyPing') {
+          const pingLabels = { peace: '🕊 Peace', warning: '⚠ Warning', alliance: '🤝 Alliance', rival: '🔥 Rival' };
+          const pingTypes = { peace: 'info', warning: 'warning', alliance: 'info', rival: 'crisis' };
+          const label = pingLabels[msg.pingType] || msg.pingType;
+          if (msg.direction === 'sent') {
+            _showToast('You sent ' + label + ' ping to ' + msg.targetName, 'info');
+          } else {
+            _showToast(msg.senderName + ' sent you a ' + label + ' ping!', pingTypes[msg.pingType] || 'info');
+          }
         }
         // Show toast for game events (own events only)
         if (msg.playerId === (gameState && gameState.yourId)) {
@@ -332,7 +341,7 @@
   // ── Building definitions (client-side mirror for UI) ──
   const BUILDING_UI = {
     researchLab:     { label: 'Research Lab',      color: '#9b59b6', cost: { minerals: 200, energy: 50 }, produces: '+4 Phys/Soc/Eng', consumes: '-2 Energy' },
-    foundry:         { label: 'Foundry',           color: '#e67e22', cost: { minerals: 300 }, produces: '+4 Alloys', consumes: '-2 Energy' },
+    foundry:         { label: 'Foundry',           color: '#e67e22', cost: { minerals: 250 }, produces: '+4 Alloys', consumes: '-2 Energy' },
     shieldGenerator: { label: 'Shield Generator',  color: '#00bcd4', cost: { minerals: 200, alloys: 100 }, produces: '+25 Defense HP', consumes: '-3 Energy' },
   };
 
@@ -1800,6 +1809,10 @@
         if (pendingToThem) btns += '<span class="stance-pending">pending...</span>';
         if (myStance !== 'neutral' && myStance !== undefined) btns += `<button class="stance-btn stance-neutral" onclick="window._setDiplomacy('${p.id}','neutral')" title="Set Neutral">&#x25CB;</button>`;
         btns += `<button class="stance-btn stance-gift" onclick="window._giftResources('${p.id}')" title="Send Resources">&#x1F381;</button>`;
+        btns += `<button class="stance-btn ping-peace" onclick="window._diplomacyPing('${p.id}','peace')" title="Signal Peace">&#x1F54A;</button>`;
+        btns += `<button class="stance-btn ping-warning" onclick="window._diplomacyPing('${p.id}','warning')" title="Send Warning">&#x26A0;</button>`;
+        btns += `<button class="stance-btn ping-alliance" onclick="window._diplomacyPing('${p.id}','alliance')" title="Propose Alliance">&#x1F91D;</button>`;
+        btns += `<button class="stance-btn ping-rival" onclick="window._diplomacyPing('${p.id}','rival')" title="Mark as Rival">&#x1F525;</button>`;
         stanceCell = `${icon}${theirIcon ? ' ' + theirIcon : ''} ${btns}`;
       }
       const docBadge = p.doctrine ? ` <span class="doctrine-badge" title="${(DOCTRINE_INFO[p.doctrine] || {}).name || p.doctrine}">${p.doctrine === 'industrialist' ? '⚒' : p.doctrine === 'scholar' ? '📚' : p.doctrine === 'expansionist' ? '🚀' : ''}</span>` : '';
@@ -2321,6 +2334,11 @@
       send({ type: 'giftResources', targetPlayerId, resource: resource.trim().toLowerCase(), amount });
     };
   }
+
+  // Diplomacy ping
+  window._diplomacyPing = function(targetPlayerId, pingType) {
+    send({ type: 'diplomacyPing', targetPlayerId, pingType });
+  };
 
   // Toggle auto-survey for a science ship
   window._toggleAutoSurvey = function(shipId) {

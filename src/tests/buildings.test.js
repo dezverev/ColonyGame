@@ -51,7 +51,7 @@ describe('Building Definitions', () => {
     assert.deepStrictEqual(def.produces, { alloys: 4 });
     assert.deepStrictEqual(def.consumes, { energy: 2 });
     assert.strictEqual(def.jobs, 1);
-    assert.deepStrictEqual(def.cost, { minerals: 300 });
+    assert.deepStrictEqual(def.cost, { minerals: 250 });
     assert.strictEqual(def.buildTime, 500);
   });
 
@@ -117,7 +117,7 @@ describe('buildBuilding Command', () => {
     const colony = getColony(engine);
     engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'foundry' });
     const state = engine.playerStates.get('p1');
-    assert.strictEqual(state.resources.minerals, 200); // 500 - 300
+    assert.strictEqual(state.resources.minerals, 250); // 500 - 250
   });
 
   it('should reject if not enough resources', () => {
@@ -356,13 +356,13 @@ describe('Building Demolition', () => {
     const queuedId = buildResult.id;
 
     const state = engine.playerStates.get('p1');
-    const mineralsBefore = state.resources.minerals; // 500 - 300 = 200
+    const mineralsBefore = state.resources.minerals; // 500 - 250 = 250
 
     const result = engine.handleCommand('p1', { type: 'demolish', colonyId: colony.id, districtId: queuedId });
     assert.ok(result.ok);
     assert.strictEqual(colony.buildingQueue.length, 0);
-    // Should get 50% of 300 minerals = 150 back
-    assert.strictEqual(state.resources.minerals, mineralsBefore + 150);
+    // Should get 50% of 250 minerals = 125 back
+    assert.strictEqual(state.resources.minerals, mineralsBefore + 125);
   });
 });
 
