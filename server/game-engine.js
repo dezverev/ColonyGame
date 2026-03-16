@@ -273,6 +273,11 @@ const FRIENDLY_HOP_RANGE = 3;          // max BFS hops for friendly production b
 const FRIENDLY_VP = 5;                 // VP per friendly relationship at game end
 const MUTUAL_FRIENDLY_VP = 10;         // VP if both players are friendly (replaces single)
 
+// Trade agreement constants
+const TRADE_AGREEMENT_INFLUENCE_COST = 25;   // influence cost per player to form
+const TRADE_AGREEMENT_ENERGY_BONUS = 0.15;   // +15% energy production
+const TRADE_AGREEMENT_MINERAL_BONUS = 0.15;  // +15% mineral production
+
 // Diplomacy ping constants
 const DIPLOMACY_PING_TYPES = ['peace', 'warning', 'alliance', 'rival'];
 const DIPLOMACY_PING_COOLDOWN = 100;   // 10 seconds cooldown between pings per sender
@@ -619,6 +624,8 @@ class GameEngine {
         activeEdict: null, // { type, monthsRemaining } or null
         diplomacy: {},     // targetPlayerId -> { stance, cooldownTick }
         pendingFriendly: new Set(), // targetPlayerIds awaiting acceptance
+        tradeAgreements: new Set(),        // partner playerIds with active trade agreements
+        pendingTradeAgreements: new Set(), // outgoing trade agreement proposals
       });
       // Initialize match stats for post-game score screen
       this._matchStats.set(playerId, {
@@ -647,6 +654,33 @@ class GameEngine {
   _areMutuallyFriendly(playerA, playerB) {
     return this._getStance(playerA, playerB) === DIPLOMACY_STANCES.FRIENDLY &&
            this._getStance(playerB, playerA) === DIPLOMACY_STANCES.FRIENDLY;
+  }
+
+  // Check if player has any active trade agreements
+  _hasTradeAgreement(playerId) {
+    const state = this.playerStates.get(playerId);
+    return state && state.tradeAgreements.size > 0;
+  }
+
+  // Break trade agreement between two players (mutual removal + events)
+  _breakTradeAgreement(pid1, pid2) {
+    const state1 = this.playerStates.get(pid1);
+    const state2 = this.playerStates.get(pid2);
+    if (!state1 || !state2) return;
+    const had = state1.tradeAgreements.has(pid2);
+    state1.tradeAgreements.delete(pid2);
+    state1.pendingTradeAgreements.delete(pid2);
+    state2.tradeAgreements.delete(pid1);
+    state2.pendingTradeAgreements.delete(pid1);
+    if (had) {
+      this._emitEvent('tradeAgreementBroken', pid1, {
+        partnerId: pid2, partnerName: state2.name, reason: 'aggression',
+      });
+      this._emitEvent('tradeAgreementBroken', pid2, {
+        partnerId: pid1, partnerName: state1.name, reason: 'aggression',
+      });
+      this._invalidateProductionCaches();
+    }
   }
 
   // Calculate underdog production bonus for a player based on colony gap vs leader
@@ -1115,7 +1149,7 @@ class GameEngine {
     }
 
     // Edict production bonuses (multiplicative, after trait bonuses)
-    const playerEdict = this.playerStates.get(colony.ownerId)?.activeEdict;
+    const playerEdict = playerState?.activeEdict;
     if (playerEdict) {
       const edictDef = EDICT_DEFS[playerEdict.type];
       if (edictDef && edictDef.effect.type === 'productionBonus') {
@@ -1207,6 +1241,19 @@ class GameEngine {
         if (production[resource] > 0) {
           production[resource] = Math.round(production[resource] * (1 + FRIENDLY_PRODUCTION_BONUS) * 100) / 100;
         }
+      }
+    }
+
+    // Trade agreement bonus: +15% energy and minerals per active trade agreement partner
+    if (playerState && playerState.tradeAgreements.size > 0) {
+      const tradePartnerCount = playerState.tradeAgreements.size;
+      const energyMult = 1 + TRADE_AGREEMENT_ENERGY_BONUS * tradePartnerCount;
+      const mineralMult = 1 + TRADE_AGREEMENT_MINERAL_BONUS * tradePartnerCount;
+      if (production.energy > 0) {
+        production.energy = Math.round(production.energy * energyMult * 100) / 100;
+      }
+      if (production.minerals > 0) {
+        production.minerals = Math.round(production.minerals * mineralMult * 100) / 100;
       }
     }
 
@@ -1830,6 +1877,8 @@ class GameEngine {
       state2.diplomacy[pid1].stance = DIPLOMACY_STANCES.HOSTILE;
       state2.pendingFriendly.delete(pid1);
     }
+    // Break any trade agreements between these players
+    this._breakTradeAgreement(pid1, pid2);
     this._dirtyPlayers.add(pid1);
     this._dirtyPlayers.add(pid2);
   }
@@ -5322,7 +5371,8 @@ class GameEngine {
           // Clear any pending friendly requests
           state.pendingFriendly.delete(targetPlayerId);
           targetState.pendingFriendly.delete(playerId);
-          // Breaking a friendly alliance affects production bonuses
+          // Breaking a friendly alliance / trade agreement affects production bonuses
+          this._breakTradeAgreement(playerId, targetPlayerId);
           this._invalidateProductionCaches();
           // Broadcast war declared
           for (const [pid] of this.playerStates) {
@@ -5553,6 +5603,144 @@ class GameEngine {
           pingType, direction: 'sent',
         });
 
+        return { ok: true };
+      }
+
+      case 'proposeTradeAgreement': {
+        const { targetPlayerId } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot trade with yourself' };
+
+        const state = this.playerStates.get(playerId);
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Already have an agreement
+        if (state.tradeAgreements.has(targetPlayerId)) return { error: 'Trade agreement already active' };
+
+        // Already proposed
+        if (state.pendingTradeAgreements.has(targetPlayerId)) return { error: 'Trade agreement already proposed' };
+
+        // Cannot trade with hostile players
+        if (this._areHostile(playerId, targetPlayerId)) return { error: 'Cannot trade with hostile player' };
+
+        // Check influence cost
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < TRADE_AGREEMENT_INFLUENCE_COST) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence from proposer
+        state.resources.influence -= TRADE_AGREEMENT_INFLUENCE_COST;
+
+        // If target already proposed to us, auto-accept (mutual proposal)
+        if (targetState.pendingTradeAgreements.has(playerId)) {
+          // Deduct influence from target (already paid by proposer above)
+          // Target already paid when they proposed — no double charge
+          state.tradeAgreements.add(targetPlayerId);
+          targetState.tradeAgreements.add(playerId);
+          state.pendingTradeAgreements.delete(targetPlayerId);
+          targetState.pendingTradeAgreements.delete(playerId);
+          // Notify both
+          this._emitEvent('tradeAgreementFormed', playerId, {
+            partnerId: targetPlayerId, partnerName: targetState.name,
+          });
+          this._emitEvent('tradeAgreementFormed', targetPlayerId, {
+            partnerId: playerId, partnerName: state.name,
+          });
+          this._invalidateProductionCaches();
+        } else {
+          // Add pending proposal
+          state.pendingTradeAgreements.add(targetPlayerId);
+          // Notify target
+          this._emitEvent('tradeAgreementProposed', targetPlayerId, {
+            fromId: playerId, fromName: state.name,
+          });
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'acceptTradeAgreement': {
+        const { targetPlayerId } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot trade with yourself' };
+
+        const state = this.playerStates.get(playerId);
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Check that target has a pending proposal toward us
+        if (!targetState.pendingTradeAgreements.has(playerId)) {
+          return { error: 'No pending trade agreement from this player' };
+        }
+
+        // Cannot accept if hostile
+        if (this._areHostile(playerId, targetPlayerId)) return { error: 'Cannot trade with hostile player' };
+
+        // Check influence cost for acceptor
+        if (!Number.isFinite(state.resources.influence) || state.resources.influence < TRADE_AGREEMENT_INFLUENCE_COST) {
+          return { error: 'Not enough influence' };
+        }
+
+        // Deduct influence from acceptor
+        state.resources.influence -= TRADE_AGREEMENT_INFLUENCE_COST;
+
+        // Form the agreement
+        state.tradeAgreements.add(targetPlayerId);
+        targetState.tradeAgreements.add(playerId);
+        targetState.pendingTradeAgreements.delete(playerId);
+        state.pendingTradeAgreements.delete(targetPlayerId);
+
+        // Notify both
+        this._emitEvent('tradeAgreementFormed', playerId, {
+          partnerId: targetPlayerId, partnerName: targetState.name,
+        });
+        this._emitEvent('tradeAgreementFormed', targetPlayerId, {
+          partnerId: playerId, partnerName: state.name,
+        });
+
+        this._invalidateProductionCaches();
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
+      case 'cancelTradeAgreement': {
+        const { targetPlayerId } = cmd;
+        if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
+        if (targetPlayerId === playerId) return { error: 'Cannot cancel trade with yourself' };
+
+        const state = this.playerStates.get(playerId);
+        const targetState = this.playerStates.get(targetPlayerId);
+        if (!targetState) return { error: 'Target player not found' };
+
+        // Cancel active agreement or pending proposal
+        const hadActive = state.tradeAgreements.has(targetPlayerId);
+        const hadPending = state.pendingTradeAgreements.has(targetPlayerId);
+        if (!hadActive && !hadPending) return { error: 'No trade agreement or proposal to cancel' };
+
+        state.tradeAgreements.delete(targetPlayerId);
+        state.pendingTradeAgreements.delete(targetPlayerId);
+        targetState.tradeAgreements.delete(playerId);
+        targetState.pendingTradeAgreements.delete(playerId);
+
+        if (hadActive) {
+          this._emitEvent('tradeAgreementBroken', playerId, {
+            partnerId: targetPlayerId, partnerName: targetState.name, reason: 'cancelled',
+          });
+          this._emitEvent('tradeAgreementBroken', targetPlayerId, {
+            partnerId: playerId, partnerName: state.name, reason: 'cancelled',
+          });
+          this._invalidateProductionCaches();
+        }
+
+        this._dirtyPlayers.add(playerId);
+        this._dirtyPlayers.add(targetPlayerId);
+        this._invalidateStateCache();
         return { ok: true };
       }
 
@@ -5998,6 +6186,8 @@ class GameEngine {
     return {
       stances: result,
       pendingFriendly: [...state.pendingFriendly],
+      tradeAgreements: [...state.tradeAgreements],
+      pendingTradeAgreements: [...state.pendingTradeAgreements],
     };
   }
 
@@ -6024,4 +6214,4 @@ class GameEngine {
   }
 }
 
-module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
+module.exports = { GameEngine, DISTRICT_DEFS, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, PLANET_TYPES, PLANET_BONUSES, COLONY_NAMES, COLONY_TRAITS, DOCTRINE_DEFS, DOCTRINE_SELECTION_TICKS, EDICT_DEFS, MONTH_TICKS, BROADCAST_EVERY, TECH_TREE, GROWTH_BASE_TICKS, GROWTH_FAST_TICKS, GROWTH_FASTEST_TICKS, PLAYER_COLORS, SPEED_INTERVALS, SPEED_LABELS, DEFAULT_SPEED, COLONY_SHIP_COST, COLONY_SHIP_BUILD_TIME, COLONY_SHIP_HOP_TICKS, MAX_COLONIES, COLONY_SHIP_STARTING_POPS, SCIENCE_SHIP_COST, SCIENCE_SHIP_BUILD_TIME, SCIENCE_SHIP_HOP_TICKS, MAX_SCIENCE_SHIPS, SURVEY_TICKS, ANOMALY_CHANCE, ANOMALY_TYPES, CRISIS_TYPES, CRISIS_MIN_TICKS, CRISIS_MAX_TICKS, CRISIS_CHOICE_TICKS, CRISIS_IMMUNITY_TICKS, INFLUENCE_BASE_INCOME, INFLUENCE_TRAIT_INCOME, INFLUENCE_CAP, SCARCITY_RESOURCES, SCARCITY_MIN_INTERVAL, SCARCITY_MAX_INTERVAL, SCARCITY_DURATION, SCARCITY_WARNING_TICKS, SCARCITY_MULTIPLIER, CORVETTE_COST, CORVETTE_BUILD_TIME, CORVETTE_HOP_TICKS, CORVETTE_HP, CORVETTE_ATTACK, MAX_CORVETTES, RAIDER_MIN_INTERVAL, RAIDER_MAX_INTERVAL, RAIDER_HOP_TICKS, RAIDER_HP, RAIDER_ATTACK, RAIDER_COMBAT_TICKS, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_ATTACK, DEFENSE_PLATFORM_REPAIR_RATE, RAIDER_DISABLE_TICKS, RAIDER_RESOURCE_STOLEN, RAIDER_DESTROY_VP, FLEET_COMBAT_MAX_ROUNDS, FLEET_BATTLE_WON_VP, FLEET_SHIP_LOST_VP, CORVETTE_MAINTENANCE, CORVETTE_VARIANTS, CORVETTE_VARIANT_BUILD_TIME, CIVILIAN_SHIP_MAINTENANCE, MAINTENANCE_DAMAGE, OCCUPATION_TICKS, OCCUPATION_PRODUCTION_MULT, OCCUPATION_ATTACKER_VP, OCCUPATION_DEFENDER_VP, DIPLOMACY_STANCES, DIPLOMACY_INFLUENCE_COST, DIPLOMACY_COOLDOWN_TICKS, FRIENDLY_PRODUCTION_BONUS, FRIENDLY_HOP_RANGE, FRIENDLY_VP, MUTUAL_FRIENDLY_VP, ENDGAME_CRISIS_TRIGGER, ENDGAME_CRISIS_WARNING_TICKS, GALACTIC_STORM_MULTIPLIER, PRECURSOR_HP, PRECURSOR_ATTACK, PRECURSOR_HOP_TICKS, PRECURSOR_COMBAT_TICKS, PRECURSOR_DESTROY_VP, PRECURSOR_OCCUPY_VP, UNDERDOG_BONUS_PER_COLONY, UNDERDOG_BONUS_CAP, UNDERDOG_TECH_DISCOUNT, CATALYST_RESOURCE_RUSH_PCT, CATALYST_TECH_AUCTION_PCT, CATALYST_BORDER_INCIDENT_PCT, CATALYST_RUSH_INCOME, CATALYST_RUSH_DURATION, CATALYST_AUCTION_WINDOW, CATALYST_INCIDENT_WINDOW, CATALYST_INCIDENT_BOTH_DEESCALATE_VP, CATALYST_INCIDENT_ESCALATE_VP, CATALYST_INCIDENT_HOP_RANGE, GIFT_MIN_AMOUNT, GIFT_COOLDOWN_TICKS, GIFT_ALLOWED_RESOURCES, DIPLOMACY_PING_TYPES, DIPLOMACY_PING_COOLDOWN, TRADE_AGREEMENT_INFLUENCE_COST, TRADE_AGREEMENT_ENERGY_BONUS, TRADE_AGREEMENT_MINERAL_BONUS, COLONY_UPKEEP, SCOUT_MILESTONES, TOTAL_TECHS, MILITARY_VICTORY_OCCUPATIONS, ECONOMIC_VICTORY_ALLOYS, ECONOMIC_VICTORY_TRAITS, generateGalaxy, assignStartingSystems };
