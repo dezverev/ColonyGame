@@ -1,6 +1,6 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert');
-const { GameEngine, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, DISTRICT_DEFS, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, MONTH_TICKS } = require('../../server/game-engine');
+const { GameEngine, BUILDING_DEFS, BUILDING_SLOT_THRESHOLDS, DISTRICT_DEFS, DEFENSE_PLATFORM_MAX_HP, DEFENSE_PLATFORM_COST, DEFENSE_PLATFORM_BUILD_TIME, MONTH_TICKS, TECH_TREE } = require('../../server/game-engine');
 
 function makeRoom(playerCount = 1, options = {}) {
   const players = new Map();
@@ -30,11 +30,14 @@ function giveResources(engine, playerId, resources) {
 }
 
 describe('Building Definitions', () => {
-  it('should have 3 building types defined', () => {
-    assert.strictEqual(Object.keys(BUILDING_DEFS).length, 3);
+  it('should have 6 building types defined (3 base + 3 T2)', () => {
+    assert.strictEqual(Object.keys(BUILDING_DEFS).length, 6);
     assert.ok(BUILDING_DEFS.researchLab);
     assert.ok(BUILDING_DEFS.foundry);
     assert.ok(BUILDING_DEFS.shieldGenerator);
+    assert.ok(BUILDING_DEFS.quantumLab);
+    assert.ok(BUILDING_DEFS.advancedFoundry);
+    assert.ok(BUILDING_DEFS.planetaryShield);
   });
 
   it('Research Lab should produce 4/4/4 research and consume 2 energy', () => {
@@ -455,5 +458,228 @@ describe('Building Edge Cases', () => {
     const { consumption } = engine._calcProduction(colony);
     // Base consumption from districts + 3 from shield generator
     assert.ok(consumption.energy >= 3);
+  });
+});
+
+// ── T2 Advanced Buildings ──────────────────────────────────────────────
+
+describe('T2 Building Definitions', () => {
+  it('Quantum Lab should produce 3/3/2 research and consume 4 energy', () => {
+    const def = BUILDING_DEFS.quantumLab;
+    assert.deepStrictEqual(def.produces, { physics: 3, society: 3, engineering: 2 });
+    assert.deepStrictEqual(def.consumes, { energy: 4 });
+    assert.strictEqual(def.jobs, 1);
+    assert.deepStrictEqual(def.cost, { minerals: 400, energy: 100 });
+    assert.strictEqual(def.buildTime, 800);
+    assert.deepStrictEqual(def.requires, { tech: 'advanced_reactors', building: 'researchLab' });
+  });
+
+  it('Advanced Foundry should produce 8 alloys and consume 4 energy + 2 minerals', () => {
+    const def = BUILDING_DEFS.advancedFoundry;
+    assert.deepStrictEqual(def.produces, { alloys: 8 });
+    assert.deepStrictEqual(def.consumes, { energy: 4, minerals: 2 });
+    assert.strictEqual(def.jobs, 1);
+    assert.deepStrictEqual(def.cost, { minerals: 400, alloys: 100 });
+    assert.strictEqual(def.buildTime, 800);
+    assert.deepStrictEqual(def.requires, { tech: 'deep_mining', building: 'foundry' });
+  });
+
+  it('Planetary Shield should grant +50 defense HP and consume 5 energy', () => {
+    const def = BUILDING_DEFS.planetaryShield;
+    assert.strictEqual(def.defensePlatformHPBonus, 50);
+    assert.deepStrictEqual(def.consumes, { energy: 5 });
+    assert.deepStrictEqual(def.cost, { minerals: 300, alloys: 200 });
+    assert.strictEqual(def.buildTime, 800);
+    assert.deepStrictEqual(def.requires, { tech: 'gene_crops', building: 'shieldGenerator' });
+  });
+});
+
+function giveT2Prerequisites(engine, playerId, colony, techId, baseBuilding) {
+  // Grant the required T2 tech
+  const state = engine.playerStates.get(playerId);
+  if (!state.completedTechs.includes(techId)) {
+    state.completedTechs.push(techId);
+  }
+  // Grant the prerequisite T1 tech (required by T2)
+  const t2Def = TECH_TREE[techId];
+  if (t2Def && t2Def.requires && !state.completedTechs.includes(t2Def.requires)) {
+    state.completedTechs.push(t2Def.requires);
+  }
+  // Add the base building as already built
+  if (!colony.buildings.some(b => b.type === baseBuilding)) {
+    colony.buildings.push({ id: engine._nextId(), type: baseBuilding, slot: colony.buildings.length });
+  }
+  engine._invalidateColonyCache(colony);
+}
+
+describe('T2 Building Prerequisites', () => {
+  it('should reject Quantum Lab without required tech', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    // Add base building but NOT the tech
+    colony.buildings.push({ id: engine._nextId(), type: 'researchLab', slot: 0 });
+    engine._invalidateColonyCache(colony);
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'quantumLab' });
+    assert.ok(result.error);
+    assert.match(result.error, /Requires Advanced Reactors/);
+  });
+
+  it('should reject Quantum Lab without base Research Lab', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    // Grant tech but no base building
+    const state = engine.playerStates.get('p1');
+    state.completedTechs.push('improved_power_plants', 'advanced_reactors');
+    engine._invalidateColonyCache(colony);
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'quantumLab' });
+    assert.ok(result.error);
+    assert.match(result.error, /Requires Research Lab/);
+  });
+
+  it('should build Quantum Lab with tech + base building', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    giveT2Prerequisites(engine, 'p1', colony, 'advanced_reactors', 'researchLab');
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'quantumLab' });
+    assert.ok(result.ok);
+    assert.strictEqual(colony.buildingQueue.length, 1);
+    assert.strictEqual(colony.buildingQueue[0].type, 'quantumLab');
+    assert.strictEqual(colony.buildingQueue[0].ticksRemaining, 800);
+  });
+
+  it('should reject Advanced Foundry without Deep Mining tech', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    colony.buildings.push({ id: engine._nextId(), type: 'foundry', slot: 0 });
+    engine._invalidateColonyCache(colony);
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'advancedFoundry' });
+    assert.ok(result.error);
+    assert.match(result.error, /Requires Deep Mining/);
+  });
+
+  it('should build Advanced Foundry with tech + base Foundry', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    giveT2Prerequisites(engine, 'p1', colony, 'deep_mining', 'foundry');
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'advancedFoundry' });
+    assert.ok(result.ok);
+    assert.strictEqual(colony.buildingQueue[0].type, 'advancedFoundry');
+  });
+
+  it('should reject Planetary Shield without Gene Crops tech', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    colony.buildings.push({ id: engine._nextId(), type: 'shieldGenerator', slot: 0 });
+    engine._invalidateColonyCache(colony);
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'planetaryShield' });
+    assert.ok(result.error);
+    assert.match(result.error, /Requires Gene Crops/);
+  });
+
+  it('should build Planetary Shield with tech + base Shield Generator', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    giveT2Prerequisites(engine, 'p1', colony, 'gene_crops', 'shieldGenerator');
+
+    const result = engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'planetaryShield' });
+    assert.ok(result.ok);
+    assert.strictEqual(colony.buildingQueue[0].type, 'planetaryShield');
+  });
+});
+
+describe('T2 Building Production', () => {
+  it('Quantum Lab should add research production', () => {
+    const engine = makeEngine();
+    const colony = getColony(engine);
+    colony.buildings.push({ id: 9800, type: 'quantumLab', slot: 0 });
+    engine._invalidateColonyCache(colony);
+
+    const { production, consumption } = engine._calcProduction(colony);
+    assert.ok(production.physics >= 3);
+    assert.ok(production.society >= 3);
+    assert.ok(production.engineering >= 2);
+    assert.ok(consumption.energy >= 4);
+  });
+
+  it('Advanced Foundry should add alloy production and consume minerals', () => {
+    const engine = makeEngine();
+    const colony = getColony(engine);
+    colony.buildings.push({ id: 9801, type: 'advancedFoundry', slot: 0 });
+    engine._invalidateColonyCache(colony);
+
+    const { production, consumption } = engine._calcProduction(colony);
+    assert.ok(production.alloys >= 8);
+    assert.ok(consumption.energy >= 4);
+    assert.ok(consumption.minerals >= 2);
+  });
+
+  it('Planetary Shield should grant +50 defense HP bonus', () => {
+    const engine = makeEngine();
+    const colony = getColony(engine);
+    colony.buildings.push({ id: 9802, type: 'planetaryShield', slot: 0 });
+    assert.strictEqual(engine._calcDefensePlatformMaxHP(colony), DEFENSE_PLATFORM_MAX_HP + 50);
+  });
+
+  it('Planetary Shield + Shield Generator should stack to +75 defense HP', () => {
+    const engine = makeEngine();
+    const colony = getColony(engine);
+    colony.buildings.push({ id: 9803, type: 'shieldGenerator', slot: 0 });
+    colony.buildings.push({ id: 9804, type: 'planetaryShield', slot: 1 });
+    assert.strictEqual(engine._calcDefensePlatformMaxHP(colony), DEFENSE_PLATFORM_MAX_HP + 25 + 50);
+  });
+});
+
+describe('T2 Building Construction', () => {
+  it('Quantum Lab should complete after 800 ticks', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    giveT2Prerequisites(engine, 'p1', colony, 'advanced_reactors', 'researchLab');
+
+    engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'quantumLab' });
+    assert.strictEqual(colony.buildingQueue.length, 1);
+
+    for (let i = 0; i < 800; i++) engine.tick();
+
+    const t2 = colony.buildings.find(b => b.type === 'quantumLab');
+    assert.ok(t2, 'Quantum Lab should be built');
+    assert.strictEqual(colony.buildingQueue.length, 0);
+  });
+
+  it('T2 building should not complete at 799 ticks', () => {
+    const engine = makeEngine();
+    giveResources(engine, 'p1', { minerals: 2000, energy: 500, alloys: 500 });
+    const colony = getColony(engine);
+    colony.pops = 15;
+    giveT2Prerequisites(engine, 'p1', colony, 'deep_mining', 'foundry');
+
+    engine.handleCommand('p1', { type: 'buildBuilding', colonyId: colony.id, buildingType: 'advancedFoundry' });
+
+    for (let i = 0; i < 799; i++) engine.tick();
+
+    assert.strictEqual(colony.buildings.filter(b => b.type === 'advancedFoundry').length, 0);
+    assert.strictEqual(colony.buildingQueue.length, 1);
+    assert.strictEqual(colony.buildingQueue[0].ticksRemaining, 1);
   });
 });

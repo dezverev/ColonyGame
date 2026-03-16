@@ -19,6 +19,10 @@ const BUILDING_DEFS = {
   researchLab:     { produces: { physics: 4, society: 4, engineering: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 200, energy: 50 }, buildTime: 500, label: 'Research Lab' },
   foundry:         { produces: { alloys: 4 }, consumes: { energy: 2 }, jobs: 1, cost: { minerals: 250 }, buildTime: 500, label: 'Foundry' },
   shieldGenerator: { produces: {}, consumes: { energy: 3 }, jobs: 1, cost: { minerals: 200, alloys: 100 }, buildTime: 500, label: 'Shield Generator', defensePlatformHPBonus: 25 },
+  // T2 buildings — each requires a T2 tech + the base building already built
+  quantumLab:       { produces: { physics: 3, society: 3, engineering: 2 }, consumes: { energy: 4 }, jobs: 1, cost: { minerals: 400, energy: 100 }, buildTime: 800, label: 'Quantum Lab', requires: { tech: 'advanced_reactors', building: 'researchLab' } },
+  advancedFoundry:  { produces: { alloys: 8 }, consumes: { energy: 4, minerals: 2 }, jobs: 1, cost: { minerals: 400, alloys: 100 }, buildTime: 800, label: 'Advanced Foundry', requires: { tech: 'deep_mining', building: 'foundry' } },
+  planetaryShield:  { produces: {}, consumes: { energy: 5 }, jobs: 1, cost: { minerals: 300, alloys: 200 }, buildTime: 800, label: 'Planetary Shield', defensePlatformHPBonus: 50, requires: { tech: 'gene_crops', building: 'shieldGenerator' } },
 };
 const BUILDING_SLOT_THRESHOLDS = [5, 10, 15]; // pops needed for slot 1, 2, 3
 
@@ -4714,6 +4718,20 @@ class GameEngine {
                              colony.buildingQueue.some(b => b.type === buildingType);
         if (hasDuplicate) {
           return { error: 'Already have this building type' };
+        }
+
+        // T2 building prerequisites: requires specific tech + base building
+        if (bDef.requires) {
+          const state_ = this.playerStates.get(playerId);
+          if (bDef.requires.tech && !(state_.completedTechs || []).includes(bDef.requires.tech)) {
+            return { error: `Requires ${TECH_TREE[bDef.requires.tech].name}` };
+          }
+          if (bDef.requires.building) {
+            const hasBase = colony.buildings.some(b => b.type === bDef.requires.building);
+            if (!hasBase) {
+              return { error: `Requires ${BUILDING_DEFS[bDef.requires.building].label}` };
+            }
+          }
         }
 
         // Check resource cost

@@ -2310,3 +2310,36 @@ Each entry records an iteration of automated development.
 - Both fixes align tests with correct engine behavior rather than changing the engine
 
 **Next:** Advanced buildings T2 tier (Phase 2, R65-2) — Quantum Lab, Advanced Foundry, Planetary Shield unlocked by T2 techs
+
+---
+
+## Entry 66 — 2026-03-16 — Advanced Buildings T2 Tier
+
+**Phase:** 2 (Colony Management)
+**Status:** Complete
+
+**What was built:**
+- **3 T2 buildings** added to BUILDING_DEFS, each requiring a T2 tech + the base building already constructed:
+  - **Quantum Lab:** +3/3/2 research (physics/society/engineering), 4 energy upkeep, 400m+100e cost, 800-tick build. Requires Advanced Reactors + Research Lab.
+  - **Advanced Foundry:** +8 alloys, 4 energy + 2 mineral upkeep, 400m+100a cost, 800-tick build. Requires Deep Mining + Foundry.
+  - **Planetary Shield:** +50 defense platform HP, 5 energy upkeep, 300m+200a cost, 800-tick build. Requires Gene Crops + Shield Generator.
+- **Prerequisite validation** in buildBuilding handler: checks player has completed the required T2 tech AND has the base building already built on the colony
+- **Production automatically handled** by existing building iteration in `_calcProduction` and `_calcDefensePlatformMaxHP`
+- Shield Generator (+25 HP) and Planetary Shield (+50 HP) stack for +75 total defense HP
+
+**Files changed:**
+- `server/game-engine.js` — 3 T2 building definitions in BUILDING_DEFS, prerequisite validation in buildBuilding handler
+- `src/tests/buildings.test.js` — 16 new tests: definitions, prerequisites (tech/building rejection + success for all 3 types), production, defense HP stacking, construction timing
+- `devguide/design.md` — marked T2 buildings complete
+- `devguide/ledger.md` — this entry
+
+**Tests:** 2035 total (16 new). All passing.
+
+**Key decisions:**
+- Tech mapping: Physics T2 (Advanced Reactors) → Quantum Lab, Engineering T2 (Deep Mining) → Advanced Foundry, Society T2 (Gene Crops) → Planetary Shield
+- Quantum Lab produces 3/3/2 (8 total research) rather than flat 8 to differentiate from Research Lab's even 4/4/4 split — slightly physics-heavy
+- Advanced Foundry consumes minerals (2/tick) in addition to energy — makes it a mineral-to-alloy converter, creating a meaningful resource chain
+- 800-tick build time (60% longer than base buildings) makes T2 buildings a mid-game commitment
+- Prerequisite check happens after duplicate check but before resource check — fail fast on missing prerequisites
+
+**Next:** Trade agreements (Phase 4, R65-3) — mutual resource exchange deals between players

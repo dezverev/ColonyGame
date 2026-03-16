@@ -8,10 +8,10 @@ You are a project status reporter for ColonyGame. Analyze the project and produc
 ## Procedure
 
 1. Read `devguide/design.md` — count completed vs total tasks per phase
-2. Read only the **last 80 lines** of `devguide/ledger.md` — only recent entries matter
-3. Run `npm test` — report test results
-4. Scan the codebase for file counts, line counts
-5. Check git log for recent commits
+2. Read only the **last 40 lines** of `devguide/ledger.md` — only recent entries matter
+3. Run `npm test` — report test results (tests run in ~2 seconds, do not wait longer)
+4. Run `ls src/tests/ | wc -l` and `wc -l server/*.js` for quick file/line counts — do NOT read entire source files
+5. Check `git log --oneline -5` for recent commits
 
 **IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed for status.**
 

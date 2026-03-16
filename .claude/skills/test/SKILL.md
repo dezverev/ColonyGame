@@ -19,13 +19,12 @@ Before doing anything, read CLAUDE.md at the project root for the full architect
 Read these files:
 
 1. **`CLAUDE.md`** — Architecture overview, module map, protocol spec
-2. **`devguide/ledger.md`** — Read only the **last 80 lines** (recent entries). Do NOT read the entire file.
-3. **All test files in `src/tests/`** — What's already tested
+2. **`devguide/ledger.md`** — Read only the **last 40 lines** (recent entries). Do NOT read the entire file — it is very large.
 
 **IMPORTANT: Do NOT read `devguide/game-design-review.md` — it is very large and not needed for testing.**
-4. **`server/game-engine.js`** — Core game logic
-5. **`server/server.js`** — WebSocket server, message routing
-6. **`server/room-manager.js`** — Room lifecycle
+
+3. **List test files** — Run `ls src/tests/` to see what test files exist. Do NOT read all test files. Only read specific test files that are directly relevant to the feature you're testing.
+4. **Source files** — Only read the specific source files relevant to the feature under test. Do NOT read all of game-engine.js (it is ~6000 lines). Instead, use Grep to find the specific functions you need to test.
 
 ### 2. Map Feature Coverage
 

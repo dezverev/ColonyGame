@@ -19,10 +19,11 @@ Before doing anything, read CLAUDE.md at the project root for the full architect
 Read these files:
 
 1. **`CLAUDE.md`** — Architecture overview
-2. **`server/game-engine.js`** — Server tick loop, game state calculations
-3. **`server/server.js`** — WebSocket message handling, state broadcasting
-4. **`src/public/js/app.js`** — Client main loop
-5. **Any renderer files** (`renderer.js`, `colony-view.js`, `galaxy-view.js`, etc.)
+
+**IMPORTANT: Do NOT read all of `server/game-engine.js` (it is ~6000 lines). Use Grep to find the specific tick/serialization/performance-related functions.** Similarly, only read renderer files if your focus is client-side performance.
+
+2. Use Grep to find tick functions, serialization code, and cache logic in game-engine.js
+3. Only read server.js or client files if specifically relevant to the performance issue at hand
 
 ### 2. Server Tick Audit
 
