@@ -6695,6 +6695,7 @@ class GameEngine {
       growthProgress: c.growthProgress, growthTarget, growthStatus,
       trait: trait ? { type: trait.type, name: trait.name } : null,
       crisis: crisisData,
+      saturation: c.planet.size > 0 ? (c.districts.length + c.buildQueue.length) / c.planet.size : 0,
       netProduction: {
         energy: production.energy - (consumption.energy || 0),
         minerals: production.minerals - (consumption.minerals || 0),
