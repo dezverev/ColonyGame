@@ -1611,12 +1611,14 @@ class GameEngine {
     // Active scarcity: count down and end when done
     if (this._activeScarcity) {
       this._activeScarcity.ticksRemaining--;
+      // Invalidate cache every tick — ticksRemaining changes and is baked into serialized JSON
+      this._invalidateStateCache();
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
       if (this._activeScarcity.ticksRemaining <= 0) {
         const endedResource = this._activeScarcity.resource;
         this._activeScarcity = null;
         // Invalidate all production caches — multiplier removed
         this._invalidateAllProductionCaches();
-        this._invalidateStateCache();
         // Broadcast scarcity ended
         this._emitEvent('scarcityEnded', null, { resource: endedResource }, true);
         // Schedule next scarcity
@@ -1633,6 +1635,12 @@ class GameEngine {
       this._scarcityWarned = true;
       this._invalidateStateCache();
       this._emitEvent('scarcityWarning', null, { resource }, true);
+    }
+
+    // During warning phase, ticksUntil changes every tick — invalidate cache so countdown stays fresh
+    if (this._scarcityWarned && this._pendingScarcityResource) {
+      this._invalidateStateCache();
+      for (const [playerId] of this.playerStates) this._dirtyPlayers.add(playerId);
     }
 
     // Start scarcity when scheduled tick arrives

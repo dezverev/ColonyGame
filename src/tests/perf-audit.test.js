@@ -490,4 +490,40 @@ describe('Performance Audit', () => {
     console.log(`  _autoChainSurvey: avg=${avgUs.toFixed(1)}µs`);
     assert.ok(avgUs < 50, `_autoChainSurvey took ${avgUs.toFixed(1)}µs, expected <50µs`);
   });
+
+  it('scarcity countdown values stay fresh across broadcasts', () => {
+    const { GameEngine, BROADCAST_EVERY, SCARCITY_WARNING_TICKS } = require('../../server/game-engine');
+    const engine = new GameEngine(createRoom(2), { tickRate: 10 });
+
+    // Advance a few ticks to establish state
+    for (let i = 0; i < 10; i++) engine.tick();
+
+    // Schedule scarcity 50 ticks from now — warning phase starts immediately (50 < 100)
+    engine._nextScarcityTick = engine.tickCount + 50;
+    engine._scarcityWarned = false;
+    engine._pendingScarcityResource = null;
+    engine._activeScarcity = null;
+
+    // Tick once to trigger warning detection
+    engine.tick();
+
+    // Capture ticksUntil after warning is active
+    engine._invalidateStateCache();
+    const state1 = JSON.parse(engine.getPlayerStateJSON(1));
+    assert.ok(state1.scarcityWarning, 'Should have scarcityWarning during warning phase');
+    const ticks1 = state1.scarcityWarning.ticksUntil;
+
+    // Advance 2 broadcast cycles (6 ticks)
+    for (let i = 0; i < BROADCAST_EVERY * 2; i++) engine.tick();
+
+    const state2 = JSON.parse(engine.getPlayerStateJSON(1));
+    assert.ok(state2.scarcityWarning, 'Should still have scarcityWarning');
+    const ticks2 = state2.scarcityWarning.ticksUntil;
+
+    // Countdown must have decreased — cache must not be stale
+    assert.ok(ticks2 < ticks1,
+      `ticksUntil should decrease: was ${ticks1}, now ${ticks2} (stale cache?)`);
+    assert.strictEqual(ticks1 - ticks2, BROADCAST_EVERY * 2,
+      `Expected ${BROADCAST_EVERY * 2} tick decrease, got ${ticks1 - ticks2}`);
+  });
 });
