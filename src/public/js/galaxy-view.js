@@ -525,11 +525,13 @@
       });
     }
     if (mesh) {
+      mesh.geometry = _geoCache[geoKey];
       mesh.material = _matCache[matKey];
     } else {
       isNew = true;
       if (pool.length > 0) {
         mesh = pool.pop();
+        mesh.geometry = _geoCache[geoKey];
         mesh.material = _matCache[matKey];
         mesh.visible = true;
       } else {

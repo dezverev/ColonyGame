@@ -395,6 +395,6 @@ describe('Victory progress in broadcast JSON payload', () => {
     assert.strictEqual(me.victoryProgress.scientific.target, TOTAL_TECHS);
 
     const other = parsed.players.find(p => p.id === 2);
-    assert.ok(other.victoryProgress, 'other player should have victoryProgress in JSON');
+    assert.strictEqual(other.victoryProgress, undefined, 'other player should not have victoryProgress (bandwidth saving)');
   });
 });

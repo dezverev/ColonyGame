@@ -417,11 +417,11 @@ describe('Victory progress in serialized state', () => {
     assert.strictEqual(me.victoryProgress.scientific.target, TOTAL_TECHS);
   });
 
-  it('other players state includes victoryProgress', () => {
+  it('other players state omits victoryProgress (bandwidth saving)', () => {
     const { engine } = makeEngine(2);
     const state = engine.getPlayerState(1);
     const other = state.players[1];
-    assert.ok(other.victoryProgress, 'other player state should include victoryProgress');
+    assert.strictEqual(other.victoryProgress, undefined, 'other player state should not include victoryProgress');
   });
 });
 

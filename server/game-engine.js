@@ -4467,8 +4467,14 @@ class GameEngine {
   // Full VP breakdown for a player — single source of truth for the VP formula.
   // Returns { vp, pops, popsVP, districts, districtsVP, alloys, alloysVP, totalResearch, researchVP, techs, techVP, traits, traitsVP, surveyed, surveyedVP }
   _calcVPBreakdown(playerId) {
+    if (this._vpCacheTick !== this.tickCount) {
+      // Tick changed or cache invalidated — clear all stale per-player entries
+      this._vpBreakdownCache.clear();
+      this._vpCache.clear();
+      this._vpCacheTick = this.tickCount;
+    }
     const cached = this._vpBreakdownCache.get(playerId);
-    if (cached && this._vpCacheTick === this.tickCount) return cached;
+    if (cached) return cached;
 
     const state = this.playerStates.get(playerId);
     if (!state) {
@@ -4632,7 +4638,6 @@ class GameEngine {
       expeditionsCompleted, expeditionVP,
       victoryProgress: this._calcVictoryProgress(playerId),
     };
-    this._vpCacheTick = this.tickCount;
     this._vpBreakdownCache.set(playerId, breakdown);
     this._vpCache.set(playerId, vp);
     return breakdown;
@@ -6448,17 +6453,18 @@ class GameEngine {
 
     // Own resources + research state + VP + summary
     const mySummary = this._getPlayerSummary(playerId);
+    const myVPBreakdown = this._calcVPBreakdown(playerId);
     const me = {
       id: player.id, name: player.name, color: player.color, resources: player.resources,
       currentResearch: player.currentResearch, researchProgress: player.researchProgress,
       completedTechs: player.completedTechs,
       activeEdict: player.activeEdict,
       doctrine: player.doctrine,
-      vp: this._calcVictoryPoints(playerId),
+      vp: myVPBreakdown.vp,
       techs: (player.completedTechs || []).length,
       raidersDestroyed: this._raidersDestroyed.get(playerId) || 0,
-      corvettes: this._playerCorvetteCount(playerId),
-      destroyers: this._playerDestroyerCount(playerId),
+      corvettes: myVPBreakdown.corvettes,
+      destroyers: myVPBreakdown.destroyers,
       battlesWon: this._battlesWon.get(playerId) || 0,
       shipsLost: this._shipsLost.get(playerId) || 0,
       diplomacy: this._serializeDiplomacy(playerId),
@@ -6472,18 +6478,18 @@ class GameEngine {
     for (const p of this.playerStates.values()) {
       if (p.id === playerId) continue;
       const summary = this._getPlayerSummary(p.id);
+      const vpBd = this._calcVPBreakdown(p.id);
       others.push({
         id: p.id, name: p.name, color: p.color,
-        vp: this._calcVictoryPoints(p.id),
+        vp: vpBd.vp,
         techs: (p.completedTechs || []).length,
         raidersDestroyed: this._raidersDestroyed.get(p.id) || 0,
-        corvettes: this._playerCorvetteCount(p.id),
-        destroyers: this._playerDestroyerCount(p.id),
+        corvettes: vpBd.corvettes,
+        destroyers: vpBd.destroyers,
         battlesWon: this._battlesWon.get(p.id) || 0,
         shipsLost: this._shipsLost.get(p.id) || 0,
         stanceTowardMe: this._getStance(p.id, playerId),
         doctrine: p.doctrine,
-        victoryProgress: this._calcVictoryProgress(p.id),
         ...summary,
       });
     }
