@@ -2377,3 +2377,36 @@ Each entry records an iteration of automated development.
 - Break logic added to both `setDiplomacy` hostile handler AND `_forceHostile` helper to cover all hostility paths (manual stance change, border incidents, combat escalation)
 
 **Next:** System claims with influence (Phase 6, R65-4) — 25 influence to claim a system, prevents enemy colonization, +1 VP
+
+---
+
+## Entry 68 — 2026-03-16 — System Claims with Influence
+
+**Phase:** 6 (Diplomacy & Interaction)
+**Status:** Complete
+
+**What was built:**
+- **System claim command** (`claimSystem`): Players spend 25 influence to claim an uncolonized system, preventing other players from colonizing it
+- **Proximity requirement:** Player must have a ship or colony in the target system or an adjacent system (via hyperlane adjacency)
+- **Colonization blocking:** Enemy-claimed systems block both `sendColonyShip` orders and `_foundColonyFromShip` arrival — ships are rejected or fail with event notification
+- **Own claims pass through:** Players can still colonize their own claimed systems
+- **VP reward:** +1 VP per claimed system, added to `_calcVPBreakdown` with `claimedSystems` and `claimsVP` fields
+- **Event notification:** `systemClaimed` event emitted to the claiming player with system name
+- **Serialization:** `systemClaims` object (systemId → playerId) included in both `getState` and `getPlayerState` broadcasts — claims are public information
+
+**Files changed:**
+- `server/game-engine.js` — Constants (SYSTEM_CLAIM_INFLUENCE_COST, SYSTEM_CLAIM_VP), `_systemClaims` Map, `claimSystem` command handler, claim check in `sendColonyShip` and `_foundColonyFromShip`, VP breakdown additions, serialization in both getState and getPlayerState, exports
+- `src/tests/system-claims.test.js` — 17 tests across 6 suites: constants, claim command (8 tests: success, ship presence, validation, already claimed, enemy claimed, colony exists, no proximity, insufficient influence), colonization blocking (3 tests), VP, serialization (2 tests), events
+- `devguide/design.md` — Marked System Claims complete
+- `devguide/ledger.md` — This entry
+
+**Tests:** 2123 total (17 new). All passing (1 pre-existing flaky test in colony-upkeep-deep.test.js unrelated to this change).
+
+**Key decisions:**
+- Claims are public — all players can see all claims in the state broadcast, enabling strategic counterplay
+- Proximity requirement (ship/colony in target or adjacent system) prevents players from claiming arbitrary distant systems, requiring exploration investment
+- Uses `_adjacency` map for neighbor lookup rather than `system.connections` (which doesn't exist on galaxy systems)
+- System claim check added at both send-order time AND arrival time — handles the case where a claim is placed while a colony ship is already in transit
+- No unclaim/revoke mechanic — claims are permanent once placed. This keeps the system simple and makes influence spending meaningful.
+
+**Next:** Expeditions (Phase 5, R65-5) — send science ships on multi-system expeditions for bonus rewards
