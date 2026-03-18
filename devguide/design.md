@@ -61,7 +61,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **BALANCE FIX — Alloy VP weight + Industrial output bump**
 - [x] **Event toast notification HUD**
 - [ ] **BALANCE TWEAK — T2 tech cost increase:** 500→750 research.
-- [ ] **PRIORITY ORDER (R71):** (1) Construction queue HUD, (2) Starting planet variety, (3) Destroyer ship class, (4) VP timeline snapshots, (5) Scarcity pre-warning, (6) Colony saturation indicator, (7) Disabled district rendering, (8) Surface anomaly 3D rendering.
+- [x] **PRIORITY ORDER (R72):** (1) District system (Phase 2), (2) Population system (Phase 2), (3) Starbase upgrade alloy sink, (4) Tech tree expansion, (5) 25-minute match timer, (6) Gene Engineering fix.
 - [ ] **Exploration progress indicator:** "X% Explored" badge on galaxy HUD. Client-side only.
 - [ ] **BALANCE TWEAK — Base capital housing:** 10→8.
 - [ ] **Cascading colony events (stretch):** Crises spread to colonies within 2 hops.
@@ -75,8 +75,8 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [ ] **District adjacency bonus (stretch):** Same-type adjacent districts get +10% output.
 
 ### Phase 2: Colony Management
-- [ ] District system: 6 types. Max = planet size. 300-tick build, first 3 on new colonies at 50% time.
-- [ ] Population system: 1 pop/housing, 1 pop/job. +1 pop per 600 ticks if food surplus. Starvation kills.
+- [x] District system: 6 types. Max = planet size. 300-tick build, first 3 on new colonies at 50% time.
+- [x] Population system: 1 pop/housing, 1 pop/job. +1 pop per 600 ticks if food surplus. Starvation kills.
 - [ ] Building system: slots unlock at pop thresholds (max 12). 7 building types.
 - [ ] Colony overview UI panel
 - [ ] Construction queue (max 3 per colony)
@@ -92,7 +92,7 @@ Isometric multiplayer space colony 4X game. Three.js rendering, WebSocket multip
 - [x] **Mini tech tree (early deliverable)**
 - [x] **PRIORITY: Influence income from colonies**
 - [ ] **Colony reinforcement (alloy sink):** Spend 100 alloys for +5 housing. Max 3 per colony.
-- [ ] **Starbase upgrade — alloy sink:** 150 alloys, +5 defense repair HP/month, +5 VP. Max 1 per colony.
+- [x] **Starbase upgrade — alloy sink:** 150 alloys, +5 defense repair HP/month, +5 VP. Max 1 per colony.
 - [ ] **Crisis prevention via specialization:** 4+ districts of matching type prevents corresponding crisis.
 - [x] **Catch-up mechanics: underdog production bonus**
 - [x] **PRIORITY: Scarcity seasons**
