@@ -53,6 +53,20 @@ run_opencode() {
   cat "$outfile"
 }
 
+summarize_output() {
+  local input_file="$1"
+  local outfile="${2:-$input_file.summary}"
+  
+  if [[ ! -s "$input_file" ]]; then
+    echo "(empty output)" > "$outfile"
+    cat "$outfile"
+    return
+  fi
+  
+  opencode run "Summarize this output in 30-35 lines. Focus on: (1) what was accomplished, (2) what needs attention next, (3) any blockers or issues. Keep specific file names, numbers, and actionable items." < "$input_file" > "$outfile" 2>&1 || true
+  cat "$outfile"
+}
+
 truncate_file() {
   local file="$1"
   local max_lines="${2:-60}"
@@ -75,7 +89,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
   # ── Phase 1: /status ────────────────────────────────────
   log "Phase 1: Project status..."
   run_opencode "/status" "$TMPDIR_AP/status.txt"
-  STATUS_CTX=$(truncate_file "$TMPDIR_AP/status.txt" 60)
+  STATUS_CTX=$(summarize_output "$TMPDIR_AP/status.txt")
 
   # ── Phase 2: /game-designer ─────────────────────────────
   log "Phase 2: Game design analysis..."
@@ -83,7 +97,7 @@ for ((i=1; i<=ITERATIONS; i++)); do
 
 Project status context:
 $STATUS_CTX" "$TMPDIR_AP/design.txt"
-  DESIGN_CTX=$(truncate_file "$TMPDIR_AP/design.txt" 60)
+  DESIGN_CTX=$(summarize_output "$TMPDIR_AP/design.txt")
 
   if [[ "$DRY_RUN" == true ]]; then
     log "Dry run complete — skipping implementation."
@@ -96,7 +110,7 @@ $STATUS_CTX" "$TMPDIR_AP/design.txt"
 
 Game designer priorities:
 $DESIGN_CTX" "$TMPDIR_AP/develop.txt"
-  RESULT_CTX=$(truncate_file "$TMPDIR_AP/develop.txt" 60)
+  RESULT_CTX=$(summarize_output "$TMPDIR_AP/develop.txt")
 
   # ── Phase 4: /perf ──────────────────────────────────────
   log "Phase 4: Performance audit..."
@@ -104,7 +118,7 @@ $DESIGN_CTX" "$TMPDIR_AP/develop.txt"
 
 What just changed:
 $RESULT_CTX" "$TMPDIR_AP/perf.txt"
-  PERF_CTX=$(truncate_file "$TMPDIR_AP/perf.txt" 40)
+  PERF_CTX=$(summarize_output "$TMPDIR_AP/perf.txt")
 
   # ── Phase 5: /test ──────────────────────────────────────
   log "Phase 5: Test coverage audit..."
