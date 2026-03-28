@@ -329,6 +329,9 @@ const DEFENSE_PLATFORM_BUILD_TIME = 200; // 20 seconds
 const DEFENSE_PLATFORM_MAX_HP = 50;
 const DEFENSE_PLATFORM_ATTACK = 15;  // damage per combat tick
 const DEFENSE_PLATFORM_REPAIR_RATE = 15; // HP repaired per month
+const STARBASE_UPGRADE_COST = { alloys: 150 };
+const STARBASE_UPGRADE_BONUS_REPAIR = 5; // +5 HP repair per month
+const STARBASE_UPGRADE_VP = 5; // +5 VP per upgraded starbase
 const RAIDER_DISABLE_TICKS = 300;    // districts disabled for 30 seconds on raid
 const RAIDER_RESOURCE_STOLEN = 50;   // 50 of each resource stolen on raid
 const RAIDER_DESTROY_VP = 5;         // +5 VP per raider destroyed
@@ -938,6 +941,7 @@ class GameEngine {
       crisisState: null,           // active crisis: { type, ticksRemaining, resolved, disabledIds, quarantineTicks, strikeTicks, energyBoostTicks }
       nextCrisisTick: 0,           // tick when next crisis can occur (set on colony creation)
       defensePlatform: null,       // { hp, maxHp, building } — null until built, building=true while under construction
+      starbaseUpgraded: false,      // true if starbase upgraded (alloy sink: +5 repair, +5 VP)
       occupiedBy: null,            // playerId of occupying player, null if unoccupied
       occupationProgress: 0,       // ticks progressed toward occupation (0 to OCCUPATION_TICKS)
       surfaceAnomalies: [],        // { id, slot, type, discovered, choicePending }
@@ -2652,9 +2656,12 @@ class GameEngine {
       const effectiveMax = this._calcDefensePlatformMaxHP(colony);
       colony.defensePlatform.maxHp = effectiveMax;
       if (colony.defensePlatform.hp < colony.defensePlatform.maxHp) {
+        const repairRate = colony.starbaseUpgraded 
+          ? DEFENSE_PLATFORM_REPAIR_RATE + STARBASE_UPGRADE_BONUS_REPAIR 
+          : DEFENSE_PLATFORM_REPAIR_RATE;
         colony.defensePlatform.hp = Math.min(
           colony.defensePlatform.maxHp,
-          colony.defensePlatform.hp + DEFENSE_PLATFORM_REPAIR_RATE
+          colony.defensePlatform.hp + repairRate
         );
         this._dirtyPlayers.add(colony.ownerId);
         this._invalidateStateCache();
@@ -4553,6 +4560,15 @@ class GameEngine {
     const destroyers = this._playerDestroyerCount(playerId);
     const militaryVP = corvettes + destroyers * 3;
 
+    // Starbase upgrade VP: +5 per upgraded starbase
+    let starbaseUpgradeVP = 0;
+    for (const colonyId of colonyIds) {
+      const colony = this.colonies.get(colonyId);
+      if (colony && colony.starbaseUpgraded) {
+        starbaseUpgradeVP += STARBASE_UPGRADE_VP;
+      }
+    }
+
     // Fleet combat VP: +5 per battle won, -2 per own ship lost
     const battlesWon = this._battlesWon.get(playerId) || 0;
     const battlesWonVP = battlesWon * FLEET_BATTLE_WON_VP;
@@ -4625,7 +4641,7 @@ class GameEngine {
     const expeditionsCompleted = this._completedExpeditions.get(playerId) || 0;
     const expeditionVP = this._expeditionVP.get(playerId) || 0;
 
-    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP + claimsVP + expeditionVP;
+    const vp = popsVP + totalDistricts + alloysVP + researchVP + techVP + traitsVP + surveyedVP + scoutMilestonesVP + raidersVP + militaryVP + starbaseUpgradeVP + battlesWonVP + shipsLostVP + occupiedAttackerVP + occupiedDefenderVP + diplomacyVP + precursorVP + catalystVP + claimsVP + expeditionVP;
     const breakdown = {
       vp, pops: totalPops, popsVP,
       districts: totalDistricts, districtsVP: totalDistricts,
@@ -4638,6 +4654,7 @@ class GameEngine {
       claimedSystems, claimsVP,
       raidersDestroyed, raidersVP,
       corvettes, destroyers, militaryVP,
+      starbaseUpgradeVP,
       battlesWon, battlesWonVP,
       shipsLost, shipsLostVP,
       coloniesOccupying, occupiedAttackerVP,
@@ -5785,6 +5802,29 @@ class GameEngine {
         return { ok: true };
       }
 
+      case 'upgradeStarbase': {
+        const { colonyId } = cmd;
+        if (!colonyId) return { error: 'Missing colonyId' };
+        const colony = this.colonies.get(colonyId);
+        if (!colony) return { error: 'Colony not found' };
+        if (colony.ownerId !== playerId) return { error: 'Not your colony' };
+        if (!colony.defensePlatform) return { error: 'Colony has no defense platform' };
+        if (colony.starbaseUpgraded) return { error: 'Starbase already upgraded' };
+        const state = this.playerStates.get(playerId);
+        for (const [resource, amount] of Object.entries(STARBASE_UPGRADE_COST)) {
+          if (!Number.isFinite(state.resources[resource]) || state.resources[resource] < amount) {
+            return { error: `Not enough ${resource}` };
+          }
+        }
+        for (const [resource, amount] of Object.entries(STARBASE_UPGRADE_COST)) {
+          state.resources[resource] -= amount;
+        }
+        colony.starbaseUpgraded = true;
+        this._dirtyPlayers.add(playerId);
+        this._invalidateStateCache();
+        return { ok: true };
+      }
+
       case 'setDiplomacy': {
         const { targetPlayerId, stance } = cmd;
         if (!targetPlayerId) return { error: 'Missing targetPlayerId' };
@@ -6734,6 +6774,7 @@ class GameEngine {
         maxHp: c.defensePlatform.maxHp,
         building: c.defensePlatform.building || false,
         buildTicksRemaining: c.defensePlatform.buildTicksRemaining || 0,
+        starbaseUpgraded: c.starbaseUpgraded || false,
       };
     }
     return result;

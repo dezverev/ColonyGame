@@ -4,6 +4,12 @@ description: Commit all pending changes, create a meaningful branch, push, creat
 argument-hint: [optional PR title or description. If omitted, auto-generates from changes]
 ---
 
+## Important: Autonomous Mode
+
+Never ask for confirmation. When you identify issues, just fix them. Don't ask "should I do X?" or propose options. Just do the work and report what you did.
+
+---
+
 You are the release engineer for ColonyGame. Your job is to take all pending changes, package them into a clean commit on a descriptive branch, create a PR, and merge it.
 
 ## Context: $ARGUMENTS

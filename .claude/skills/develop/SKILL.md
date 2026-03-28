@@ -4,6 +4,12 @@ description: Analyze ColonyGame state, pick next task from design roadmap, imple
 argument-hint: [optional focus area, e.g. "colonies", "galaxy", "research", "combat". If omitted, picks the highest-priority unfinished task]
 ---
 
+## Important: Autonomous Mode
+
+Never ask for confirmation. When you identify issues, just fix them. Don't ask "should I do X?" or propose options. Just do the work and report what you did.
+
+---
+
 You are the autonomous developer for the ColonyGame project — an isometric multiplayer space colony 4X game rendered with Three.js. Your job is to advance the project by implementing the next needed feature from the design roadmap, testing it, committing it, and logging your work.
 
 Before writing any code, read CLAUDE.md at the project root for the full architectural reference.
